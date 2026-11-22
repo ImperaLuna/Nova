@@ -29,137 +29,138 @@ pub use nova_compositor::{Capability, Desktop, FocusedWindow, Output, Step, Work
 pub use nova_host::{Host, OperatingSystem};
 pub use nova_theme::{Color, Palette, Theme, ThemeMode};
 
-#[cfg(test)]
-mod js;
-
 /// Pushed by the daemon whenever its state changes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum Event {
     /// First message on every connection, whatever the subscriptions.
     Hello { daemon: String },
-    /// Which features are usable right now. Topic [`Topic::Features`].
+    /// Which features are usable right now. Topic [`topics::FEATURES`].
     Features { features: Vec<FeatureState> },
-    /// Log entries from novad and the UI. Topic [`Topic::Logs`]. The first
+    /// Log entries from novad and the UI. Topic [`topics::LOGS`]. The first
     /// event after subscribing has `backlog: true` and holds recent entries.
     Logs(Logs),
-    /// The active theme's colors. Topic [`Topic::Theme`], sent right after
+    /// The active theme's colors. Topic [`topics::THEME`], sent right after
     /// subscribing.
     Theme(Theme),
-    /// Plan usage of AI coding tools. Topic [`Topic::AiUsage`], sent right
+    /// Plan usage of AI coding tools. Topic [`topics::AI_USAGE`], sent right
     /// after subscribing and whenever a number changes.
     AiUsage(AiUsage),
     /// The compositor's workspaces, outputs, focused window and keyboard
-    /// layout. Topic [`Topic::Compositor`], sent right after subscribing and
+    /// layout. Topic [`topics::COMPOSITOR`], sent right after subscribing and
     /// whenever any of it changes. Never sent when novad doesn't know the
     /// compositor.
     Compositor(Desktop),
-    /// Open or close `panel` (`nova toggle`). Topic [`Topic::Toggle`].
+    /// Open or close `panel` (`nova toggle`). Topic [`topics::TOGGLE`].
     /// `output` is the focused output's name, when novad knows it.
     Toggle {
         panel: Panel,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
     },
-    /// Whether the session is locked (feature `lock`). Topic [`Topic::Lock`],
+    /// Whether the session is locked (feature `lock`). Topic [`topics::LOCK`],
     /// sent right after subscribing and whenever it changes. The UI locks
     /// when `locked` turns true, but only ever unlocks itself, after the
     /// user's password checks out: `locked: false` just follows that.
     Lock { locked: bool },
     /// Change the default output's volume as `nova volume` asks, and show
-    /// the volume capsule. Topic [`Topic::Volume`].
+    /// the volume capsule. Topic [`topics::VOLUME`].
     Volume { key: VolumeKey },
     /// The screens are frozen for a region screenshot (feature `screenshot`):
     /// each frame is what one output showed, for the UI to draw under the
-    /// region picker. Topic [`Topic::Screenshot`].
+    /// region picker. Topic [`topics::SCREENSHOT`].
     Capture { frames: Vec<CaptureFrame> },
     /// The region picker closes: the shot was taken or cancelled. Topic
-    /// [`Topic::Screenshot`].
+    /// [`topics::SCREENSHOT`].
     CaptureEnded,
     /// A screenshot was saved, and copied when it could be (feature
     /// `screenshot`). `id` names it in `screenshot_action`. Topic
-    /// [`Topic::Screenshot`].
+    /// [`topics::SCREENSHOT`].
     ScreenshotSaved(SavedScreenshot),
     /// `nova record` while nothing is being recorded (feature `recording`):
     /// the UI opens the region picker to pick what to record, or closes it
-    /// when it's open. Topic [`Topic::Recording`].
+    /// when it's open. Topic [`topics::RECORDING`].
     PickRecording,
     /// What's being recorded, or `null` once nothing is (feature
-    /// `recording`). Topic [`Topic::Recording`], sent right after subscribing
+    /// `recording`). Topic [`topics::RECORDING`], sent right after subscribing
     /// and whenever it starts, stops or pauses.
     Recording(Option<ActiveRecording>),
     /// A recording was saved (feature `recording`). `id` names it in
-    /// `recording_action`. Topic [`Topic::Recording`].
+    /// `recording_action`. Topic [`topics::RECORDING`].
     RecordingSaved(SavedRecording),
     /// The machine and its user, for the quick settings header. Topic
-    /// [`Topic::Host`], sent right after subscribing.
+    /// [`topics::HOST`], sent right after subscribing.
     Host(Host),
-    /// What the machine is busy with (feature `resources`). Topic
-    /// [`Topic::Resources`], sent every few seconds while some client
-    /// watches them (`watch_resources`), and right when one starts to.
-    Resources(Resources),
     /// The apps the launcher can open, and the user's pinned and recent ones
-    /// (feature `launcher`). Topic [`Topic::Launcher`], sent right after
+    /// (feature `launcher`). Topic [`topics::LAUNCHER`], sent right after
     /// subscribing and whenever any of it changes.
     Launcher(Launcher),
-    /// The apps in the system tray (feature `tray`). Topic [`Topic::Tray`],
+    /// The apps in the system tray (feature `tray`). Topic [`topics::TRAY`],
     /// sent right after subscribing and whenever one comes or goes.
     Tray(Tray),
     /// The notifications kept for the quick settings list, do not disturb
     /// and the muted apps (feature `notifications`). Topic
-    /// [`Topic::Notifications`], sent right after subscribing and whenever
+    /// [`topics::NOTIFICATIONS`], sent right after subscribing and whenever
     /// any of it changes.
     Notifications(NotificationList),
     /// A notification to pop up: a new one, or one an app replaced while
     /// it may still show (feature `notifications`). Never for a muted app,
     /// nor during do not disturb unless it's critical. Topic
-    /// [`Topic::Notifications`].
+    /// [`topics::NOTIFICATIONS`].
     NotificationPopup(Notification),
     /// The media players on the session bus and the one the bar shows
-    /// (feature `media`). Topic [`Topic::Media`], sent right after
+    /// (feature `media`). Topic [`topics::MEDIA`], sent right after
     /// subscribing and whenever a player comes, goes or changes.
     Media(Media),
     /// Wireless devices and their batteries (feature `peripherals`). Topic
-    /// [`Topic::Peripherals`], sent right after subscribing and whenever a
+    /// [`topics::PERIPHERALS`], sent right after subscribing and whenever a
     /// device comes, goes or changes.
     Peripherals(Peripherals),
     /// Wired and Wi-Fi links from NetworkManager (feature `network`). Topic
-    /// [`Topic::Network`], sent right after subscribing and whenever a link,
+    /// [`topics::NETWORK`], sent right after subscribing and whenever a link,
     /// a network in reach or a connection attempt changes.
     Network(Network),
     /// The traffic over the machine's network links, every
     /// [`NETWORK_TRAFFIC_INTERVAL_SECS`] while some connection watches it
-    /// (`watch_network_traffic`, feature `network`). Topic [`Topic::Network`].
+    /// (`watch_network_traffic`, feature `network`). Topic [`topics::NETWORK`].
     NetworkTraffic(NetworkTraffic),
     /// Bluetooth: the radio, the devices and the pairing waiting for the
-    /// user (feature `bluetooth`). Topic [`Topic::Bluetooth`], sent right
+    /// user (feature `bluetooth`). Topic [`topics::BLUETOOTH`], sent right
     /// after subscribing and whenever any of it changes.
     Bluetooth(Bluetooth),
 }
 
-/// Groups of events a client can subscribe to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Topic {
-    Features,
-    Logs,
-    Theme,
-    AiUsage,
-    Compositor,
-    Toggle,
-    Lock,
-    Volume,
-    Screenshot,
-    Recording,
-    Host,
-    Resources,
-    Launcher,
-    Tray,
-    Notifications,
-    Media,
-    Peripherals,
-    Network,
-    Bluetooth,
+/// A group of events a client can subscribe to, by its wire name: the
+/// framework's [`nova_carrier::Topic`]. Each owner declares its own as a
+/// constant; the ones still shared are in [`topics`], a moved feature's in
+/// its api crate (`nova_resources_api::TOPIC`). novad's wiring lists them
+/// all, in the order `ui/daemon/protocol.js` names them.
+pub use nova_carrier::Topic;
+
+/// The topics of the events in [`Event`].
+pub mod topics {
+    use super::Topic;
+
+    pub const FEATURES: Topic = Topic::named("features");
+    /// The framework's log feed (`nova_carrier::log`).
+    pub const LOGS: Topic = nova_carrier::log::TOPIC;
+    pub const THEME: Topic = Topic::named("theme");
+    pub const AI_USAGE: Topic = Topic::named("ai_usage");
+    /// The compositor adapters' (`nova_compositor`).
+    pub const COMPOSITOR: Topic = nova_compositor::TOPIC;
+    pub const TOGGLE: Topic = Topic::named("toggle");
+    pub const LOCK: Topic = Topic::named("lock");
+    pub const VOLUME: Topic = Topic::named("volume");
+    pub const SCREENSHOT: Topic = Topic::named("screenshot");
+    pub const RECORDING: Topic = Topic::named("recording");
+    pub const HOST: Topic = Topic::named("host");
+    pub const LAUNCHER: Topic = Topic::named("launcher");
+    pub const TRAY: Topic = Topic::named("tray");
+    pub const NOTIFICATIONS: Topic = Topic::named("notifications");
+    pub const MEDIA: Topic = Topic::named("media");
+    pub const PERIPHERALS: Topic = Topic::named("peripherals");
+    pub const NETWORK: Topic = Topic::named("network");
+    pub const BLUETOOTH: Topic = Topic::named("bluetooth");
 }
 
 impl Event {
@@ -168,25 +169,24 @@ impl Event {
     pub fn topic(&self) -> Option<Topic> {
         match self {
             Event::Hello { .. } => None,
-            Event::Features { .. } => Some(Topic::Features),
-            Event::Logs(_) => Some(Topic::Logs),
-            Event::Theme(_) => Some(Topic::Theme),
-            Event::AiUsage(_) => Some(Topic::AiUsage),
-            Event::Compositor(_) => Some(Topic::Compositor),
-            Event::Toggle { .. } => Some(Topic::Toggle),
-            Event::Lock { .. } => Some(Topic::Lock),
-            Event::Volume { .. } => Some(Topic::Volume),
-            Event::Capture { .. } | Event::CaptureEnded | Event::ScreenshotSaved(_) => Some(Topic::Screenshot),
-            Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(Topic::Recording),
-            Event::Host(_) => Some(Topic::Host),
-            Event::Resources(_) => Some(Topic::Resources),
-            Event::Launcher(_) => Some(Topic::Launcher),
-            Event::Tray(_) => Some(Topic::Tray),
-            Event::Notifications(_) | Event::NotificationPopup(_) => Some(Topic::Notifications),
-            Event::Media(_) => Some(Topic::Media),
-            Event::Peripherals(_) => Some(Topic::Peripherals),
-            Event::Network(_) | Event::NetworkTraffic(_) => Some(Topic::Network),
-            Event::Bluetooth(_) => Some(Topic::Bluetooth),
+            Event::Features { .. } => Some(topics::FEATURES),
+            Event::Logs(_) => Some(topics::LOGS),
+            Event::Theme(_) => Some(topics::THEME),
+            Event::AiUsage(_) => Some(topics::AI_USAGE),
+            Event::Compositor(_) => Some(topics::COMPOSITOR),
+            Event::Toggle { .. } => Some(topics::TOGGLE),
+            Event::Lock { .. } => Some(topics::LOCK),
+            Event::Volume { .. } => Some(topics::VOLUME),
+            Event::Capture { .. } | Event::CaptureEnded | Event::ScreenshotSaved(_) => Some(topics::SCREENSHOT),
+            Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
+            Event::Host(_) => Some(topics::HOST),
+            Event::Launcher(_) => Some(topics::LAUNCHER),
+            Event::Tray(_) => Some(topics::TRAY),
+            Event::Notifications(_) | Event::NotificationPopup(_) => Some(topics::NOTIFICATIONS),
+            Event::Media(_) => Some(topics::MEDIA),
+            Event::Peripherals(_) => Some(topics::PERIPHERALS),
+            Event::Network(_) | Event::NetworkTraffic(_) => Some(topics::NETWORK),
+            Event::Bluetooth(_) => Some(topics::BLUETOOTH),
         }
     }
 }
@@ -1267,10 +1267,12 @@ pub struct SavedRecording {
 pub enum Command {
     Ping,
     ListFeatures,
-    /// Adds topics to this connection. Topics with state (features) get their
-    /// current event right away; logs get a backlog.
+    /// Adds topics to this connection, by their wire names ([`Topic::name`]).
+    /// Topics with state (features) get their current event right away;
+    /// logs get a backlog. novad refuses a name that isn't one of its
+    /// topics, like an unknown variant.
     Subscribe {
-        topics: Vec<Topic>,
+        topics: Vec<String>,
     },
     /// Replies with a [`Status`].
     Status,
@@ -1379,20 +1381,6 @@ pub enum Command {
     /// Opens novad's log (feature `recording`: the recording card's Open log,
     /// after a recording didn't start).
     OpenLog,
-    /// Starts or stops this connection watching the machine's resources
-    /// (feature `resources`): while any connection watches, novad
-    /// samples them every few seconds and sends `resources` events. A
-    /// connection that closes stops watching.
-    WatchResources {
-        watching: bool,
-    },
-    /// Asks every process of an app in the latest `resources` event to
-    /// close (SIGTERM), by its [`AppUsage::key`] (feature
-    /// `resources`). Only the user's own processes, and never a
-    /// [`AppUsage::protected`] app.
-    EndApp {
-        key: String,
-    },
     /// Replies with what the launcher's providers find for `query`, as
     /// [`LauncherItem`]s (feature `launcher`): the providers in their slot
     /// order, each one's best first. A query that starts with a provider's
@@ -1685,63 +1673,6 @@ pub struct PowerOption {
     pub reason: Option<String>,
 }
 
-/// One look at what the machine is busy with.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Resources {
-    /// Share of all CPU time in use since the last look, 0 to 100.
-    pub cpu: f32,
-    /// Memory in use (not available to start programs), in bytes.
-    pub memory_used: u64,
-    pub memory_total: u64,
-    /// Share of the GPU in use, 0 to 100, when the driver reports it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu: Option<f32>,
-    /// The CPU's temperature in °C, when a sensor reports it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f32>,
-    /// CPU and memory over the last few minutes, oldest first, one sample
-    /// every [`RESOURCE_HISTORY_INTERVAL_SECS`].
-    pub history: Vec<ResourceSample>,
-    /// How many samples `history` holds once it's full.
-    pub history_size: usize,
-    /// The apps using the most memory, most first. An app is every process
-    /// running the same program.
-    pub apps: Vec<AppUsage>,
-}
-
-/// Seconds between two of [`Resources::history`]'s samples.
-pub const RESOURCE_HISTORY_INTERVAL_SECS: u64 = 5;
-
-/// CPU and memory at one point in time, each 0 to 100.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ResourceSample {
-    pub cpu: f32,
-    pub memory: f32,
-}
-
-/// One app's processes together.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AppUsage {
-    /// The program's name, from its file (`.firefox-wrapped` is `firefox`);
-    /// `Nova` for novad and its UI.
-    pub name: String,
-    /// What `end_app` takes: the program's path, `comm:<name>` for a
-    /// program novad can't see, or `nova` for Nova.
-    pub key: String,
-    /// How many processes run it.
-    pub processes: u32,
-    /// Their share of all CPU time since the last look, 0 to 100.
-    pub cpu: f32,
-    /// Their resident memory together, in bytes.
-    pub memory: u64,
-    /// Ending it isn't offered: Nova itself, the compositor, or another
-    /// user's.
-    pub protected: bool,
-}
-
 /// What `power_options` returns.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1813,21 +1744,15 @@ pub type Request = nova_carrier::Request<Command>;
 
 /// Reads one request line from a client. Anything on the socket is
 /// untrusted: unknown fields, unknown commands, bad arguments and other
-/// protocol versions are all errors.
+/// protocol versions are all errors. `subscribe`'s topic names are checked
+/// by novad, which knows every feature's topics (its `topics` list).
 pub fn decode_request(line: &str) -> Result<Request, String> {
     nova_carrier::decode_request(line)
 }
 
-impl From<Topic> for nova_carrier::Topic {
-    /// The topic by its wire name, which serde gives.
-    fn from(topic: Topic) -> Self {
-        nova_carrier::Topic::named(nova_carrier::names::names_of::<Topic>()[topic as usize])
-    }
-}
-
 impl nova_carrier::Published for Event {
-    fn topic(&self) -> Option<nova_carrier::Topic> {
-        Event::topic(self).map(Into::into)
+    fn topic(&self) -> Option<Topic> {
+        Event::topic(self)
     }
 }
 
@@ -1879,27 +1804,29 @@ mod tests {
             encode(Request {
                 id: Some(9),
                 command: Command::Subscribe {
-                    topics: vec![
-                        Topic::Features,
-                        Topic::Logs,
-                        Topic::Theme,
-                        Topic::AiUsage,
-                        Topic::Compositor,
-                        Topic::Toggle,
-                        Topic::Lock,
-                        Topic::Volume,
-                        Topic::Screenshot,
-                        Topic::Recording,
-                        Topic::Host,
-                        Topic::Resources,
-                        Topic::Launcher,
-                        Topic::Tray,
-                        Topic::Notifications,
-                        Topic::Media,
-                        Topic::Peripherals,
-                        Topic::Network,
-                        Topic::Bluetooth,
-                    ],
+                    topics: [
+                        topics::FEATURES,
+                        topics::LOGS,
+                        topics::THEME,
+                        topics::AI_USAGE,
+                        topics::COMPOSITOR,
+                        topics::TOGGLE,
+                        topics::LOCK,
+                        topics::VOLUME,
+                        topics::SCREENSHOT,
+                        topics::RECORDING,
+                        topics::HOST,
+                        nova_resources_api::TOPIC,
+                        topics::LAUNCHER,
+                        topics::TRAY,
+                        topics::NOTIFICATIONS,
+                        topics::MEDIA,
+                        topics::PERIPHERALS,
+                        topics::NETWORK,
+                        topics::BLUETOOTH,
+                    ]
+                    .map(|topic| topic.name().to_string())
+                    .to_vec(),
                 },
             }),
             encode(Event::Theme(theme())),
@@ -2018,9 +1945,16 @@ mod tests {
             encode(Request { id: None, command: Command::RecordingAction { id: 1, action: ScreenshotAction::Open } }),
             encode(Request { id: None, command: Command::OpenLog }),
             encode(Event::Host(host())),
-            encode(Request { id: Some(22), command: Command::WatchResources { watching: true } }),
-            encode(Event::Resources(resources())),
-            encode(Request { id: Some(23), command: Command::EndApp { key: "/usr/lib/firefox/firefox".into() } }),
+            // The resources feature's own messages (`nova-resources-api`), still on this one wire.
+            encode(nova_carrier::Request {
+                id: Some(22),
+                command: nova_resources_api::Command::WatchResources { watching: true },
+            }),
+            encode(nova_resources_api::Event::Resources(resources())),
+            encode(nova_carrier::Request {
+                id: Some(23),
+                command: nova_resources_api::Command::EndApp { key: "/usr/lib/firefox/firefox".into() },
+            }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::QuickSettings } }),
             encode(Event::Launcher(launcher())),
             encode(Request { id: Some(24), command: Command::LauncherSearch { query: "fi".into(), mode: None } }),
@@ -2322,7 +2256,8 @@ mod tests {
         }
     }
 
-    fn resources() -> Resources {
+    fn resources() -> nova_resources_api::Resources {
+        use nova_resources_api::{AppUsage, ResourceSample, Resources};
         Resources {
             cpu: 23.5,
             memory_used: 10_093_173_760,
@@ -2696,8 +2631,8 @@ mod tests {
     #[test]
     fn subscribe_parses_with_topics() {
         let req = decode_request(r#"{"v":2,"id":1,"cmd":"subscribe","args":{"topics":["features","logs"]}}"#).unwrap();
-        assert_eq!(req.command, Command::Subscribe { topics: vec![Topic::Features, Topic::Logs] });
-        assert!(decode_request(r#"{"v":2,"cmd":"subscribe","args":{"topics":["x"]}}"#).is_err());
+        assert_eq!(req.command, Command::Subscribe { topics: vec!["features".into(), "logs".into()] });
+        // novad refuses a topic it doesn't have (its `requests` tests).
     }
 
     #[test]
@@ -2724,53 +2659,40 @@ mod tests {
     fn the_log_feed_is_the_logs_event() {
         let logs = Logs { backlog: true, entries: vec![log_entry()] };
         assert_eq!(encode(logs.event()).unwrap(), encode(Event::Logs(logs)).unwrap());
-        assert_eq!(nova_carrier::Topic::from(Topic::Logs), nova_carrier::log::TOPIC);
     }
 
     /// The framework's compositor event and this crate's `compositor` event
-    /// and topic are one thing on the wire.
+    /// are one thing on the wire (the topic is the framework's constant).
     #[test]
     fn the_desktop_is_the_compositor_event() {
         let desktop = desktop();
         assert_eq!(encode(nova_compositor::event(&desktop)).unwrap(), encode(Event::Compositor(desktop)).unwrap());
-        assert_eq!(nova_carrier::Topic::from(Topic::Compositor), nova_compositor::TOPIC);
-    }
-
-    /// Every topic's framework name is its wire name.
-    #[test]
-    fn topics_keep_their_wire_names() {
-        for (index, name) in nova_carrier::names::names_of::<Topic>().iter().enumerate() {
-            let topic: Topic = serde_json::from_value(json!(name)).unwrap();
-            assert_eq!(topic as usize, index);
-            assert_eq!(nova_carrier::Topic::from(topic).name(), *name);
-        }
     }
 
     #[test]
     fn only_hello_has_no_topic() {
         assert_eq!(Event::Hello { daemon: "x".into() }.topic(), None);
-        assert_eq!(Event::Features { features: vec![] }.topic(), Some(Topic::Features));
-        assert_eq!(Event::Logs(Logs { backlog: false, entries: vec![] }).topic(), Some(Topic::Logs));
-        assert_eq!(Event::Theme(theme()).topic(), Some(Topic::Theme));
-        assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(Topic::AiUsage));
-        assert_eq!(Event::Compositor(desktop()).topic(), Some(Topic::Compositor));
-        assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(Topic::Toggle));
-        assert_eq!(Event::Lock { locked: true }.topic(), Some(Topic::Lock));
-        assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(Topic::Volume));
-        assert_eq!(Event::CaptureEnded.topic(), Some(Topic::Screenshot));
-        assert_eq!(Event::Recording(None).topic(), Some(Topic::Recording));
-        assert_eq!(Event::Host(host()).topic(), Some(Topic::Host));
-        assert_eq!(Event::Resources(resources()).topic(), Some(Topic::Resources));
-        assert_eq!(Event::Launcher(launcher()).topic(), Some(Topic::Launcher));
-        assert_eq!(Event::Tray(tray()).topic(), Some(Topic::Tray));
-        assert_eq!(Event::Notifications(notifications()).topic(), Some(Topic::Notifications));
-        assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(Topic::Notifications));
-        assert_eq!(Event::Media(media()).topic(), Some(Topic::Media));
-        assert_eq!(Event::Peripherals(peripherals()).topic(), Some(Topic::Peripherals));
-        assert_eq!(Event::Network(network()).topic(), Some(Topic::Network));
+        assert_eq!(Event::Features { features: vec![] }.topic(), Some(topics::FEATURES));
+        assert_eq!(Event::Logs(Logs { backlog: false, entries: vec![] }).topic(), Some(topics::LOGS));
+        assert_eq!(Event::Theme(theme()).topic(), Some(topics::THEME));
+        assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(topics::AI_USAGE));
+        assert_eq!(Event::Compositor(desktop()).topic(), Some(topics::COMPOSITOR));
+        assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(topics::TOGGLE));
+        assert_eq!(Event::Lock { locked: true }.topic(), Some(topics::LOCK));
+        assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(topics::VOLUME));
+        assert_eq!(Event::CaptureEnded.topic(), Some(topics::SCREENSHOT));
+        assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));
+        assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
+        assert_eq!(Event::Launcher(launcher()).topic(), Some(topics::LAUNCHER));
+        assert_eq!(Event::Tray(tray()).topic(), Some(topics::TRAY));
+        assert_eq!(Event::Notifications(notifications()).topic(), Some(topics::NOTIFICATIONS));
+        assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(topics::NOTIFICATIONS));
+        assert_eq!(Event::Media(media()).topic(), Some(topics::MEDIA));
+        assert_eq!(Event::Peripherals(peripherals()).topic(), Some(topics::PERIPHERALS));
+        assert_eq!(Event::Network(network()).topic(), Some(topics::NETWORK));
         let traffic = NetworkTraffic { down: vec![], up: vec![], today_down: 0, today_up: 0 };
-        assert_eq!(Event::NetworkTraffic(traffic).topic(), Some(Topic::Network));
-        assert_eq!(Event::Bluetooth(bluetooth()).topic(), Some(Topic::Bluetooth));
+        assert_eq!(Event::NetworkTraffic(traffic).topic(), Some(topics::NETWORK));
+        assert_eq!(Event::Bluetooth(bluetooth()).topic(), Some(topics::BLUETOOTH));
     }
 
     #[test]
@@ -2869,7 +2791,7 @@ mod tests {
     }
 
     #[test]
-    fn host_and_resources_reject_unknown_fields() {
+    fn host_rejects_unknown_fields() {
         fn with_extra(value: serde_json::Value, pointer: &str) -> serde_json::Value {
             let mut value = value;
             value.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
@@ -2879,11 +2801,6 @@ mod tests {
         assert!(serde_json::from_value::<Host>(host.clone()).is_ok());
         for pointer in ["", "/os"] {
             assert!(serde_json::from_value::<Host>(with_extra(host.clone(), pointer)).is_err(), "{pointer}");
-        }
-        let resources = serde_json::to_value(resources()).unwrap();
-        assert!(serde_json::from_value::<Resources>(resources.clone()).is_ok());
-        for pointer in ["", "/history/0", "/apps/0"] {
-            assert!(serde_json::from_value::<Resources>(with_extra(resources.clone(), pointer)).is_err(), "{pointer}");
         }
     }
 

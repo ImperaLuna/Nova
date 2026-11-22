@@ -1,25 +1,69 @@
-//! What novad answers on the socket: the route for every command in
-//! `nova_protocol::Command`, the one shared list of them, which the feature
-//! moves take apart (IMP-368): a feature that owns its commands adds its own
-//! route in [`router`]. The socket itself is `nova-socket`'s.
+//! What novad answers on the socket: one route per message type in
+//! [`router`]. `nova_protocol::Command` is the shared list the feature moves
+//! take apart (IMP-368); a feature that owns its commands (its api crate's
+//! `Command`) has its own route, which calls into its module. The socket
+//! itself is `nova-socket`'s.
 
 use crate::hub::ClientId;
 use crate::{Daemon, lock};
 use nova_protocol::{
-    Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, PowerMenu, Topic, VolumeKey,
+    Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, PowerMenu, VolumeKey, topics,
 };
 use nova_socket::{Answer, Caller, Router, done, value};
 use std::sync::{Arc, mpsc};
 
 const LOG_SOURCE: &str = "server";
 
-/// The routes of every message novad serves.
+/// The routes of every message novad serves. A moved feature adds its
+/// route in its place in the list below (by its feature name), and its
+/// commands leave `nova_protocol::Command`.
 pub fn router() -> Router<Daemon> {
-    Router::new().route::<Command>(
-        |daemon, caller, command| Connection::new(daemon, caller).answer(command),
-        |daemon, caller, command| Connection::new(daemon, caller).follow_up(command),
-    )
+    Router::new()
+        .route::<Shared>(
+            |daemon, caller, Shared(command)| Connection::new(daemon, caller).answer(command),
+            |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
+        )
+        .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
+        .listed_by(protocol_js_position)
 }
+
+/// The UI's protocol file. It is generated from these routes, so it names
+/// every command, and its order stays put as features move theirs out of
+/// `nova_protocol::Command` (`protocol_js`).
+const PROTOCOL_JS: &str = include_str!("../../../ui/daemon/protocol.js");
+
+/// Where protocol.js names the command `name`, so an unknown command's
+/// error lists the names in one fixed order, whatever order the routes
+/// were added in.
+fn protocol_js_position(name: &str) -> usize {
+    PROTOCOL_JS
+        .lines()
+        .position(|line| line.strip_prefix("var CMD_").and_then(|rest| rest.split('"').nth(1)) == Some(name))
+        .unwrap_or(usize::MAX)
+}
+
+/// A shared command, read with its `subscribe` topics checked against the
+/// ones novad serves ([`crate::topics`]): an unknown one makes the request
+/// bad, as an unknown variant of a topic enum would.
+struct Shared(Command);
+
+impl<'de> serde::Deserialize<'de> for Shared {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let command = Command::deserialize(deserializer)?;
+        if let Command::Subscribe { topics } = &command {
+            for name in topics {
+                crate::topics::named::<D::Error>(name)?;
+            }
+        }
+        Ok(Self(command))
+    }
+}
+
+/// The topics `follow_up` answers itself on subscribe; every other one in
+/// [`crate::topics::TOPICS`] is a module's.
+#[cfg(test)]
+const ANSWERED_HERE: &[nova_protocol::Topic] =
+    &[topics::FEATURES, topics::LOGS, topics::THEME, topics::COMPOSITOR, topics::HOST, topics::TOGGLE, topics::VOLUME];
 
 /// A request from the client `caller`.
 struct Connection<'a> {
@@ -66,10 +110,6 @@ impl<'a> Connection<'a> {
             Command::ReportUnlocked => {
                 done(self.sent_by_the_ui().map(|()| self.session_lock().unlocked(&self.daemon.hub)))
             }
-            Command::WatchResources { watching } => {
-                done(self.resources().map(|resources| resources.watch(self.id, *watching)))
-            }
-            Command::EndApp { key } => done(self.resources().and_then(|resources| resources.end_app(key))),
             Command::PowerOptions => return self.power_options(),
             Command::Power { action } => return self.power(*action),
             Command::Screenshot { mode } => return self.screenshot(*mode),
@@ -197,10 +237,6 @@ impl<'a> Connection<'a> {
     // The modules, or why there's none (`Daemon::module`).
 
     fn ai_usage(&self) -> Result<Arc<crate::ai_usage::Usage>, String> {
-        self.daemon.module()
-    }
-
-    fn resources(&self) -> Result<Arc<crate::resources::Resources>, String> {
         self.daemon.module()
     }
 
@@ -623,9 +659,10 @@ impl<'a> Connection<'a> {
     /// Work done after the reply is queued.
     fn follow_up(&self, command: Command) {
         match command {
-            Command::Subscribe { topics } => {
-                for topic in topics {
-                    if topic == Topic::Logs {
+            Command::Subscribe { topics: names } => {
+                // The names were checked as the request was read (`Shared`).
+                for topic in names.iter().filter_map(|name| crate::topics::named::<serde_json::Error>(name).ok()) {
+                    if topic == topics::LOGS {
                         self.daemon.logger.subscribe(self.id);
                         continue;
                     }
@@ -634,33 +671,22 @@ impl<'a> Connection<'a> {
                     let settings = lock(&self.daemon.settings);
                     self.daemon.hub.subscribe(self.id, topic);
                     match topic {
-                        Topic::Features => self.send(Event::Features { features: settings.features.clone() }),
-                        Topic::Theme => self.send(Event::Theme(settings.theme.clone())),
+                        topics::FEATURES => self.send(Event::Features { features: settings.features.clone() }),
+                        topics::THEME => self.send(Event::Theme(settings.theme.clone())),
                         // Sent once the compositor has said what it shows.
-                        Topic::Compositor => {
+                        topics::COMPOSITOR => {
                             if let Some(compositor) = &self.daemon.compositor {
                                 compositor.subscribe(self.id);
                             }
                         }
                         // Facts about the machine, there whatever the features.
-                        Topic::Host => self.send(Event::Host(settings.host())),
-                        // Sent while some connection watches them.
-                        Topic::Resources => {}
-                        // A module's: without its feature there is nothing to
-                        // send until a reload turns it on.
-                        Topic::AiUsage
-                        | Topic::Lock
-                        | Topic::Screenshot
-                        | Topic::Recording
-                        | Topic::Launcher
-                        | Topic::Tray
-                        | Topic::Notifications
-                        | Topic::Media
-                        | Topic::Peripherals
-                        | Topic::Network
-                        | Topic::Bluetooth => settings.modules.send_state(topic, self.id),
+                        topics::HOST => self.send(Event::Host(settings.host())),
                         // Only ever sent as `nova toggle` or `nova volume` asks.
-                        Topic::Logs | Topic::Toggle | Topic::Volume => {}
+                        topics::TOGGLE | topics::VOLUME => {}
+                        // A module's (`Module::TOPIC`, checked by
+                        // `each_topic_has_one_owner`): without its feature
+                        // there is nothing to send until a reload turns it on.
+                        _ => settings.modules.send_state(topic, self.id),
                     }
                 }
             }
@@ -696,8 +722,6 @@ impl<'a> Connection<'a> {
             | Command::RecordingAction { .. }
             | Command::OpenLog
             | Command::Volume { .. }
-            | Command::WatchResources { .. }
-            | Command::EndApp { .. }
             | Command::LauncherSearch { .. }
             | Command::AppIcon { .. }
             | Command::LauncherRun { .. }
@@ -745,15 +769,25 @@ impl<'a> Connection<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    /// Each topic is answered on subscribe by `follow_up` itself or by
+    /// exactly one module, and every module's topic is one novad serves.
+    #[test]
+    fn each_topic_has_one_owner() {
+        let modules: Vec<_> = crate::modules::Running::TOPICS.iter().flatten().copied().collect();
+        for topic in crate::topics::TOPICS {
+            let owners = modules.iter().filter(|module| *module == topic).count()
+                + usize::from(super::ANSWERED_HERE.contains(topic));
+            assert_eq!(owners, 1, "{topic:?} has {owners} owners");
+        }
+        assert!(modules.iter().all(|topic| crate::topics::TOPICS.contains(topic)));
+    }
 
     /// Every command the UI's protocol file names has exactly one route, and
     /// no route takes a command the file lacks. (A name two routes claim
     /// already stops the router being built.)
     #[test]
     fn every_command_has_one_route() {
-        let protocol_js = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/daemon/protocol.js");
-        let js = std::fs::read_to_string(protocol_js).unwrap();
+        let js = super::PROTOCOL_JS;
         let mut named: Vec<&str> =
             js.lines().filter_map(|line| line.strip_prefix("var CMD_")?.split('"').nth(1)).collect();
         let mut routed = super::router().names().to_vec();

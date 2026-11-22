@@ -209,6 +209,11 @@ macro_rules! modules {
             #[cfg(test)]
             pub const IDS: &[&str] = &[$(<$module as $crate::Module>::ID,)* $(<$kept_module as $crate::Module>::ID,)*];
 
+            /// Every module's topic, if it has one ([`Module::TOPIC`]).
+            #[cfg(test)]
+            pub const TOPICS: &[Option<<$app as $crate::App>::Topic>] =
+                &[$(<$module as $crate::Module>::TOPIC,)* $(<$kept_module as $crate::Module>::TOPIC,)*];
+
             /// The module `M`, while it runs.
             pub fn get<M: $crate::Module>(&self) -> Option<std::sync::Arc<M>>
             where

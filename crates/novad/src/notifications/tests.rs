@@ -5,7 +5,7 @@ use super::*;
 use crate::hub::{ClientQueue, Outgoing};
 use crate::session_bus::TestBus;
 use futures_core::Stream;
-use nova_protocol::Topic;
+use nova_protocol::topics;
 use nova_test_support::{TempDir, wait_until};
 use serde_json::{Value, json};
 use std::future::poll_fn;
@@ -36,7 +36,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
-        hub.subscribe(id, Topic::Notifications);
+        hub.subscribe(id, topics::NOTIFICATIONS);
         Self { dir, bus, hub, logger, ui, client: id, _ui_stream: ui_stream }
     }
 

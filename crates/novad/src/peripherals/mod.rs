@@ -464,7 +464,7 @@ fn name(text: &str) -> Option<String> {
 impl crate::modules::Module for Peripherals {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Peripherals);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::PERIPHERALS);
     type Sources = Sources;
     type Config = ();
 

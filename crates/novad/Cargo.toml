@@ -39,6 +39,8 @@
 # - nova-process
 # - nova-protocol
 # - nova-quickshell
+# - nova-resources
+# - nova-resources-api
 # - nova-session-bus
 # - nova-settings
 # - nova-socket
@@ -67,6 +69,8 @@ nova-log.workspace = true
 nova-socket.workspace = true
 nova-modules.workspace = true
 nova-settings.workspace = true
+nova-resources.workspace = true
+nova-resources-api.workspace = true
 nova-compositor.workspace = true
 nova-host.workspace = true
 nova-theme.workspace = true

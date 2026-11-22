@@ -229,7 +229,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
     modules::Sources {
         apps: crate::apps::Sources { data_dirs: vec![dir.join("launcher/share")], icons: Arc::clone(icons) },
         ai_usage: ai_usage_paths(&dir.join("ai-usage")),
-        resources: resources::Sources::system(""),
+        resources: nova_resources::Sources::system(""),
         launcher: launcher::Paths { state_file: dir.join("launcher/launcher.json"), runner: launcher::Runner::Direct },
         // No bus for the tray and notifications unless the test starts
         // one there (`session_bus::TestBus`).

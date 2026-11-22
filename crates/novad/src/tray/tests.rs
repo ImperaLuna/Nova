@@ -6,7 +6,7 @@ use super::*;
 use crate::apps::AppIndex;
 use crate::hub::{ClientQueue, Outgoing};
 use crate::session_bus::TestBus;
-use nova_protocol::Topic;
+use nova_protocol::topics;
 use nova_test_support::{TempDir, eventually, wait_until};
 use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
@@ -37,7 +37,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
-        hub.subscribe(id, Topic::Tray);
+        hub.subscribe(id, topics::TRAY);
         Self { dir, bus, hub, logger, ui, _ui_stream: ui_stream }
     }
 

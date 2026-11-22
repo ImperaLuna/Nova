@@ -112,16 +112,90 @@ may use it: a daemon-side part never on the `ui` list, a screen-side part
 never on the `core` list. Dev-dependencies aren't checked. Changing a rule
 or a list is a layout change: say so in the PR.
 
+### Moving a feature out of novad
+
+The steps the novad move's feature tickets follow (IMP-368).
+`features/resources` is the worked example: read its two crates and
+`crates/novad/src/resources.rs` first. A move is not a rewrite: no
+behaviour changes, `ui/daemon/protocol.js` stays byte for byte the same,
+and every test keeps its expectations (a test that moves keeps its
+assertions). The feature is `<id>` (its folder name), its crates
+`nova-<id>-api` and `nova-<id>` (`_` for `-` in Rust paths).
+
+1. **The api crate**, `features/<id>/api`: the feature's messages, moved
+   from `nova-protocol` as they are (doc comments too). Its own `Command`
+   enum (`#[serde(tag = "cmd", content = "args", rename_all = "snake_case",
+   deny_unknown_fields)]`), its own `Event` enum (`tag = "event", content =
+   "data"`) implementing `nova_carrier::Published`, its topics as `pub const
+   TOPIC: Topic = Topic::named("<wire name>")` (the name `nova-protocol`'s
+   `topics` constant had), and the types those carry. It uses only
+   `nova-carrier` and other api crates. Done when the variants, the topic
+   constant and the types are gone from `nova-protocol`, with nothing left
+   pointing at them.
+2. **The core crate**, `features/<id>/core`: novad's module folder (or
+   file) moved with `git mv`, `mod.rs` becoming `lib.rs`. `crate::` paths
+   become the framework crates they already alias in novad's `lib.rs`
+   (`nova_base::lock`, `nova_hub`, `nova_log`, `nova_process::procfs`, ...).
+   All of the feature's work and state live here. What the core may use is
+   `FRAMEWORK_FOR_CORE` in `scripts/check-layout.sh`; a shared helper still
+   in `crates/novad` (apps, icons, the compositor) waits for its own ticket
+   (ask the overseeing thread) rather than being copied. Done when the
+   folder in `crates/novad/src` is gone and the core builds alone.
+3. **The wiring**, `crates/novad/src/<id>.rs`, under novad's old `mod <id>;`
+   line: a newtype over the core that implements `Module` (its `ID`,
+   `Sources`, `Config`, `start` building the core from `Context`, and
+   `TOPIC` as the api's constant whenever the feature has a topic, even
+   with no state to send on subscribe), and `pub fn answer(daemon, caller,
+   command) -> Answer` for the api's `Command`. It only adapts the core to novad's
+   `App`, `Context` and `Daemon`, so IMP-381 can turn novad into `app`
+   without moving logic again. The registry line in `modules/mod.rs` keeps
+   its place.
+4. **The shared lists.** These are where parallel moves meet, so each entry
+   goes in a fixed place:
+   - `Cargo.toml` `[workspace.dependencies]`: the two crates in the feature
+     block at its end, sorted by feature id (`nova-<id>-api`, then
+     `nova-<id>`). `members` already has the globs.
+   - `crates/novad/Cargo.toml`: both crates in the allowed list and in
+     `[dependencies]`, in alphabetical order.
+   - `crates/novad/src/requests.rs` `router()`: one
+     `.route::<nova_<id>_api::Command>(crate::<id>::answer, |_, _, _| {})`
+     after the `Shared` route, the feature routes sorted by feature id (the
+     router lists names in protocol.js's order, so errors don't move). Its
+     arms leave `answer` and `follow_up`, and its `fn <id>()` lookup goes.
+     A module's topic needs no line in `follow_up`: its catch-all asks the
+     modules (`Module::TOPIC`), and `each_topic_has_one_owner` checks it.
+   - `crates/novad/src/topics.rs` `TOPICS`: the api's constant replaces the
+     shared one in its place, never moved or appended.
+   - `crates/novad/src/protocol_js.rs` `events()`: the api's `Event` after
+     the shared one, sorted by feature id.
+   - `crates/nova-cli`: the api's `Command` as a variant of `ipc.rs`'s
+     `IpcCommand` (with its branch in `parse`), and its `Event` as a variant
+     of `client.rs`'s `Sent`, both after `Shared`, sorted by feature id; the
+     crate on both allowed lists. A CLI command that sent or read the moved
+     messages matches the new variant.
+   - `crates/nova-protocol`: the wire format snapshot keeps its lines, now
+     built from the api's types (a dev-dependency, alphabetical);
+     `tests/decode_request.rs` gets a strategy and round trip for the
+     feature's commands.
+   Done when `rg 'nova_protocol::.*<moved name>'` finds nothing and
+   `cargo test -p novad requests::tests::every_command_has_one_route`
+   passes.
+5. **Check.** `just check` (layout, clippy, every test), and
+   `git diff main -- ui/daemon/protocol.js` shows nothing: the generator
+   keeps each name where the file has it. The wire format snapshot is
+   unchanged. Test-only helpers that cross crates go behind a
+   `test-support` cargo feature. Done when all of these hold.
+
 ## Engineering principles
 
 - One source of truth. A value used in more than one place (a color, size,
   duration, timeout, socket path, command name, event name) is defined once
   and referenced everywhere else: design values in `theme/Tokens.qml`, wire
-  names in `nova-protocol` (the envelope and the log feed in
-  `nova-carrier`), Rust constants in the crate that owns them.
-  Never copy a literal into a second file. The wire names in
-  `ui/daemon/protocol.js` are generated from `nova-protocol`: change the
-  Rust types, then run `just protocol-js`.
+  names in the feature's api crate, or `nova-protocol` until it moves (the
+  envelope and the log feed in `nova-carrier`), Rust constants in the crate
+  that owns them. Never copy a literal into a second file. The wire names in
+  `ui/daemon/protocol.js` are generated from the types novad serves: change
+  the Rust types, then run `just protocol-js`.
 - Each crate, module and QML file opens with a comment saying what it does
   and how. Read it before changing that code and keep it true in the same
   change.

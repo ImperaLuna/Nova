@@ -1,0 +1,34 @@
+# Allowed outside crates:
+# - libc
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-hub
+# - nova-log
+# - nova-paths
+# - nova-process
+# - nova-resources-api
+
+[package]
+name = "nova-resources"
+description = "What the machine is busy with: samples CPU, memory, GPU, temperature and the busiest apps, and ends an app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-resources-api.workspace = true
+nova-base.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+nova-paths.workspace = true
+nova-process.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

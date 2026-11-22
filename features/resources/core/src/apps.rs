@@ -4,7 +4,7 @@
 //! its processes to close.
 
 use super::usage::Process;
-use nova_protocol::AppUsage;
+use nova_resources_api::AppUsage;
 use std::collections::HashMap;
 use std::path::Path;
 

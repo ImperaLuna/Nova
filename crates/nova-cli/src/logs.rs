@@ -1,8 +1,8 @@
 //! `nova logs`: novad's and the UI's log, live from novad or from its files.
 
-use crate::client::Client;
+use crate::client::{Client, Sent};
 use crate::status::printable;
-use nova_protocol::{Command, Event, LogEntry, LogLevel, Topic, UI_LOG_SOURCE};
+use nova_protocol::{Command, Event, LogEntry, LogLevel, UI_LOG_SOURCE, topics};
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
@@ -116,10 +116,10 @@ struct Printer {
 
 impl Printer {
     fn follow(&mut self, mut client: Client, history: usize) -> Result<(), String> {
-        client.request(Command::Subscribe { topics: vec![Topic::Logs] })?;
+        client.request(Command::Subscribe { topics: vec![topics::LOGS.name().into()] })?;
         client.follow()?;
         while let Some(event) = client.next_event()? {
-            let Event::Logs(nova_protocol::Logs { backlog, entries }) = event else { continue };
+            let Sent::Shared(Event::Logs(nova_protocol::Logs { backlog, entries })) = event else { continue };
             let kept: Vec<&LogEntry> = entries.iter().filter(|entry| self.filter.keeps(entry)).collect();
             let skip = if backlog { kept.len().saturating_sub(history) } else { 0 };
             for entry in &kept[skip..] {

@@ -528,6 +528,7 @@
                   ./packaging
                   ./crates/novad/src
                   ./framework
+                  ./features
                 ];
               }
             }/. src

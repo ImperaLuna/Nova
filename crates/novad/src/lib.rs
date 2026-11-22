@@ -6,16 +6,18 @@
 //! top of this.
 //!
 //! Adding a feature with its own daemon service and event topic touches, end
-//! to end (`ai_usage` is the worked example):
+//! to end (`resources` is the worked example; AGENTS.md's "Moving a feature
+//! out of novad" lists the shared files and where each entry goes):
 //! - `features/<id>/feature.toml`: the feature, its dependencies, `daemon = "<id>"`.
-//! - Its own module folder, with an `impl Module` (`modules`): how it
-//!   starts, what its options are, what a new subscriber gets, how it stops.
-//! - `modules/mod.rs`: one line in the `modules!` registry.
-//! - `nova-protocol`: the `Topic`, the `Event` and any `Command`s, plus the
-//!   wire format snapshot.
+//! - `features/<id>/api`: its topic constant, its `Event` and `Command`s;
+//!   `features/<id>/core`: its work.
+//! - Its wiring file here, with an `impl Module` (`modules`) over the core
+//!   and the answers to its commands (through `Daemon::module`, which
+//!   answers when the feature isn't ready).
+//! - `modules/mod.rs`: one line in the `modules!` registry; `requests.rs`:
+//!   its route; `topics.rs`: its topic.
 //! - `config.rs`: its `[<id>]` options in config.toml, if any.
-//! - `server.rs`: its commands (through `Daemon::module`, which answers
-//!   when the feature isn't ready) and its topic among the modules'.
+//! - The wire format snapshot in `nova-protocol`.
 //! - `just protocol-js` (regenerates the names in `ui/daemon/protocol.js`) and
 //!   `Daemon.qml` (subscribe, keep the event's data).
 //! - A QML service singleton beside the feature's components
@@ -38,6 +40,8 @@ mod notifications;
 mod nova_files;
 mod peripherals;
 mod power;
+#[cfg(test)]
+mod protocol_js;
 mod recording;
 mod render_loop;
 mod requests;
@@ -46,6 +50,7 @@ mod screenshot;
 mod session_lock;
 mod settings;
 mod supervisor;
+mod topics;
 mod tray;
 mod wallpaper;
 mod wallpaper_folder;

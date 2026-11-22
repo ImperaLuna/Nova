@@ -30,7 +30,7 @@ if ((${#pipefail_scripts[@]})); then
 fi
 
 report "a novad test asserting that no event came at all" "use hub::count_named for the event that mustn't come" \
-  "$(grep -rnE 'try_recv\(\)\.is_err\(\)|try_iter\(\)\.any\(' crates/novad/src framework || true)"
+  "$(grep -rnE 'try_recv\(\)\.is_err\(\)|try_iter\(\)\.any\(' crates/novad/src framework features || true)"
 
 if ((failed)); then exit 1; fi
 echo "lint-traps: nothing found"

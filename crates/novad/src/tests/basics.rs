@@ -57,15 +57,34 @@ fn bad_requests_get_an_error_when_they_have_an_id() {
 }
 
 /// The router's error for a command nobody serves is the one decoding the
-/// whole command list gives, word for word.
+/// whole command list gives, word for word: every command, in the order
+/// protocol.js names them, however many routes serve them.
 #[test]
 fn an_unknown_command_gets_the_decoders_error() {
     let novad = TestDaemon::start("unknown", None);
     let mut client = novad.connect();
-    let request = json!({"v": 2, "id": 5, "cmd": "reboot"});
-    client.send(&request);
-    let decoded = nova_protocol::decode_request(&request.to_string()).unwrap_err();
+    client.send(&json!({"v": 2, "id": 5, "cmd": "reboot"}));
+    let protocol_js =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/daemon/protocol.js"));
+    let named: Vec<String> = protocol_js
+        .unwrap()
+        .lines()
+        .filter_map(|line| Some(format!("`{}`", line.strip_prefix("var CMD_")?.split('"').nth(1)?)))
+        .collect();
+    let decoded = format!("unknown variant `reboot`, expected one of {}", named.join(", "));
     assert_eq!(client.next()["error"], format!("bad request: {decoded}"));
+}
+
+/// A topic novad doesn't serve makes `subscribe` a bad request, with the
+/// error serde gives for an unknown variant, so nothing is subscribed.
+#[test]
+fn an_unknown_topic_is_a_bad_request() {
+    let novad = TestDaemon::start("unknown-topic", None);
+    let mut client = novad.connect();
+    client.send(&json!({"v": 2, "id": 6, "cmd": "subscribe", "args": {"topics": ["features", "weather"]}}));
+    let error = client.next()["error"].as_str().unwrap().to_owned();
+    assert!(error.starts_with("bad request: unknown variant `weather`, expected one of `features`, `logs`"), "{error}");
+    assert!(error.contains("`host`, `resources`, `launcher`"), "{error}");
 }
 
 #[test]

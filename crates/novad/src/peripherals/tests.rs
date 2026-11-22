@@ -25,7 +25,7 @@ use crate::icons::Icons;
 use crate::notifications::{self, Notifications};
 use crate::session_bus::TestBus;
 use fake_hidraw::FakeHidraw;
-use nova_protocol::{LogLevel, Topic};
+use nova_protocol::{LogLevel, topics};
 use nova_test_support::{TempDir, wait_until, write_program};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -107,7 +107,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
-        hub.subscribe(id, Topic::Peripherals);
+        hub.subscribe(id, topics::PERIPHERALS);
         for folder in ["sys", "bin", "usb/001"] {
             std::fs::create_dir_all(dir.join(folder)).unwrap();
         }
@@ -144,7 +144,7 @@ impl Fixture {
             Arc::clone(&self.hub),
             Arc::clone(&self.logger),
         );
-        self.hub.subscribe(self.client, Topic::Notifications);
+        self.hub.subscribe(self.client, topics::NOTIFICATIONS);
         peripherals.set_notifications(Some(&server));
         server
     }
