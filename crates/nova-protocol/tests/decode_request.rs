@@ -3,10 +3,8 @@
 //! and hostile input must only ever give an error, and the valid requests
 //! that do decode must be exactly what a client meant to send.
 
-use nova_protocol::{
-    AiProvider, Command, PROTOCOL_VERSION, PairingAnswer, Request, Step, UsageLimit, UsageWindow, decode_request,
-    encode, topics,
-};
+use nova_ai_usage_api::{AiProvider, UsageLimit, UsageWindow};
+use nova_protocol::{Command, PROTOCOL_VERSION, PairingAnswer, Request, Step, decode_request, encode, topics};
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
 
@@ -55,8 +53,10 @@ const NAMES: &[&str] = &[
 ];
 
 fn topic() -> impl Strategy<Value = String> {
-    proptest::sample::select(&[topics::FEATURES, topics::LOGS, topics::THEME, topics::AI_USAGE, topics::COMPOSITOR][..])
-        .prop_map(|topic| topic.name().to_string())
+    proptest::sample::select(
+        &[topics::FEATURES, topics::LOGS, topics::THEME, nova_ai_usage_api::TOPIC, topics::COMPOSITOR][..],
+    )
+    .prop_map(|topic| topic.name().to_string())
 }
 
 fn usage_limit() -> impl Strategy<Value = UsageLimit> {
@@ -74,17 +74,25 @@ fn command() -> impl Strategy<Value = Command> {
         Just(Command::ListFeatures),
         Just(Command::Status),
         Just(Command::Quit),
-        Just(Command::RefreshAiUsage),
         proptest::collection::vec(topic(), 0..6).prop_map(|topics| Command::Subscribe { topics }),
-        prop_oneof![Just(AiProvider::Claude), Just(AiProvider::Codex)]
-            .prop_map(|provider| Command::ShowAiUsage { provider }),
-        proptest::collection::vec(usage_limit(), 0..4).prop_map(|limits| Command::ReportClaudeUsage { limits }),
         any::<i64>().prop_map(|id| Command::FocusWorkspace { id }),
         (any::<String>(), prop_oneof![Just(Step::Next), Just(Step::Previous)])
             .prop_map(|(output, step)| Command::StepWorkspace { output, step }),
         ".*".prop_map(|address| Command::BluetoothConnect { address }),
         (any::<u64>(), pairing_answer()).prop_map(|(id, answer)| Command::BluetoothAnswer { id, answer }),
     ]
+}
+
+/// The AI usage feature's commands, which it owns (`nova-ai-usage-api`).
+fn ai_usage_request() -> impl Strategy<Value = nova_carrier::Request<nova_ai_usage_api::Command>> {
+    use nova_ai_usage_api::Command;
+    let command = prop_oneof![
+        Just(Command::RefreshAiUsage),
+        prop_oneof![Just(AiProvider::Claude), Just(AiProvider::Codex)]
+            .prop_map(|provider| Command::ShowAiUsage { provider }),
+        proptest::collection::vec(usage_limit(), 0..4).prop_map(|limits| Command::ReportClaudeUsage { limits }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
 /// The launcher feature's commands, which it owns (`nova-launcher-api`).
@@ -248,6 +256,12 @@ proptest! {
     fn every_request_round_trips(request in request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_ai_usage_request_round_trips(request in ai_usage_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }
 
     #[test]

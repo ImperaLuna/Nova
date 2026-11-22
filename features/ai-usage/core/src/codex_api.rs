@@ -9,7 +9,7 @@ use super::codex::{self, Window};
 use super::display_plan;
 use super::endpoint::{self, Problem};
 use jiff::Timestamp;
-use nova_protocol::{UsageLimit, UsageWindow};
+use nova_ai_usage_api::{UsageLimit, UsageWindow};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 

@@ -58,7 +58,7 @@ mod x11_tray;
 // The shared helpers, moved to framework crates (IMP-371), keep their old
 // paths inside novad so its modules name them as before.
 pub use nova_base::lock;
-use nova_base::{backoff, reply_slot, state_file};
+use nova_base::{backoff, reply_slot};
 use nova_inotify as inotify;
 use nova_process::{child, notify, procfs};
 use nova_session_bus as session_bus;
