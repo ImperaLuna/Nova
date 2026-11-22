@@ -51,6 +51,7 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
 enum IpcCommand {
     Shared(Command),
     Resources(nova_resources_api::Command),
+    Tray(nova_tray_api::Command),
 }
 
 /// The command `name` with `args`, as novad would read it off the socket.
@@ -61,6 +62,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     }
     let read = if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Resources)
+    } else if tagged_names_of::<nova_tray_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Tray)
     } else {
         serde_json::from_value(request).map(IpcCommand::Shared)
     };

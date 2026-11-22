@@ -31,7 +31,12 @@ pub const END: &str = "// END GENERATED";
 /// The names of every event type novad sends: the shared `Event`, then each
 /// moved feature's, by feature name.
 fn events() -> Vec<&'static str> {
-    [tagged_names_of::<Event>("event"), tagged_names_of::<nova_resources_api::Event>("event")].concat()
+    [
+        tagged_names_of::<Event>("event"),
+        tagged_names_of::<nova_resources_api::Event>("event"),
+        tagged_names_of::<nova_tray_api::Event>("event"),
+    ]
+    .concat()
 }
 
 /// One group of `var <PREFIX>_<NAME> = "<name>";` lines.

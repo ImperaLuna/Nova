@@ -68,6 +68,8 @@ nova-compositor = { path = "framework/compositor" }
 nova-test-support = { path = "framework/test-support" }
 nova-resources-api = { path = "features/resources/api" }
 nova-resources = { path = "features/resources/core" }
+nova-tray-api = { path = "features/tray/api" }
+nova-tray = { path = "features/tray/core" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

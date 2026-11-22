@@ -161,6 +161,7 @@ const HUNG_UP: &str = "novad closed the connection";
 pub enum Sent {
     Shared(Event),
     Resources(nova_resources_api::Event),
+    Tray(nova_tray_api::Event),
 }
 
 enum Message {

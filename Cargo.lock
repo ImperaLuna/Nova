@@ -786,6 +786,7 @@ dependencies = [
  "nova-quickshell",
  "nova-resources-api",
  "nova-test-support",
+ "nova-tray-api",
  "novad",
  "serde",
  "serde_json",
@@ -912,6 +913,7 @@ dependencies = [
  "nova-host",
  "nova-resources-api",
  "nova-theme",
+ "nova-tray-api",
  "proptest",
  "serde",
  "serde_json",
@@ -999,6 +1001,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-tray"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "nova-apps",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-process",
+ "nova-session-bus",
+ "nova-test-support",
+ "nova-tray-api",
+ "serde",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
+name = "nova-tray-api"
+version = "0.1.0"
+dependencies = [
+ "nova-apps",
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
 name = "nova-watch"
 version = "0.1.0"
 dependencies = [
@@ -1044,6 +1074,8 @@ dependencies = [
  "nova-socket",
  "nova-test-support",
  "nova-theme",
+ "nova-tray",
+ "nova-tray-api",
  "pbkdf2",
  "png",
  "ruzstd",
