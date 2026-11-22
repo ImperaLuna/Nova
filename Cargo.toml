@@ -84,6 +84,8 @@ nova-nova-files = { path = "features/nova-files/core" }
 nova-peripherals = { path = "features/peripherals/core" }
 nova-power-api = { path = "features/power/api" }
 nova-power = { path = "features/power/core" }
+nova-recording-api = { path = "features/recording/api" }
+nova-recording = { path = "features/recording/core" }
 nova-resources-api = { path = "features/resources/api" }
 nova-resources = { path = "features/resources/core" }
 nova-screenshot-api = { path = "features/screenshot/api" }

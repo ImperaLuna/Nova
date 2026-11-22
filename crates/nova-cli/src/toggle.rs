@@ -85,6 +85,6 @@ pub fn screenshot(args: &ScreenshotArgs, socket: &Path) -> Result<(), String> {
 }
 
 pub fn record(socket: &Path) -> Result<(), String> {
-    Client::connect(socket)?.request(Command::Record)?;
+    Client::connect(socket)?.request(nova_recording_api::Command::Record)?;
     Ok(())
 }

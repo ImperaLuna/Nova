@@ -826,6 +826,7 @@ dependencies = [
  "nova-power-api",
  "nova-protocol",
  "nova-quickshell",
+ "nova-recording-api",
  "nova-resources-api",
  "nova-screenshot-api",
  "nova-test-support",
@@ -1181,6 +1182,7 @@ dependencies = [
  "nova-nova-files-api",
  "nova-peripherals-api",
  "nova-power-api",
+ "nova-recording-api",
  "nova-resources-api",
  "nova-screenshot-api",
  "nova-theme",
@@ -1197,6 +1199,37 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "toml",
+]
+
+[[package]]
+name = "nova-recording"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nova-apps",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-modules",
+ "nova-paths",
+ "nova-process",
+ "nova-recording-api",
+ "nova-screenshot",
+ "nova-settings",
+ "nova-test-support",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nova-recording-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "nova-screenshot-api",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1426,6 +1459,8 @@ dependencies = [
  "nova-process",
  "nova-protocol",
  "nova-quickshell",
+ "nova-recording",
+ "nova-recording-api",
  "nova-resources",
  "nova-resources-api",
  "nova-screenshot",

@@ -20,6 +20,7 @@
 # - nova-protocol
 # - nova-quickshell
 # - nova-network-api
+# - nova-recording-api
 # - nova-resources-api
 # - nova-screenshot-api
 # - nova-tray-api
@@ -49,6 +50,7 @@ nova-network-api.workspace = true
 nova-notifications-api.workspace = true
 nova-peripherals-api.workspace = true
 nova-power-api.workspace = true
+nova-recording-api.workspace = true
 nova-resources-api.workspace = true
 nova-screenshot-api.workspace = true
 nova-tray-api.workspace = true

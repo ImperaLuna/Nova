@@ -50,6 +50,8 @@
 # - nova-process
 # - nova-protocol
 # - nova-quickshell
+# - nova-recording
+# - nova-recording-api
 # - nova-resources
 # - nova-resources-api
 # - nova-screenshot
@@ -105,6 +107,8 @@ nova-peripherals.workspace = true
 nova-peripherals-api.workspace = true
 nova-power.workspace = true
 nova-power-api.workspace = true
+nova-recording.workspace = true
+nova-recording-api.workspace = true
 nova-resources.workspace = true
 nova-resources-api.workspace = true
 nova-screenshot.workspace = true

@@ -58,17 +58,6 @@ pub enum Event {
     /// Change the default output's volume as `nova volume` asks, and show
     /// the volume capsule. Topic [`topics::VOLUME`].
     Volume { key: VolumeKey },
-    /// `nova record` while nothing is being recorded (feature `recording`):
-    /// the UI opens the region picker to pick what to record, or closes it
-    /// when it's open. Topic [`topics::RECORDING`].
-    PickRecording,
-    /// What's being recorded, or `null` once nothing is (feature
-    /// `recording`). Topic [`topics::RECORDING`], sent right after subscribing
-    /// and whenever it starts, stops or pauses.
-    Recording(Option<ActiveRecording>),
-    /// A recording was saved (feature `recording`). `id` names it in
-    /// `recording_action`. Topic [`topics::RECORDING`].
-    RecordingSaved(SavedRecording),
     /// The machine and its user, for the quick settings header. Topic
     /// [`topics::HOST`], sent right after subscribing.
     Host(Host),
@@ -97,7 +86,6 @@ pub mod topics {
     pub const COMPOSITOR: Topic = nova_compositor::TOPIC;
     pub const TOGGLE: Topic = Topic::named("toggle");
     pub const VOLUME: Topic = Topic::named("volume");
-    pub const RECORDING: Topic = Topic::named("recording");
     pub const HOST: Topic = Topic::named("host");
     pub const BLUETOOTH: Topic = Topic::named("bluetooth");
 }
@@ -114,7 +102,6 @@ impl Event {
             Event::Compositor(_) => Some(topics::COMPOSITOR),
             Event::Toggle { .. } => Some(topics::TOGGLE),
             Event::Volume { .. } => Some(topics::VOLUME),
-            Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
             Event::Host(_) => Some(topics::HOST),
             Event::Bluetooth(_) => Some(topics::BLUETOOTH),
         }
@@ -358,52 +345,6 @@ pub enum VolumeKey {
     Mute,
 }
 
-/// A rectangle in the compositor's layout, in logical pixels: where
-/// outputs sit side by side (`screen.x` and `screen.y` in Quickshell).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LayoutRect {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
-}
-
-/// The sound a recording takes, mixed into one track.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordAudio {
-    /// What the default output plays.
-    #[serde(default)]
-    pub desktop: bool,
-    /// The default input.
-    #[serde(default)]
-    pub mic: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ActiveRecording {
-    /// The output it's on.
-    pub output: String,
-    /// The part of the layout recorded, or `null` for the whole output.
-    pub region: Option<LayoutRect>,
-    pub audio: RecordAudio,
-    /// How much has been recorded when this was sent, pauses left out.
-    pub elapsed_ms: u64,
-    pub paused: bool,
-    /// The recorder can pause (gpu-screen-recorder can, wf-recorder can't).
-    pub can_pause: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SavedRecording {
-    pub id: u64,
-    /// Where it was saved.
-    pub path: String,
-    /// How long it plays.
-    pub duration_ms: u64,
-}
-
 /// Sent by the UI or the `nova` CLI. Arguments with unknown fields are
 /// refused, like unknown fields on the request line itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -445,33 +386,6 @@ pub enum Command {
     Volume {
         key: VolumeKey,
     },
-    /// `nova record` (feature `recording`): stops the recording, or when
-    /// nothing is being recorded asks the UI to open the region picker for
-    /// one (`pick_recording`). Fails when no UI is connected for that.
-    Record,
-    /// Starts recording `output`, or `region` of the layout on it (the UI,
-    /// after its countdown). Answers once the recorder has started.
-    StartRecording {
-        output: String,
-        region: Option<LayoutRect>,
-        #[serde(default)]
-        audio: RecordAudio,
-    },
-    /// Stops the recording and saves it (the bar's recording pill).
-    StopRecording,
-    /// Pauses or resumes the recording, when the recorder can.
-    PauseRecording {
-        paused: bool,
-    },
-    /// Opens, shows the folder of or deletes a recording saved since novad
-    /// started (the recording card).
-    RecordingAction {
-        id: u64,
-        action: nova_screenshot_api::ScreenshotAction,
-    },
-    /// Opens novad's log (feature `recording`: the recording card's Open log,
-    /// after a recording didn't start).
-    OpenLog,
     /// Turns Bluetooth on or off (feature `bluetooth`). On also lifts a
     /// software block (rfkill); a hardware switch is refused.
     BluetoothPower {
@@ -588,6 +502,7 @@ mod tests {
     #[test]
     fn wire_format() {
         use nova_power_api::{PowerAction, PowerMenu, PowerOption};
+        use nova_recording_api::{ActiveRecording, LayoutRect, RecordAudio, SavedRecording};
         use nova_screenshot_api::{CaptureFrame, CaptureMode, PixelRect, SavedScreenshot, ScreenshotAction};
         let lines = [
             encode(Event::Hello { daemon: "0.1.0".into() }),
@@ -638,7 +553,7 @@ mod tests {
                         nova_lock_api::TOPIC,
                         topics::VOLUME,
                         nova_screenshot_api::TOPIC,
-                        topics::RECORDING,
+                        nova_recording_api::TOPIC,
                         topics::HOST,
                         nova_resources_api::TOPIC,
                         nova_launcher_api::TOPIC,
@@ -758,17 +673,18 @@ mod tests {
                 id: None,
                 command: nova_screenshot_api::Command::ScreenshotAction { id: 1, action: ScreenshotAction::Delete },
             }),
-            encode(Request { id: Some(35), command: Command::Record }),
-            encode(Event::PickRecording),
-            encode(Request {
+            // The recording feature's own messages (`nova-recording-api`), still on this one wire.
+            encode(nova_carrier::Request { id: Some(35), command: nova_recording_api::Command::Record }),
+            encode(nova_recording_api::Event::PickRecording),
+            encode(nova_carrier::Request {
                 id: Some(36),
-                command: Command::StartRecording {
+                command: nova_recording_api::Command::StartRecording {
                     output: "DP-1".into(),
                     region: Some(LayoutRect { x: 2560, y: -40, width: 960, height: 540 }),
                     audio: RecordAudio { desktop: true, mic: false },
                 },
             }),
-            encode(Event::Recording(Some(ActiveRecording {
+            encode(nova_recording_api::Event::Recording(Some(ActiveRecording {
                 output: "DP-1".into(),
                 region: Some(LayoutRect { x: 2560, y: -40, width: 960, height: 540 }),
                 audio: RecordAudio { desktop: true, mic: false },
@@ -776,16 +692,22 @@ mod tests {
                 paused: false,
                 can_pause: true,
             }))),
-            encode(Request { id: Some(37), command: Command::PauseRecording { paused: true } }),
-            encode(Request { id: Some(38), command: Command::StopRecording }),
-            encode(Event::Recording(None)),
-            encode(Event::RecordingSaved(SavedRecording {
+            encode(nova_carrier::Request {
+                id: Some(37),
+                command: nova_recording_api::Command::PauseRecording { paused: true },
+            }),
+            encode(nova_carrier::Request { id: Some(38), command: nova_recording_api::Command::StopRecording }),
+            encode(nova_recording_api::Event::Recording(None)),
+            encode(nova_recording_api::Event::RecordingSaved(SavedRecording {
                 id: 1,
                 path: "/home/me/Videos/Recordings/Recording 2026-10-25 18-03-41.mp4".into(),
                 duration_ms: 42_000,
             })),
-            encode(Request { id: None, command: Command::RecordingAction { id: 1, action: ScreenshotAction::Open } }),
-            encode(Request { id: None, command: Command::OpenLog }),
+            encode(nova_carrier::Request {
+                id: None,
+                command: nova_recording_api::Command::RecordingAction { id: 1, action: ScreenshotAction::Open },
+            }),
+            encode(nova_carrier::Request { id: None, command: nova_recording_api::Command::OpenLog }),
             encode(Event::Host(host())),
             // The resources feature's own messages (`nova-resources-api`), still on this one wire.
             encode(nova_carrier::Request {
@@ -1568,7 +1490,6 @@ mod tests {
         assert_eq!(Event::Compositor(desktop()).topic(), Some(topics::COMPOSITOR));
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(topics::TOGGLE));
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(topics::VOLUME));
-        assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));
         assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
         assert_eq!(Event::Bluetooth(bluetooth()).topic(), Some(topics::BLUETOOTH));
     }

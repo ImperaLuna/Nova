@@ -1,0 +1,46 @@
+# Allowed outside crates:
+# - libc
+# - serde
+#
+# Allowed workspace crates:
+# - nova-apps
+# - nova-base
+# - nova-hub
+# - nova-log
+# - nova-modules
+# - nova-paths
+# - nova-process
+# - nova-recording-api
+# - nova-settings
+
+[package]
+name = "nova-recording"
+description = "Screen recording: runs gpu-screen-recorder or wf-recorder, saves what it wrote, and the card's buttons"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-recording-api.workspace = true
+nova-apps.workspace = true
+nova-base.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+nova-modules.workspace = true
+nova-paths.workspace = true
+nova-process.workspace = true
+nova-settings.workspace = true
+libc.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-hub = { workspace = true, features = ["test-support"] }
+# Fills the SavedFiles port in tests the way the app does.
+nova-screenshot.workspace = true
+nova-test-support.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
