@@ -17,10 +17,9 @@
 //! rest of it after what's typed.
 
 use super::NovaFiles;
-use crate::launcher::MAX_MATCHES;
-use crate::launcher::providers::{Provider, Run};
 use crate::mime::{DIRECTORY, MimeDb};
-use nova_protocol::{LauncherFile, LauncherItem, TextMark, TextRun, wire_path, wire_text};
+use nova_launcher::providers::{Provider, Run};
+use nova_launcher_api::{LauncherFile, LauncherItem, MAX_MATCHES, TextMark, TextRun, wire_path, wire_text};
 use std::path::{Component, Path};
 
 /// How a typed path names Home.

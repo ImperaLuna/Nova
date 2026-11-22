@@ -781,6 +781,7 @@ dependencies = [
  "jiff",
  "nova-carrier",
  "nova-features",
+ "nova-launcher-api",
  "nova-paths",
  "nova-protocol",
  "nova-quickshell",
@@ -855,6 +856,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-launcher"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "nova-apps",
+ "nova-base",
+ "nova-carrier",
+ "nova-compositor",
+ "nova-hub",
+ "nova-launcher-api",
+ "nova-log",
+ "nova-modules",
+ "nova-paths",
+ "nova-process",
+ "nova-test-support",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nova-launcher-api"
+version = "0.1.0"
+dependencies = [
+ "nova-apps",
+ "nova-carrier",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-log"
 version = "0.1.0"
 dependencies = [
@@ -910,6 +941,7 @@ dependencies = [
  "nova-carrier",
  "nova-compositor",
  "nova-host",
+ "nova-launcher-api",
  "nova-resources-api",
  "nova-theme",
  "proptest",
@@ -1030,6 +1062,8 @@ dependencies = [
  "nova-hub",
  "nova-icons",
  "nova-inotify",
+ "nova-launcher",
+ "nova-launcher-api",
  "nova-log",
  "nova-mime",
  "nova-modules",
