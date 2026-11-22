@@ -19,6 +19,7 @@
 //! screenshots are, through the [`SavedFiles`] port the app fills.
 
 use nova_base::lock;
+use nova_base::reply_slot::Slot;
 use nova_hub::{ClientId, Hub};
 use nova_log::Logger;
 use nova_process::child;
@@ -44,7 +45,7 @@ const WF_RECORDER: &str = "wf-recorder";
 const START_GRACE: Duration = Duration::from_millis(800);
 /// How long a stopped recorder may take to finish the file before it's
 /// killed.
-const FINISH_TIMEOUT: Duration = Duration::from_secs(10);
+const FINISH_TIMEOUT: Duration = if cfg!(test) { Duration::from_secs(1) } else { Duration::from_secs(10) };
 /// What starts the line saying why, in either recorder's errors
 /// (`gsr error: …`, `wf-recorder: error: …`); the earlier lines are warnings
 /// and progress.
@@ -158,6 +159,8 @@ struct Active {
     paused_for: Duration,
     /// Asked to finish.
     stopping: bool,
+    /// Resolved by its keeper once the recorder exits.
+    exited: Arc<Slot<()>>,
 }
 
 impl Active {
@@ -253,7 +256,9 @@ impl Recordings {
         // reaches novad, whose exit stops it the same way.
         command.process_group(0);
         let (started, start_result) = mpsc::channel();
+        let exited = Arc::new(Slot::default());
         let keeper = Keeper {
+            exited: Arc::clone(&exited),
             state: Arc::clone(&self.state),
             hub: Arc::clone(&self.hub),
             logger: Arc::clone(&self.logger),
@@ -282,6 +287,7 @@ impl Recordings {
             paused_since: None,
             paused_for: Duration::ZERO,
             stopping: false,
+            exited,
         };
         self.logger.info(
             LOG_SOURCE,
@@ -318,9 +324,12 @@ impl Recordings {
         // A paused gpu-screen-recorder finishes all the same.
         active.signal(libc::SIGINT);
         let run = active.run;
+        let exited = Arc::clone(&active.exited);
         let state = Arc::clone(&self.state);
         std::thread::spawn(move || {
-            std::thread::sleep(FINISH_TIMEOUT);
+            if exited.wait_for(FINISH_TIMEOUT).is_some() {
+                return;
+            }
             if let Some(active) = lock(&state).active.as_ref().filter(|active| active.run == run) {
                 active.signal(libc::SIGKILL);
             }
@@ -442,6 +451,8 @@ impl Recorder {
 /// when novad does. It says whether the recorder started, then waits for it
 /// to exit and finishes the recording.
 struct Keeper {
+    /// Resolved once the recorder exits.
+    exited: Arc<Slot<()>>,
     state: Arc<Mutex<State>>,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
@@ -483,6 +494,7 @@ impl Keeper {
         // longer active and nothing signals it any more.
         // Only fails for a pid that isn't a child, which this one is.
         let _ = child::wait_for_exit(pid.cast_unsigned());
+        self.exited.resolve(());
         let active = {
             let mut state = lock(&self.state);
             let active = state.active.take_if(|active| active.run == self.run);
@@ -777,6 +789,17 @@ mod tests {
         assert!(lock(&fixture.recordings.state).active.is_some(), "the recorder stopped with its thread");
         let file = fixture.folder().join(&fixture.files()[0]);
         assert_eq!(std::fs::read_to_string(file).unwrap(), "frames\n", "it was told to finish");
+    }
+
+    #[test]
+    fn a_recorder_that_ignores_the_stop_is_killed_at_the_finish_timeout() {
+        let fixture = Fixture::new("stubborn", GPU_SCREEN_RECORDER, "trap '' INT\nwhile :; do sleep 0.02; done");
+        fixture.start(None, RecordAudio::default()).unwrap();
+        fixture.next_event();
+        let stopped = Instant::now();
+        fixture.recordings.stop().unwrap();
+        assert_eq!(fixture.next_event()["data"], serde_json::Value::Null, "it ended");
+        assert!(stopped.elapsed() >= FINISH_TIMEOUT, "killed only at the timeout: {:?}", stopped.elapsed());
     }
 
     #[test]

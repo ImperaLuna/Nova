@@ -125,6 +125,7 @@ pub fn holds_within(timeout: Duration, mut check: impl FnMut() -> bool) -> bool 
 /// that paces what it does. The one place tests wait on the clock: a wait
 /// for something to happen is [`eventually`], [`found_within`] or
 /// [`holds_within`].
+#[expect(clippy::disallowed_methods, reason = "tests wait out quiet times and poll here, and only here")]
 pub fn settle(time: Duration) {
     std::thread::sleep(time);
 }

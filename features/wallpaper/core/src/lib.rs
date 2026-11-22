@@ -935,7 +935,7 @@ impl Shared {
                     return Ok(found);
                 }
                 answered = Some(found);
-                std::thread::sleep(READY_POLL);
+                nova_base::backoff::wait_out(READY_POLL);
                 continue;
             }
             if lock(&self.state).daemon.pid.is_none() {
@@ -951,7 +951,7 @@ impl Shared {
                     Err(e) => e.to_string(),
                 });
             }
-            std::thread::sleep(READY_POLL);
+            nova_base::backoff::wait_out(READY_POLL);
         }
     }
 }

@@ -119,7 +119,7 @@ impl Compositor {
                         logger.warn(LOG_SOURCE, &format!("lost {name}, trying again in {}s: {e}", wait.as_secs()))
                     }
                 }
-                std::thread::sleep(wait);
+                nova_base::backoff::wait_out(wait);
             }
         });
         compositor

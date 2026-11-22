@@ -1,7 +1,8 @@
 //! A doubling retry wait, for the loops that start something again after it
 //! failed (the UI, compositor IPC, logind, AI usage endpoints), and
 //! [`Restarts`], the same wait for the programs novad keeps running
-//! (xembedsniproxy, awww, linux-wallpaperengine).
+//! (xembedsniproxy, awww, linux-wallpaperengine), and [`wait_out`], where
+//! those loops wait.
 
 use std::time::{Duration, Instant};
 
@@ -42,6 +43,16 @@ impl Restarts {
         }
         self.backoff.next()
     }
+}
+
+/// Waits out `time` before trying again something that sends no event to
+/// wait on instead (a compositor or logind that isn't up, a program that
+/// says it's ready only when asked). The one place novad waits on the
+/// clock: a wait for something that can happen sooner waits on that thing,
+/// with a timeout.
+#[expect(clippy::disallowed_methods, reason = "retries against what sends no event wait here, and only here")]
+pub fn wait_out(time: Duration) {
+    std::thread::sleep(time);
 }
 
 #[derive(Debug, Clone)]
