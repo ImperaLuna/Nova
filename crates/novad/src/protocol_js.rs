@@ -31,7 +31,12 @@ pub const END: &str = "// END GENERATED";
 /// The names of every event type novad sends: the shared `Event`, then each
 /// moved feature's, by feature name.
 fn events() -> Vec<&'static str> {
-    [tagged_names_of::<Event>("event"), tagged_names_of::<nova_resources_api::Event>("event")].concat()
+    [
+        tagged_names_of::<Event>("event"),
+        tagged_names_of::<nova_network_api::Event>("event"),
+        tagged_names_of::<nova_resources_api::Event>("event"),
+    ]
+    .concat()
 }
 
 /// One group of `var <PREFIX>_<NAME> = "<name>";` lines.
@@ -104,8 +109,16 @@ fn limits() -> [(&'static str, u64, &'static str); 7] {
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
         ("MEDIA_PLAYER_MAX_BYTES", size(MEDIA_PLAYER_MAX_BYTES), "novad refuses longer media player ids."),
-        ("WIFI_PASSWORD_MAX_BYTES", size(WIFI_PASSWORD_MAX_BYTES), "novad refuses longer Wi-Fi passwords."),
-        ("WPA_PASSWORD_MIN_BYTES", size(WPA_PASSWORD_MIN_BYTES), "novad refuses shorter WPA passwords."),
+        (
+            "WIFI_PASSWORD_MAX_BYTES",
+            size(nova_network_api::WIFI_PASSWORD_MAX_BYTES),
+            "novad refuses longer Wi-Fi passwords.",
+        ),
+        (
+            "WPA_PASSWORD_MIN_BYTES",
+            size(nova_network_api::WPA_PASSWORD_MIN_BYTES),
+            "novad refuses shorter WPA passwords.",
+        ),
         (
             "RAW_BYTE_BASE",
             u64::from(RAW_BYTE_BASE),
@@ -114,7 +127,7 @@ fn limits() -> [(&'static str, u64, &'static str); 7] {
         ("REQUEST_MAX_BYTES", REQUEST_MAX_BYTES, "novad closes the connection on a longer request line."),
         (
             "NETWORK_TRAFFIC_HISTORY_SECS",
-            NETWORK_TRAFFIC_HISTORY_SECS,
+            nova_network_api::NETWORK_TRAFFIC_HISTORY_SECS,
             "How far back a network_traffic event's history goes, in seconds (one sample each).",
         ),
     ]
@@ -193,7 +206,7 @@ fn names_follow_serde() {
     assert_eq!(names_of::<Panel>(), Panel::ALL.map(Panel::name));
     let commands = tagged_names_of::<Command>("cmd");
     assert!(commands.contains(&"subscribe"));
-    assert!(tagged_names_of::<Event>("event").contains(&"network_traffic"));
+    assert!(tagged_names_of::<nova_network_api::Event>("event").contains(&"network_traffic"));
 }
 
 #[test]

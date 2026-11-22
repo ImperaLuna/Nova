@@ -9,7 +9,9 @@ use super::manager::{
     self, ACTIVE_STATE_DEACTIVATED, DEVICE, NM, NM_PATH, NO_OBJECT, PROPERTIES, Reading, SETTINGS_CONNECTION, Settings,
     TYPE_WIFI, WIRELESS,
 };
-use nova_protocol::{WIFI_PASSWORD_MAX_BYTES, WIFI_SSID_MAX_BYTES, WPA_PASSWORD_MIN_BYTES, WifiPassword, WifiSecurity};
+use nova_network_api::{
+    WIFI_PASSWORD_MAX_BYTES, WIFI_SSID_MAX_BYTES, WPA_PASSWORD_MIN_BYTES, WifiPassword, WifiSecurity,
+};
 use std::collections::HashMap;
 use zbus::Connection;
 use zbus::wire::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
