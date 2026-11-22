@@ -54,6 +54,7 @@ enum IpcCommand {
     Power(nova_power_api::Command),
     Resources(nova_resources_api::Command),
     Tray(nova_tray_api::Command),
+    Wallpaper(nova_wallpaper_api::Command),
 }
 
 /// The command `name` with `args`, as novad would read it off the socket.
@@ -70,6 +71,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
         serde_json::from_value(request).map(IpcCommand::Resources)
     } else if tagged_names_of::<nova_tray_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Tray)
+    } else if tagged_names_of::<nova_wallpaper_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Wallpaper)
     } else {
         serde_json::from_value(request).map(IpcCommand::Shared)
     };
@@ -101,6 +104,7 @@ mod tests {
             parse("power", Some(r#"{"action": "suspend"}"#)),
             Ok(IpcCommand::Power(nova_power_api::Command::Power { action: nova_power_api::PowerAction::Suspend }))
         );
+        assert_eq!(parse("wallpapers", None), Ok(IpcCommand::Wallpaper(nova_wallpaper_api::Command::Wallpapers)));
         assert!(parse("focus_workspace", Some(r#"{"id": 3, "extra": 1}"#)).is_err());
         assert!(parse("focus_workspace", None).is_err());
         assert!(parse("make_coffee", None).unwrap_err().contains("no such request"));
