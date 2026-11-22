@@ -15,7 +15,7 @@ pub const TOPICS: &[Topic] = &[
     topics::FEATURES,
     topics::LOGS,
     topics::THEME,
-    topics::AI_USAGE,
+    nova_ai_usage_api::TOPIC,
     topics::COMPOSITOR,
     topics::TOGGLE,
     topics::LOCK,

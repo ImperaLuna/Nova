@@ -6,7 +6,7 @@
 //! refreshed: that would rotate the tool's sign-in under it. When it has
 //! expired, the tool renews it the next time it runs.
 
-use nova_protocol::AiProvider;
+use nova_ai_usage_api::AiProvider;
 use serde_json::Value;
 use std::fs::File;
 use std::io::Read;

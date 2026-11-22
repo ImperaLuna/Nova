@@ -20,11 +20,11 @@
 use super::claude_api::{self, Token};
 use super::display_plan;
 use super::endpoint::{self, Problem};
-use crate::session_bus::Bus;
 use aes::cipher::block_padding::Pkcs7;
 use aes::cipher::{BlockModeDecrypt, KeyIvInit};
 use base64::Engine;
 use jiff::Timestamp;
+use nova_session_bus::Bus;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -201,7 +201,7 @@ fn keyring_password(bus: &Bus, stopped: &dyn Fn() -> bool) -> Result<Vec<u8>, Pr
 }
 
 /// `plain` sealed the way the app seals it, with `prefix` and `password`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn seal(prefix: &[u8], password: &[u8], plain: &Value) -> String {
     use aes::cipher::BlockModeEncrypt;
     let key = pbkdf2::pbkdf2_hmac_array::<sha1::Sha1, KEY_BYTES>(password, KEY_SALT, KEY_ROUNDS);
@@ -212,7 +212,7 @@ pub fn seal(prefix: &[u8], password: &[u8], plain: &Value) -> String {
 
 /// The app's config under `config_home` with `cache` sealed as it is
 /// without a keyring, so reading it never asks one.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn write_unsealed_config(config_home: &Path, cache: &Value) {
     let path = config_in(config_home);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -222,7 +222,7 @@ pub fn write_unsealed_config(config_home: &Path, cache: &Value) {
 }
 
 /// A cache entry's name in the app's shape, for a token with `scopes`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn entry_name(scopes: &str) -> String {
     format!("acct:63504df3|9d1c250a:dde9988e:{}:{scopes}", claude_api::API_ORIGIN)
 }
@@ -235,7 +235,7 @@ pub fn config_in(config_home: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session_bus::TestBus;
+    use nova_session_bus::TestBus;
     use serde_json::json;
 
     const PASSWORD: &[u8] = b"keyring-password";
