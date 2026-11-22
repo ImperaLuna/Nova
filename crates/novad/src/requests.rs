@@ -27,6 +27,7 @@ pub fn router() -> Router<Daemon> {
         .route::<nova_notifications_api::Command>(crate::notifications::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
+        .route::<nova_wallpaper_api::Command>(crate::wallpaper::answer, |_, _, _| {})
         .listed_by(protocol_js_position)
 }
 
@@ -172,10 +173,6 @@ impl<'a> Connection<'a> {
                 return self.launcher_run(provider, id, output.clone(), *new_window);
             }
             Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
-            // The service knows which wallpapers need which feature.
-            Command::SetWallpaper { path, output } => done(self.wallpaper().set(path, output.as_deref())),
-            Command::Wallpapers => value(self.wallpaper().current()),
-            Command::WallpaperFolder => return self.wallpaper_folder(),
             Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
             Command::MediaControl { player, action } => {
                 let (player, action) = (player.clone(), *action);
@@ -239,10 +236,6 @@ impl<'a> Connection<'a> {
 
     fn recordings(&self) -> Arc<crate::recording::Recordings> {
         Arc::clone(&self.daemon.kept.recordings)
-    }
-
-    fn wallpaper(&self) -> Arc<crate::wallpaper::Wallpaper> {
-        Arc::clone(&self.daemon.kept.wallpaper)
     }
 
     fn bluetooth(&self) -> Result<Arc<crate::bluetooth::Bluetooth>, String> {
@@ -371,21 +364,6 @@ impl<'a> Connection<'a> {
         })
     }
 
-    /// Runs `work` with the media service on its own thread: it waits on a
-    /// player, or the compositor, to answer.
-    /// Lists the wallpaper folder on its own thread: reading each file's
-    /// header takes a moment in a big folder, or one on a slow disk.
-    fn wallpaper_folder(&self) -> Answer {
-        let folder = self.require_feature(crate::wallpaper::FEATURE_ID).and_then(|()| {
-            let settings = lock(&self.daemon.settings);
-            settings.wallpaper_config().folder()
-        });
-        match folder {
-            Ok(folder) => Answer::later(move || value(crate::wallpaper_folder::list(&folder))),
-            Err(e) => Answer::Now(Outcome::Error(e)),
-        }
-    }
-
     /// Runs `work` with Bluetooth on its own thread: BlueZ, the device and
     /// the user's answer to pairing take their time.
     fn bluetooth_later(
@@ -398,6 +376,8 @@ impl<'a> Connection<'a> {
         }
     }
 
+    /// Runs `work` with the media service on its own thread: it waits on a
+    /// player, or the compositor, to answer.
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -551,9 +531,6 @@ impl<'a> Connection<'a> {
                 self.daemon.quit();
             }
             Command::Ping
-            | Command::SetWallpaper { .. }
-            | Command::Wallpapers
-            | Command::WallpaperFolder
             | Command::ListFeatures
             | Command::Status
             | Command::ShowAiUsage { .. }
