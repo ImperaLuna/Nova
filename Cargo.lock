@@ -1066,6 +1066,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-x11-tray"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-process",
+ "nova-session-bus",
+ "nova-test-support",
+ "zbus",
+]
+
+[[package]]
 name = "novad"
 version = "0.1.0"
 dependencies = [
@@ -1107,6 +1122,7 @@ dependencies = [
  "nova-theme",
  "nova-tray",
  "nova-tray-api",
+ "nova-x11-tray",
  "pbkdf2",
  "png",
  "ruzstd",
