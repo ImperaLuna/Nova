@@ -12,7 +12,7 @@ use nova_protocol::Outcome;
 use nova_socket::{Answer, Caller, done};
 use std::sync::Arc;
 
-pub use nova_notifications::FEATURE_ID;
+use nova_notifications::FEATURE_ID;
 
 /// The feature's core, as novad's module.
 pub struct Notifications(Arc<nova_notifications::Notifications>);
@@ -77,12 +77,12 @@ fn open(daemon: &Daemon, id: u32, output: Option<String>) -> Answer {
     };
     let logger = Arc::clone(&daemon.logger);
     Answer::later(move || {
-        crate::launcher::focus_shown(
+        nova_launcher::focus_shown(
             &app,
             &ids,
             &compositor,
             output.as_deref(),
-            crate::launcher::SHOWN_WINDOW_WAIT,
+            nova_launcher::SHOWN_WINDOW_WAIT,
             &logger,
         );
         done(Ok(()))
@@ -91,7 +91,7 @@ fn open(daemon: &Daemon, id: u32, output: Option<String>) -> Answer {
 
 /// Started before the UI, which settings start ahead of, so notifications
 /// sent while it starts are kept. No options.
-impl crate::modules::Module for Notifications {
+impl nova_modules::Module for Notifications {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;

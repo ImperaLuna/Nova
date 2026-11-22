@@ -13,7 +13,7 @@ use nova_socket::{Answer, Caller, done};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use nova_screenshot::FEATURE_ID;
+use nova_screenshot::FEATURE_ID;
 
 /// The feature's core, as novad's module.
 pub struct Screenshots(Arc<nova_screenshot::Screenshots>);
@@ -50,7 +50,7 @@ fn screenshots(daemon: &Daemon) -> Arc<nova_screenshot::Screenshots> {
 fn require_feature(daemon: &Daemon) -> Result<(), String> {
     match daemon.feature_ready(FEATURE_ID) {
         true => Ok(()),
-        false => Err(crate::features::not_ready(FEATURE_ID)),
+        false => Err(nova_modules::not_ready(FEATURE_ID)),
     }
 }
 
@@ -91,7 +91,7 @@ fn save_capture(daemon: &Daemon, output: String, rect: PixelRect) -> Answer {
 }
 
 /// Kept for novad's life, so a reload can't strand the region picker.
-impl crate::modules::Module for Screenshots {
+impl nova_modules::Module for Screenshots {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_screenshot_api::TOPIC);

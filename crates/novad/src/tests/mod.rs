@@ -230,13 +230,13 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
         apps: nova_apps::Sources { data_dirs: vec![dir.join("launcher/share")], icons: Arc::clone(icons) },
         ai_usage: ai_usage_paths(&dir.join("ai-usage")),
         resources: nova_resources::Sources::system(""),
-        launcher: launcher::Paths {
+        launcher: nova_launcher::Paths {
             state_file: dir.join("launcher/launcher.json"),
             runner: nova_launcher::Runner::Direct,
         },
         // No bus for the tray and notifications unless the test starts
         // one there (`nova_session_bus::TestBus`).
-        tray: tray::Sources {
+        tray: nova_tray::Sources {
             bus: nova_session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
             state_file: dir.join("tray.json"),
             proc_root: nova_process::procfs::PROC.into(),
@@ -271,22 +271,22 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             usb_devices: dir.join("usb"),
         },
         // No NetworkManager either: the network's own tests give it one.
-        network: network::Sources {
+        network: nova_network::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
             sys_root: dir.join("sys"),
             state_dir: dir.join("state"),
         },
         // No BlueZ either, and never the system's: a test novad must not
         // become the machine's pairing agent. Its own tests give it one.
-        bluetooth: bluetooth::Sources {
+        bluetooth: nova_bluetooth::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
-            rfkill: bluetooth::Rfkill {
+            rfkill: nova_bluetooth::Rfkill {
                 class: dir.join("sys/class/rfkill"),
                 device: dir.join("dev/rfkill"),
                 adapters: dir.join("sys/class/bluetooth"),
             },
-            connect_limit: bluetooth::CONNECT_LIMIT,
-            audio_wait: bluetooth::AUDIO_WAIT,
+            connect_limit: nova_bluetooth::CONNECT_LIMIT,
+            audio_wait: nova_bluetooth::AUDIO_WAIT,
         },
         x11_tray: nova_session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
         session_lock: dir.to_owned(),
@@ -313,7 +313,7 @@ fn ai_usage_paths(root: &Path) -> nova_ai_usage::Paths {
         state_file: root.join("state/ai-usage.json"),
         claude_credentials: Some(root.join("claude/.credentials.json")),
         // Missing, so the keyring is never asked.
-        claude_desktop: Some(ai_usage::claude_desktop_in(&root.join("claude-desktop"))),
+        claude_desktop: Some(nova_ai_usage::claude_desktop_in(&root.join("claude-desktop"))),
         claude_usage_url: std::fs::read_to_string(root.join("claude/url")).unwrap_or("http://127.0.0.1:9/".into()),
         codex_usage_url: std::fs::read_to_string(root.join("codex-url")).unwrap_or("http://127.0.0.1:9/".into()),
     }

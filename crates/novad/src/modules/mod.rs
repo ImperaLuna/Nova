@@ -1,13 +1,14 @@
 //! novad's modules: every feature's daemon side behind the framework's
-//! [`Module`] trait (`nova-modules`, which runs them by the settings),
-//! listed once in the registry below. The kept ones (a recording to stop,
-//! the lock screen, the region picker, the wallpaper) hold state across
-//! their feature turning off and on, so they run for novad's whole life
-//! ([`Kept`]).
+//! [`Module`](nova_modules::Module) trait (`nova-modules`, which runs them
+//! by the settings), listed once in the registry below. The kept ones (a
+//! recording to stop, the lock screen, the region picker, the wallpaper)
+//! hold state across their feature turning off and on, so they run for
+//! novad's whole life ([`Kept`]).
 //!
 //! The [`Context`] is what modules share: the hub, the logger, the
 //! compositor, and the app index, which follows the apps while any module
-//! that names them runs ([`Module::NEEDS_APPS`]).
+//! that names them runs
+//! ([`Module::NEEDS_APPS`](nova_modules::Module::NEEDS_APPS)).
 
 use crate::config::Config;
 use crate::{
@@ -19,7 +20,6 @@ use nova_compositor::Compositor;
 use nova_hub::{ClientId, Hub};
 use nova_icons::Icons;
 use nova_log::Logger;
-pub use nova_modules::{Has, Module, Reconfigure};
 use nova_protocol::{FeatureState, Topic};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -134,7 +134,7 @@ impl Settings {
     }
 
     /// The wallpapers set in `config.toml`.
-    pub fn wallpaper_config(&self) -> &config::WallpaperConfig {
+    pub fn wallpaper_config(&self) -> &nova_wallpaper::WallpaperConfig {
         &self.config.wallpaper
     }
 }

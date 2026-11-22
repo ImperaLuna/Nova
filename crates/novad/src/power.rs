@@ -4,13 +4,13 @@
 //! feature keeps no state, so it has no module; its commands answer while
 //! its feature is ready.
 
-use crate::{Daemon, features, session_lock};
+use crate::Daemon;
 use nova_power_api::{Command, PowerAction, PowerMenu};
 use nova_protocol::{Capability, Outcome};
 use nova_socket::{Answer, Caller, done, value};
 use std::sync::Arc;
 
-pub use nova_power::FEATURE_ID;
+use nova_power::FEATURE_ID;
 const LOG_SOURCE: &str = "server";
 
 /// The answer to one of the feature's commands, the route
@@ -26,7 +26,7 @@ pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
 fn require_feature(daemon: &Daemon, id: &str) -> Result<(), String> {
     match daemon.feature_ready(id) {
         true => Ok(()),
-        false => Err(features::not_ready(id)),
+        false => Err(nova_modules::not_ready(id)),
     }
 }
 
@@ -34,7 +34,7 @@ fn options(daemon: &Daemon) -> Answer {
     if let Err(e) = require_feature(daemon, FEATURE_ID) {
         return Answer::Now(Outcome::Error(e));
     }
-    let lock = require_feature(daemon, session_lock::FEATURE_ID);
+    let lock = require_feature(daemon, nova_lock::FEATURE_ID);
     let log_out = match &daemon.compositor {
         Some(compositor) if compositor.can(Capability::LogOut) => Ok(()),
         _ => Err("Not on this compositor".into()),
@@ -59,7 +59,7 @@ fn power(daemon: &Daemon, action: PowerAction) -> Answer {
     daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
     match action {
         PowerAction::Lock => Answer::Now(done(
-            require_feature(daemon, session_lock::FEATURE_ID).and_then(|()| daemon.session_lock().request(&daemon.hub)),
+            require_feature(daemon, nova_lock::FEATURE_ID).and_then(|()| daemon.session_lock().request(&daemon.hub)),
         )),
         PowerAction::LogOut => Answer::Now(done(
             daemon
@@ -95,7 +95,7 @@ struct LockScreen(Arc<Daemon>);
 
 impl nova_power::LockScreen for LockScreen {
     fn ready(&self) -> bool {
-        self.0.feature_ready(session_lock::FEATURE_ID)
+        self.0.feature_ready(nova_lock::FEATURE_ID)
     }
 
     fn request(&self) -> Result<(), String> {

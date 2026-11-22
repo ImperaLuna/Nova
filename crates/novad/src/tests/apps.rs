@@ -429,7 +429,7 @@ fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_sh
     let asked = std::time::Instant::now();
     assert_eq!(client.request(5, "launcher_run", Some(launch))["result"], Value::Null);
     assert!(
-        asked.elapsed() < crate::launcher::SHOWN_WINDOW_WAIT,
+        asked.elapsed() < nova_launcher::SHOWN_WINDOW_WAIT,
         "answered once the icon was asked, not after waiting for a window: the launcher closes on the answer"
     );
     assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the tray icon is asked to show its window");
@@ -603,7 +603,7 @@ fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_
     assert!(marker.exists(), "its icon can't show its window, so the app is started again");
     let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
     // The launcher heard back once the app was started; focusing follows.
-    let deadline = std::time::Instant::now() + crate::launcher::STARTED_WINDOW_WAIT;
+    let deadline = std::time::Instant::now() + nova_launcher::STARTED_WINDOW_WAIT;
     while compositor.actions().is_empty() && std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }

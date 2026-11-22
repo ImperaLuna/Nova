@@ -10,10 +10,7 @@ use nova_hub::ClientId;
 use nova_socket::{Answer, Caller, done};
 use std::sync::Arc;
 
-pub use nova_bluetooth::{FEATURE_ID, Sources};
-// What novad's own tests give it instead of the machine's.
-#[cfg(test)]
-pub use nova_bluetooth::{AUDIO_WAIT, CONNECT_LIMIT, Rfkill};
+use nova_bluetooth::{FEATURE_ID, Sources};
 
 /// The feature's core, as novad's module.
 pub struct Bluetooth(Arc<nova_bluetooth::Bluetooth>);
@@ -70,7 +67,7 @@ fn later(
 }
 
 /// No options.
-impl crate::modules::Module for Bluetooth {
+impl nova_modules::Module for Bluetooth {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_bluetooth_api::TOPIC);

@@ -220,11 +220,11 @@ impl Daemon {
     /// The module `M`, or the error that its feature isn't ready. Taken out
     /// of the settings lock: acting may take a while, and a reload may stop
     /// it meanwhile (it then says its feature isn't ready).
-    fn module<M: modules::Module>(&self) -> Result<Arc<M>, String>
+    fn module<M: nova_modules::Module>(&self) -> Result<Arc<M>, String>
     where
-        modules::Running: modules::Has<M>,
+        modules::Running: nova_modules::Has<M>,
     {
-        lock(&self.settings).modules.get::<M>().ok_or_else(|| features::not_ready(M::ID))
+        lock(&self.settings).modules.get::<M>().ok_or_else(|| nova_modules::not_ready(M::ID))
     }
 
     /// Starts watching the settings files, reloading when they change.
@@ -377,7 +377,11 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     };
     let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
     if args.autostart {
-        launcher::autostart::start(&socket.with_file_name(autostart_marker()), path_var.clone(), Arc::clone(&logger));
+        nova_launcher::autostart::start(
+            &socket.with_file_name(autostart_marker()),
+            path_var.clone(),
+            Arc::clone(&logger),
+        );
     }
 
     logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
@@ -494,7 +498,7 @@ fn wayland_socket() -> Option<PathBuf> {
 
 /// Claude's limits from a Claude Code status line input, for
 /// `nova claude-statusline`.
-pub use ai_usage::limits_from_statusline as claude_limits_from_statusline;
+pub use nova_ai_usage::limits_from_statusline as claude_limits_from_statusline;
 
 #[cfg(test)]
 mod tests;

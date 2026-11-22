@@ -31,7 +31,7 @@ impl Provider for NovaFiles {
     }
 }
 
-impl crate::modules::Module for NovaFiles {
+impl nova_modules::Module for NovaFiles {
     type App = crate::modules::Novad;
     const ID: &'static str = ID;
     type Sources = Sources;
@@ -50,11 +50,11 @@ impl crate::modules::Module for NovaFiles {
 
     /// A mode change that adds or drops Nova Files' windows restarts the
     /// module, which reads the mode when it starts.
-    fn reconfigure(&self, _: &(), _: &(), features: &[FeatureState]) -> crate::modules::Reconfigure {
+    fn reconfigure(&self, _: &(), _: &(), features: &[FeatureState]) -> nova_modules::Reconfigure {
         if own_windows(features) == self.0.own_windows() {
-            crate::modules::Reconfigure::InPlace
+            nova_modules::Reconfigure::InPlace
         } else {
-            crate::modules::Reconfigure::Restart
+            nova_modules::Reconfigure::Restart
         }
     }
 
@@ -73,7 +73,7 @@ fn own_windows(features: &[FeatureState]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::{Module, Reconfigure};
+    use nova_modules::{Module, Reconfigure};
     use nova_nova_files::LAUNCHER_MODE;
     use nova_protocol::FeatureStatus;
     use nova_test_support::TempDir;

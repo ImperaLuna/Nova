@@ -15,7 +15,7 @@ use nova_socket::{Answer, Caller, done};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-pub use nova_recording::FEATURE_ID;
+use nova_recording::FEATURE_ID;
 
 /// The feature's core, as novad's module.
 pub struct Recordings(Arc<nova_recording::Recordings>);
@@ -52,7 +52,7 @@ fn recordings(daemon: &Daemon) -> Arc<nova_recording::Recordings> {
 fn require_feature(daemon: &Daemon) -> Result<(), String> {
     match daemon.feature_ready(FEATURE_ID) {
         true => Ok(()),
-        false => Err(crate::features::not_ready(FEATURE_ID)),
+        false => Err(nova_modules::not_ready(FEATURE_ID)),
     }
 }
 
@@ -93,7 +93,7 @@ impl SavedFiles for ScreenshotFiles {
 
 /// Kept for novad's life, so a reload can't leave a recording running:
 /// turning the feature off stops it.
-impl crate::modules::Module for Recordings {
+impl nova_modules::Module for Recordings {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_recording_api::TOPIC);
@@ -133,9 +133,9 @@ impl crate::modules::Module for Recordings {
         _: &RecordingConfig,
         _: &RecordingConfig,
         features: &[nova_protocol::FeatureState],
-    ) -> crate::modules::Reconfigure {
+    ) -> nova_modules::Reconfigure {
         self.allow(crate::features::is_ready(features, FEATURE_ID));
-        crate::modules::Reconfigure::InPlace
+        nova_modules::Reconfigure::InPlace
     }
 
     fn send_state(&self, client: ClientId) {

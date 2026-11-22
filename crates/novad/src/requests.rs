@@ -114,7 +114,7 @@ impl<'a> Connection<'a> {
     fn require_feature(&self, id: &str) -> Result<(), String> {
         match self.daemon.feature_ready(id) {
             true => Ok(()),
-            false => Err(crate::features::not_ready(id)),
+            false => Err(nova_modules::not_ready(id)),
         }
     }
 

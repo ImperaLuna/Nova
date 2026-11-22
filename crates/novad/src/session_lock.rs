@@ -10,7 +10,7 @@ use nova_socket::{Answer, Caller, done};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use nova_lock::FEATURE_ID;
+use nova_lock::FEATURE_ID;
 
 /// The feature's core, as novad's module.
 pub struct SessionLock(nova_lock::SessionLock);
@@ -30,7 +30,7 @@ pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
     Answer::Now(match command {
         Command::Lock => done(match daemon.feature_ready(FEATURE_ID) {
             true => session_lock.lock(&daemon.hub),
-            false => Err(crate::features::not_ready(FEATURE_ID)),
+            false => Err(nova_modules::not_ready(FEATURE_ID)),
         }),
         Command::ReportLocked => done(sent_by_the_ui(daemon, caller).map(|()| session_lock.secured())),
         // Even with the feature off: the screen was locked while it was on.
@@ -52,7 +52,7 @@ fn sent_by_the_ui(daemon: &Daemon, caller: &Caller) -> Result<(), String> {
 }
 
 /// Kept for novad's life: the screen stays locked while the feature is off.
-impl crate::modules::Module for SessionLock {
+impl nova_modules::Module for SessionLock {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_lock_api::TOPIC);

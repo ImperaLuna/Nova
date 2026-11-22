@@ -7,13 +7,13 @@
 use nova_session_bus::Bus;
 use std::sync::Arc;
 
-pub use nova_x11_tray::FEATURE_ID;
+use nova_x11_tray::FEATURE_ID;
 
 /// The feature's core, as novad's module.
 pub struct X11Tray(Arc<nova_x11_tray::X11Tray>);
 
 /// No options. Its icons reach whatever tray is up, on the tray's bus.
-impl crate::modules::Module for X11Tray {
+impl nova_modules::Module for X11Tray {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     type Sources = Bus;

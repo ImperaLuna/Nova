@@ -10,7 +10,7 @@ use nova_resources_api::Command;
 use nova_socket::{Answer, Caller, done};
 use std::sync::Arc;
 
-pub use nova_resources::FEATURE_ID;
+use nova_resources::FEATURE_ID;
 
 /// The feature's core, as novad's module.
 pub struct Resources(Arc<nova_resources::Resources>);
@@ -36,7 +36,7 @@ pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
 }
 
 /// It has no options: it only starts and stops with its feature.
-impl crate::modules::Module for Resources {
+impl nova_modules::Module for Resources {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     // It sends nothing on subscribe: readings come while some client watches.

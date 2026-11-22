@@ -13,7 +13,7 @@ use nova_wallpaper_api::Command;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use nova_wallpaper::{ENGINE_FEATURE_ID, FEATURE_ID};
+use nova_wallpaper::{ENGINE_FEATURE_ID, FEATURE_ID};
 
 /// The feature's core, as novad's module.
 pub struct Wallpaper(Arc<nova_wallpaper::Wallpaper>);
@@ -43,7 +43,7 @@ pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
 fn folder(daemon: &Daemon) -> Answer {
     let folder = match daemon.feature_ready(FEATURE_ID) {
         true => lock(&daemon.settings).wallpaper_config().folder(),
-        false => Err(crate::features::not_ready(FEATURE_ID)),
+        false => Err(nova_modules::not_ready(FEATURE_ID)),
     };
     match folder {
         Ok(folder) => Answer::later(move || value(nova_wallpaper::folder::list(&folder))),
@@ -61,7 +61,7 @@ pub struct Sources {
 /// Kept for novad's life, told which wallpaper features are ready and what
 /// `[wallpaper]` says on every change, and about the outputs whenever they
 /// change.
-impl crate::modules::Module for Wallpaper {
+impl nova_modules::Module for Wallpaper {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     type Sources = Sources;
@@ -105,10 +105,10 @@ impl crate::modules::Module for Wallpaper {
         _: &WallpaperConfig,
         config: &WallpaperConfig,
         features: &[nova_protocol::FeatureState],
-    ) -> crate::modules::Reconfigure {
+    ) -> nova_modules::Reconfigure {
         let ready = |id| crate::features::is_ready(features, id);
         self.configure(ready(FEATURE_ID), ready(ENGINE_FEATURE_ID), config);
-        crate::modules::Reconfigure::InPlace
+        nova_modules::Reconfigure::InPlace
     }
 
     fn stop(&self) {

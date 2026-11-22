@@ -30,10 +30,10 @@ use nova_theme::ThemeChoice;
 // `[ai-usage]`, `[recording]`, `[screenshot]` and `[wallpaper]` are their
 // features' (`nova-ai-usage`, `nova-recording`, `nova-screenshot`,
 // `nova-wallpaper`).
-pub use nova_ai_usage::AiUsageConfig;
-pub use nova_recording::RecordingConfig;
-pub use nova_screenshot::ScreenshotConfig;
-pub use nova_wallpaper::WallpaperConfig;
+use nova_ai_usage::AiUsageConfig;
+use nova_recording::RecordingConfig;
+use nova_screenshot::ScreenshotConfig;
+use nova_wallpaper::WallpaperConfig;
 use serde::Deserialize;
 use std::path::Path;
 
