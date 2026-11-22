@@ -699,6 +699,7 @@ impl Watcher {
 /// Started before the UI, which settings start ahead of, so apps it
 /// autostarts find the watcher. No options.
 impl crate::modules::Module for Tray {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Tray);

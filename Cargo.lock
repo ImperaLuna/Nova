@@ -815,6 +815,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-modules"
+version = "0.1.0"
+dependencies = [
+ "nova-log",
+]
+
+[[package]]
 name = "nova-paths"
 version = "0.1.0"
 dependencies = [
@@ -854,6 +861,20 @@ version = "0.1.0"
 dependencies = [
  "nova-base",
  "zbus",
+]
+
+[[package]]
+name = "nova-settings"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "nova-hub",
+ "nova-inotify",
+ "nova-log",
+ "nova-paths",
+ "nova-test-support",
+ "serde",
+ "toml",
 ]
 
 [[package]]
@@ -901,11 +922,13 @@ dependencies = [
  "nova-hub",
  "nova-inotify",
  "nova-log",
+ "nova-modules",
  "nova-paths",
  "nova-process",
  "nova-protocol",
  "nova-quickshell",
  "nova-session-bus",
+ "nova-settings",
  "nova-socket",
  "nova-test-support",
  "nova-watch",

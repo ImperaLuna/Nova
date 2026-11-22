@@ -1,0 +1,31 @@
+# Allowed outside crates:
+# - serde
+# - toml
+#
+# Allowed workspace crates:
+# - nova-inotify
+# - nova-log
+# - nova-paths
+
+[package]
+name = "nova-settings"
+description = "Reading the user's settings files and following them for changes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-inotify.workspace = true
+nova-log.workspace = true
+nova-paths.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

@@ -29,11 +29,13 @@
 # - nova-hub
 # - nova-inotify
 # - nova-log
+# - nova-modules
 # - nova-paths
 # - nova-process
 # - nova-protocol
 # - nova-quickshell
 # - nova-session-bus
+# - nova-settings
 # - nova-socket
 # - nova-watch
 
@@ -59,6 +61,8 @@ nova-hub.workspace = true
 nova-log.workspace = true
 nova-watch.workspace = true
 nova-socket.workspace = true
+nova-modules.workspace = true
+nova-settings.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 futures-core.workspace = true

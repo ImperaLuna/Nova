@@ -128,6 +128,7 @@ fn already_running(bus: Bus) -> zbus::Result<bool> {
 
 /// No options. Its icons reach whatever tray is up, on the tray's bus.
 impl crate::modules::Module for X11Tray {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     type Sources = Bus;
     type Config = ();

@@ -51,11 +51,13 @@ nova-base = { path = "framework/base" }
 nova-carrier = { path = "framework/carrier" }
 nova-hub = { path = "framework/hub" }
 nova-log = { path = "framework/log" }
+nova-modules = { path = "framework/modules" }
 nova-watch = { path = "framework/watch" }
 nova-inotify = { path = "framework/inotify" }
 nova-paths = { path = "framework/paths" }
 nova-process = { path = "framework/process" }
 nova-session-bus = { path = "framework/session-bus" }
+nova-settings = { path = "framework/settings" }
 nova-socket = { path = "framework/socket" }
 nova-test-support = { path = "framework/test-support" }
 

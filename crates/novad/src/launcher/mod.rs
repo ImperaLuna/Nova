@@ -391,6 +391,7 @@ pub fn focus_shown(
 
 /// It has no options: it only starts and stops with its feature.
 impl crate::modules::Module for Launcher {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Launcher);

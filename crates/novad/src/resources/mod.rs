@@ -323,6 +323,7 @@ fn page_size() -> u64 {
 
 /// It has no options: it only starts and stops with its feature.
 impl crate::modules::Module for Resources {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     type Sources = Sources;
     type Config = ();

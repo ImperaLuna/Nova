@@ -145,6 +145,7 @@ impl SessionLock {
 
 /// Kept for novad's life: the screen stays locked while the feature is off.
 impl crate::modules::Module for SessionLock {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Lock);
     type Sources = PathBuf;
