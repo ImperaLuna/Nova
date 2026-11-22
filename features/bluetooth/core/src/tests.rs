@@ -179,7 +179,7 @@ impl FakeBlueZ {
 
     /// Changes a property, and says so as BlueZ does.
     fn change(&self, path: &str, interface: &str, name: &str, value: OwnedVariant) {
-        zbus::block_on(changed(&self.connection, &self.fake, path, interface, name, value));
+        zbus::block_on(changed(&self.connection, &self.fake, (path, interface, name), value));
     }
 
     /// A property goes, as BlueZ says it (`RSSI` when discovery stops).
@@ -218,7 +218,10 @@ impl FakeBlueZ {
     }
 }
 
-async fn changed(connection: &Connection, fake: &Shared, path: &str, interface: &str, name: &str, value: OwnedVariant) {
+/// Sets the property `(path, interface, name)` to `value` and says so on the
+/// bus.
+async fn changed(connection: &Connection, fake: &Shared, property: (&str, &str, &str), value: OwnedVariant) {
+    let (path, interface, name) = property;
     let properties = {
         let mut fake = lock(fake);
         let properties = fake.objects.get_mut(path).unwrap().get_mut(interface).unwrap();
@@ -321,13 +324,13 @@ impl FakeAdapter {
                 return Err(BlueZError::NotReady("Resource Not Ready".into()));
             }
         }
-        changed(connection, &self.0, ADAPTER_PATH, ADAPTER, "Discovering", OwnedVariant::from(true)).await;
+        changed(connection, &self.0, (ADAPTER_PATH, ADAPTER, "Discovering"), OwnedVariant::from(true)).await;
         Ok(())
     }
 
     async fn stop_discovery(&self, #[zbus(connection)] connection: &Connection) {
         lock(&self.0).calls.push("StopDiscovery".into());
-        changed(connection, &self.0, ADAPTER_PATH, ADAPTER, "Discovering", OwnedVariant::from(false)).await;
+        changed(connection, &self.0, (ADAPTER_PATH, ADAPTER, "Discovering"), OwnedVariant::from(false)).await;
     }
 
     async fn remove_device(&self, device: OwnedObjectPath, #[zbus(connection)] connection: &Connection) {
@@ -361,7 +364,7 @@ impl FakeAdapter {
         if on && blocked {
             return Err(BlueZError::Blocked("Blocked through rfkill".into()));
         }
-        changed(connection, &self.0, ADAPTER_PATH, ADAPTER, "Powered", OwnedVariant::from(on)).await;
+        changed(connection, &self.0, (ADAPTER_PATH, ADAPTER, "Powered"), OwnedVariant::from(on)).await;
         Ok(())
     }
 }
@@ -481,7 +484,7 @@ impl FakeDevice {
         };
         match asked {
             Ok(()) => {
-                changed(connection, &self.fake, &self.path, DEVICE, "Paired", OwnedVariant::from(true)).await;
+                changed(connection, &self.fake, (&self.path, DEVICE, "Paired"), OwnedVariant::from(true)).await;
                 Ok(())
             }
             Err(zbus::Error::MethodError(name, ..)) if name.as_str() == "org.bluez.Error.Rejected" => {
@@ -499,14 +502,14 @@ impl FakeDevice {
         if self.hold(Hold::Connect).await {
             return Err(BlueZError::Failed("br-connection-canceled".into()));
         }
-        changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(true)).await;
+        changed(connection, &self.fake, (&self.path, DEVICE, "Connected"), OwnedVariant::from(true)).await;
         self.music_up(connection).await;
         Ok(())
     }
 
     async fn connect_profile(&self, uuid: String, #[zbus(connection)] connection: &Connection) {
         self.log(&format!("ConnectProfile {uuid}"));
-        changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(true)).await;
+        changed(connection, &self.fake, (&self.path, DEVICE, "Connected"), OwnedVariant::from(true)).await;
         if uuid == A2DP_SINK {
             self.music_up(connection).await;
         }
@@ -517,7 +520,7 @@ impl FakeDevice {
         if self.release() {
             return;
         }
-        changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(false)).await;
+        changed(connection, &self.fake, (&self.path, DEVICE, "Connected"), OwnedVariant::from(false)).await;
         self.music_down(connection).await;
     }
 
@@ -536,7 +539,7 @@ impl FakeDevice {
     async fn set_trusted(&self, trusted: bool, #[zbus(connection)] connection: &Connection) {
         self.log(&format!("Trusted {trusted}"));
         self.hold(Hold::Trust).await;
-        changed(connection, &self.fake, &self.path, DEVICE, "Trusted", OwnedVariant::from(trusted)).await;
+        changed(connection, &self.fake, (&self.path, DEVICE, "Trusted"), OwnedVariant::from(trusted)).await;
     }
 }
 

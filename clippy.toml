@@ -2,6 +2,7 @@
 # (AGENTS.md, Rules and their checks).
 
 # Size limits.
+too-many-arguments-threshold = 5
 too-many-lines-threshold = 80
 
 disallowed-methods = [
