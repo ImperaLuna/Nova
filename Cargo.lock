@@ -781,6 +781,7 @@ dependencies = [
  "jiff",
  "nova-carrier",
  "nova-features",
+ "nova-network-api",
  "nova-paths",
  "nova-power-api",
  "nova-protocol",
@@ -887,6 +888,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-network"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "jiff",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-network-api",
+ "nova-session-bus",
+ "nova-test-support",
+ "serde",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
+name = "nova-network-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-paths"
 version = "0.1.0"
 dependencies = [
@@ -934,6 +962,7 @@ dependencies = [
  "nova-carrier",
  "nova-compositor",
  "nova-host",
+ "nova-network-api",
  "nova-power-api",
  "nova-resources-api",
  "nova-theme",
@@ -1058,6 +1087,8 @@ dependencies = [
  "nova-log",
  "nova-mime",
  "nova-modules",
+ "nova-network",
+ "nova-network-api",
  "nova-paths",
  "nova-power",
  "nova-power-api",

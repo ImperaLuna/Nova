@@ -21,6 +21,7 @@ pub fn router() -> Router<Daemon> {
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).answer(command),
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
         )
+        .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
         .route::<nova_power_api::Command>(crate::power::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .listed_by(protocol_js_position)
@@ -187,24 +188,6 @@ impl<'a> Connection<'a> {
             }
             Command::MediaFocus { player } => return self.media_focus(player),
             Command::MediaWindow { player } => return self.media_window(player),
-            Command::SetWifi { enabled } => {
-                let enabled = *enabled;
-                return self.network_later(move |network| done(network.set_wifi(enabled)));
-            }
-            Command::ScanWifi => return self.network_later(|network| done(network.scan())),
-            Command::ConnectWifi { ssid, password } => {
-                let (ssid, password) = (ssid.clone(), password.clone());
-                return self.network_later(move |network| done(network.connect(&ssid, password.as_ref())));
-            }
-            Command::DisconnectWifi => return self.network_later(|network| done(network.disconnect())),
-            Command::ForgetWifi { ssid } => {
-                let ssid = ssid.clone();
-                return self.network_later(move |network| done(network.forget(&ssid)));
-            }
-            Command::PreferNetwork { kind } => done(self.network().and_then(|network| network.prefer(*kind))),
-            Command::WatchNetworkTraffic { watching } => {
-                done(self.network().map(|network| network.watch_traffic(self.id, *watching)))
-            }
             Command::WatchBluetooth { watching } => {
                 done(self.bluetooth().map(|bluetooth| bluetooth.watch(self.id, *watching)))
             }
@@ -253,10 +236,6 @@ impl<'a> Connection<'a> {
         self.daemon.module()
     }
 
-    fn network(&self) -> Result<Arc<crate::network::Network>, String> {
-        self.daemon.module()
-    }
-
     // Kept for novad's life, whatever the settings.
 
     fn session_lock(&self) -> Arc<crate::session_lock::SessionLock> {
@@ -273,14 +252,6 @@ impl<'a> Connection<'a> {
 
     fn wallpaper(&self) -> Arc<crate::wallpaper::Wallpaper> {
         Arc::clone(&self.daemon.kept.wallpaper)
-    }
-
-    /// Runs `work` on its own thread: NetworkManager may take a while.
-    fn network_later(&self, work: impl FnOnce(&crate::network::Network) -> Outcome + Send + 'static) -> Answer {
-        match self.network() {
-            Ok(network) => Answer::later(move || work(&network)),
-            Err(e) => Answer::Now(Outcome::Error(e)),
-        }
     }
 
     fn bluetooth(&self) -> Result<Arc<crate::bluetooth::Bluetooth>, String> {
@@ -684,13 +655,6 @@ impl<'a> Connection<'a> {
             | Command::MediaShow { .. }
             | Command::MediaFocus { .. }
             | Command::MediaWindow { .. }
-            | Command::SetWifi { .. }
-            | Command::ScanWifi
-            | Command::ConnectWifi { .. }
-            | Command::DisconnectWifi
-            | Command::ForgetWifi { .. }
-            | Command::PreferNetwork { .. }
-            | Command::WatchNetworkTraffic { .. }
             | Command::BluetoothPower { .. }
             | Command::WatchBluetooth { .. }
             | Command::BluetoothConnect { .. }
