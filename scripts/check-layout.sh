@@ -375,6 +375,14 @@ if [[ -f $UI_WORKSPACE/Cargo.toml ]]; then
   done
 fi
 
+# No crate is published: cargo-deny tells a path dependency from a wildcard
+# version by it (app-ui/deny.toml), so one crate without it fails the UI
+# side's check as soon as a UI crate uses it.
+while IFS= read -r manifest; do
+  echo "${manifest#"$root"/}: rule S2: the crate can be published. Add \`publish.workspace = true\` to its [package]."
+  status=1
+done < <(jq -r '.packages[] | select(.publish != []) | .manifest_path' <<<"$metadata")
+
 # Every crate in a layout folder is a member of its side's workspace: cargo
 # metadata never lists one that isn't, so none of the checks below would see
 # it. A glob in `members` that matches no folder is an error to cargo, so
