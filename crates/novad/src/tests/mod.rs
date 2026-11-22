@@ -5,9 +5,9 @@
 //! Hyprland sessions.
 
 use super::*;
-use crate::icons::Icons;
-use crate::session_bus::Bus;
+use nova_icons::Icons;
 use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
+use nova_session_bus::Bus;
 use nova_test_support::{TempDir, wait_until, write_program};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Lines, Write};
@@ -56,7 +56,7 @@ impl TestDaemon {
 
     /// Like [`TestDaemon::with_launcher`], following the compositor `connect`
     /// sets up in the test's folder.
-    fn with_launcher_following(name: &str, connect: impl FnOnce(&Path) -> Box<dyn compositor::Backend>) -> Self {
+    fn with_launcher_following(name: &str, connect: impl FnOnce(&Path) -> Box<dyn nova_compositor::Backend>) -> Self {
         Self::open_following(
             name,
             None,
@@ -67,7 +67,7 @@ impl TestDaemon {
 
     /// Following the compositor `connect` sets up in the test's folder, with
     /// the `ai-usage` and `launcher` features off.
-    pub fn with_compositor(name: &str, connect: impl FnOnce(&Path) -> Box<dyn compositor::Backend>) -> Self {
+    pub fn with_compositor(name: &str, connect: impl FnOnce(&Path) -> Box<dyn nova_compositor::Backend>) -> Self {
         Self::open_following(
             name,
             None,
@@ -86,7 +86,7 @@ impl TestDaemon {
         name: &str,
         ui: Option<UiSettings>,
         prepare: impl FnOnce(&Path),
-        compositor: impl FnOnce(&Path) -> Option<Box<dyn compositor::Backend>>,
+        compositor: impl FnOnce(&Path) -> Option<Box<dyn nova_compositor::Backend>>,
     ) -> Self {
         let temp = TempDir::new(name);
         let dir = temp.path().to_owned();
@@ -106,19 +106,19 @@ impl TestDaemon {
         let socket = dir.join("novad.sock");
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-        let listener = server::bind(&socket).unwrap();
+        let listener = nova_socket::bind(&socket).unwrap();
         let icons = test_icons(&dir);
         let sources = Sources {
             config: dir.join("config/config.toml"),
             selection: vec![dir.join("config/features.toml")],
-            themes_dir: theme::default_dir(),
+            themes_dir: nova_theme::default_dir(),
             manifests: nova_features::load_all(&repo_features()).unwrap(),
             path_var: format!("{host_path}:{}", dir.join("fake-bin").display()),
             modules: test_modules(&dir, &icons),
             icons,
         };
         let compositor = compositor(&dir)
-            .map(|backend| compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
+            .map(|backend| nova_compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
         let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
         let wanted = features::needs_ui(&sources.manifests, &settings.features);
         let ui = ui.map(|ui_settings| Supervisor::start(ui_settings, wanted, Arc::clone(&logger)));
@@ -227,7 +227,7 @@ fn read_entries(path: &Path) -> Vec<LogEntry> {
 /// unless a test starts one there.
 fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
     modules::Sources {
-        apps: crate::apps::Sources { data_dirs: vec![dir.join("launcher/share")], icons: Arc::clone(icons) },
+        apps: nova_apps::Sources { data_dirs: vec![dir.join("launcher/share")], icons: Arc::clone(icons) },
         ai_usage: ai_usage_paths(&dir.join("ai-usage")),
         resources: nova_resources::Sources::system(""),
         launcher: launcher::Paths {
@@ -235,11 +235,11 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             runner: nova_launcher::Runner::Direct,
         },
         // No bus for the tray and notifications unless the test starts
-        // one there (`session_bus::TestBus`).
+        // one there (`nova_session_bus::TestBus`).
         tray: tray::Sources {
-            bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+            bus: nova_session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
             state_file: dir.join("tray.json"),
-            proc_root: crate::procfs::PROC.into(),
+            proc_root: nova_process::procfs::PROC.into(),
         },
         notifications: nova_notifications::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
@@ -288,7 +288,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             connect_limit: bluetooth::CONNECT_LIMIT,
             audio_wait: bluetooth::AUDIO_WAIT,
         },
-        x11_tray: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+        x11_tray: nova_session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),
         recordings: (),
@@ -298,7 +298,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
 
 /// Icons come from `<dir>/launcher/share` only, in hicolor.
 fn test_icons(dir: &Path) -> Arc<Icons> {
-    Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[dir.join("launcher/share")], None))
+    Arc::new(Icons::new(nova_icons::HICOLOR.into(), &[dir.join("launcher/share")], None))
 }
 
 fn repo_features() -> PathBuf {

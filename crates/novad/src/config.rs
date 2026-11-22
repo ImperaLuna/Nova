@@ -26,7 +26,7 @@
 //! DP-2 = "2861349227"  # a Wallpaper Engine Workshop item
 //! ```
 
-use crate::theme::ThemeChoice;
+use nova_theme::ThemeChoice;
 // `[ai-usage]`, `[recording]`, `[screenshot]` and `[wallpaper]` are their
 // features' (`nova-ai-usage`, `nova-recording`, `nova-screenshot`,
 // `nova-wallpaper`).

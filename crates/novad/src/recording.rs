@@ -5,8 +5,9 @@
 //! screenshot feature's helpers. All of the feature's work and state stay
 //! in the core.
 
-use crate::hub::ClientId;
-use crate::{Daemon, lock};
+use crate::Daemon;
+use nova_base::lock;
+use nova_hub::ClientId;
 use nova_protocol::Outcome;
 use nova_recording::{RecordingConfig, SavedFiles};
 use nova_recording_api::{Command, LayoutRect, RecordAudio, ScreenshotAction};
@@ -83,7 +84,7 @@ impl SavedFiles for ScreenshotFiles {
         path: &Path,
         action: ScreenshotAction,
         path_var: &str,
-        logger: &Arc<crate::logger::Logger>,
+        logger: &Arc<nova_log::Logger>,
         log_source: &str,
     ) -> Result<(), String> {
         nova_screenshot::act_on(path, action, path_var, logger, log_source)

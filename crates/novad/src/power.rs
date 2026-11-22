@@ -41,8 +41,10 @@ fn options(daemon: &Daemon) -> Answer {
     };
     let logger = Arc::clone(&daemon.logger);
     Answer::later(move || {
-        let menu =
-            PowerMenu { options: nova_power::options(lock, log_out, &logger), booted_at: crate::procfs::boot_time() };
+        let menu = PowerMenu {
+            options: nova_power::options(lock, log_out, &logger),
+            booted_at: nova_process::procfs::boot_time(),
+        };
         value(Ok(menu))
     })
 }
@@ -64,7 +66,7 @@ fn power(daemon: &Daemon, action: PowerAction) -> Answer {
                 .compositor
                 .as_deref()
                 .ok_or_else(|| "novad doesn't know this compositor".to_string())
-                .and_then(crate::compositor::Compositor::log_out),
+                .and_then(nova_compositor::Compositor::log_out),
         )),
         PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff => logind(daemon, action),
     }

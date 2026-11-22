@@ -39,7 +39,7 @@ impl crate::modules::Module for NovaFiles {
 
     fn sources(env: &crate::modules::Env) -> Sources {
         let home = env.home.clone().filter(|home| home != Path::new("/"));
-        Sources { bus: crate::session_bus::Bus::Session, data_dirs: crate::data_dirs(), home }
+        Sources { bus: nova_session_bus::Bus::Session, data_dirs: nova_paths::data_dirs(), home }
     }
 
     fn config(_: &crate::config::Config) {}
@@ -93,16 +93,16 @@ mod tests {
     #[test]
     fn a_change_to_or_from_the_launcher_mode_restarts_the_module() {
         let dir = TempDir::new("nova-files-reconfigure");
-        let logger = crate::logger::Logger::open(
+        let logger = nova_log::Logger::open(
             &dir.join("logs"),
             nova_protocol::LogLevel::Debug,
             false,
-            Arc::new(crate::Hub::default()),
+            Arc::new(nova_hub::Hub::default()),
         )
         .unwrap();
         // No bus there: it can't reach Nova Files, which a mode change doesn't need.
         let sources = Sources {
-            bus: crate::session_bus::Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+            bus: nova_session_bus::Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
             data_dirs: vec![],
             home: None,
         };

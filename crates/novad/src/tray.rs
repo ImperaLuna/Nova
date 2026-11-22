@@ -6,7 +6,7 @@
 //! compositor do: novad joins them here until the launcher has moved too.
 
 use crate::Daemon;
-use crate::hub::ClientId;
+use nova_hub::ClientId;
 use nova_protocol::Outcome;
 use nova_socket::{Answer, Caller, done};
 pub use nova_tray::Sources;

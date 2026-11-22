@@ -9,9 +9,9 @@
 //! and it starts again after a backoff. When the compositor is gone, the
 //! session is over and novad exits instead.
 
-use crate::backoff::Backoff;
-use crate::logger::Logger;
-use crate::{child, lock};
+use nova_base::backoff::Backoff;
+use nova_base::lock;
+use nova_log::Logger;
 use nova_process::child::{describe_exit, stdout_within};
 use nova_protocol::{Crash, UI_LOG_SOURCE, UiState, UiStatus};
 use std::io::{BufRead, BufReader, Read};
@@ -147,7 +147,9 @@ impl Supervisor {
         UiStatus {
             state,
             pid: record.pid,
-            pss_kib: record.pid.and_then(|pid| crate::procfs::pss_kib(Path::new(crate::procfs::PROC), pid)),
+            pss_kib: record
+                .pid
+                .and_then(|pid| nova_process::procfs::pss_kib(Path::new(nova_process::procfs::PROC), pid)),
             restarts: record.restarts,
             last_crash: record.last_crash.clone(),
         }
@@ -255,7 +257,7 @@ impl Supervisor {
         ];
         // The pid is forgotten between the exit and the reap, so `stop` and
         // `status` never act on a pid the kernel may have handed out again.
-        if let Err(e) = child::wait_for_exit(child.id()) {
+        if let Err(e) = nova_process::child::wait_for_exit(child.id()) {
             logger.warn(LOG_SOURCE, &format!("couldn't wait for the UI without reaping it: {e}"));
         }
         lock(&self.record).pid = None;
@@ -287,7 +289,7 @@ impl Supervisor {
         };
         let mut record = lock(&self.record);
         record.restarts += 1;
-        record.last_crash = Some(Crash { time: crate::logger::now(), log: snapshot });
+        record.last_crash = Some(Crash { time: nova_log::now(), log: snapshot });
     }
 }
 
@@ -347,7 +349,7 @@ pub fn quickshell_command(settings: &UiSettings, path: &Path, process_name: &str
         .env("PATH", &settings.path_var)
         .env(FRAME_CALLBACK_TIMEOUT.0, FRAME_CALLBACK_TIMEOUT.1)
         .env(SIMPLE_ANIMATION_DRIVER.0, SIMPLE_ANIMATION_DRIVER.1)
-        .env(crate::icons::QUICKSHELL_VAR, &settings.icon_theme);
+        .env(nova_icons::QUICKSHELL_VAR, &settings.icon_theme);
     if let Some(vendor) = &settings.egl_vendor {
         command.env(crate::egl::VENDOR_FILES_VAR, vendor);
     }
@@ -365,7 +367,7 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
     }
     // A crashed novad never leaves an orphaned bar behind. This runs on the
     // supervisor thread, which lives as long as novad.
-    child::die_with_novad(&mut command, libc::SIGTERM);
+    nova_process::child::die_with_novad(&mut command, libc::SIGTERM);
     command.spawn()
 }
 

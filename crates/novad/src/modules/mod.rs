@@ -9,16 +9,16 @@
 //! compositor, and the app index, which follows the apps while any module
 //! that names them runs ([`Module::NEEDS_APPS`]).
 
-use crate::apps::{self, AppIndex};
-use crate::compositor::Compositor;
 use crate::config::Config;
-use crate::hub::{ClientId, Hub};
-use crate::icons::Icons;
-use crate::logger::Logger;
 use crate::{
     ai_usage, bluetooth, features, launcher, media, network, notifications, nova_files, peripherals, recording,
     resources, screenshot, session_lock, tray, wallpaper, x11_tray,
 };
+use nova_apps::AppIndex;
+use nova_compositor::Compositor;
+use nova_hub::{ClientId, Hub};
+use nova_icons::Icons;
+use nova_log::Logger;
 pub use nova_modules::{Has, Module, Reconfigure};
 use nova_protocol::{FeatureState, Topic};
 use std::path::{Path, PathBuf};
@@ -59,10 +59,10 @@ impl nova_modules::App for Novad {
     type Topic = Topic;
     type Client = ClientId;
     type Running = Running;
-    type AppSources = apps::Sources;
+    type AppSources = nova_apps::Sources;
 
-    fn app_sources(env: &Env) -> apps::Sources {
-        apps::Sources::system(Arc::clone(env.icons))
+    fn app_sources(env: &Env) -> nova_apps::Sources {
+        nova_apps::Sources::system(Arc::clone(env.icons))
     }
 
     fn is_ready(features: &[FeatureState], id: &str) -> bool {

@@ -5,7 +5,7 @@
 //! core.
 
 use crate::Daemon;
-use crate::hub::ClientId;
+use nova_hub::ClientId;
 use nova_notifications::Sources;
 use nova_notifications_api::Command;
 use nova_protocol::Outcome;

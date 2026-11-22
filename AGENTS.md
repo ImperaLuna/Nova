@@ -136,7 +136,7 @@ assertions). The feature is `<id>` (its folder name), its crates
    pointing at them.
 2. **The core crate**, `features/<id>/core`: novad's module folder (or
    file) moved with `git mv`, `mod.rs` becoming `lib.rs`. `crate::` paths
-   become the framework crates they already alias in novad's `lib.rs`
+   to shared helpers become the framework crates that hold them
    (`nova_base::lock`, `nova_hub`, `nova_log`, `nova_process::procfs`, ...).
    All of the feature's work and state live here. What the core may use is
    `FRAMEWORK_FOR_CORE` in `scripts/check-layout.sh`; a shared helper still

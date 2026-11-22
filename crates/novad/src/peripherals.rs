@@ -5,7 +5,7 @@
 //! all of the feature's work and state stay in the core. It takes no
 //! commands.
 
-use crate::hub::ClientId;
+use nova_hub::ClientId;
 use nova_notifications_api::Post;
 use nova_peripherals::Sources;
 use std::sync::Arc;

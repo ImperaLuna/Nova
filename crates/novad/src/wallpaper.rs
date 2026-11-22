@@ -4,7 +4,8 @@
 //! it about the compositor's outputs, and all of the feature's work and
 //! state stay in the core.
 
-use crate::{Daemon, lock};
+use crate::Daemon;
+use nova_base::lock;
 use nova_carrier::Outcome;
 use nova_socket::{Answer, Caller, done, value};
 use nova_wallpaper::WallpaperConfig;

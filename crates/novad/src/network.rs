@@ -4,8 +4,8 @@
 //! all of the feature's work and state stay in the core.
 
 use crate::Daemon;
-use crate::hub::ClientId;
 use nova_carrier::Outcome;
+use nova_hub::ClientId;
 use nova_network_api::Command;
 use nova_socket::{Answer, Caller, done};
 use std::sync::Arc;

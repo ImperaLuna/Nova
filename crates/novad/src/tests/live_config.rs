@@ -73,7 +73,7 @@ fn broken_files_at_start_mean_defaults() {
     });
     let mut client = novad.connect();
     client.request(1, "subscribe", Some(json!({"topics": ["theme", "features"]})));
-    assert_eq!(client.next_event("theme")["id"], theme::DEFAULT_THEME_ID);
+    assert_eq!(client.next_event("theme")["id"], nova_theme::DEFAULT_THEME_ID);
     assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "ready");
     let log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
     let errors = log.iter().filter(|entry| {

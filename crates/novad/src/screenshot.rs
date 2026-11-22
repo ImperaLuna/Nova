@@ -4,8 +4,9 @@
 //! trait and `Daemon`, and all of the feature's work and state stay in the
 //! core.
 
-use crate::hub::ClientId;
-use crate::{Daemon, lock};
+use crate::Daemon;
+use nova_base::lock;
+use nova_hub::ClientId;
 use nova_protocol::Outcome;
 use nova_screenshot_api::{CaptureMode, Command, PixelRect};
 use nova_socket::{Answer, Caller, done};

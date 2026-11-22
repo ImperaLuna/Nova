@@ -5,7 +5,7 @@
 //! stay in the core.
 
 use crate::Daemon;
-use crate::hub::ClientId;
+use nova_hub::ClientId;
 use nova_media::Sources;
 use nova_media_api::Command;
 use nova_protocol::Outcome;

@@ -74,7 +74,7 @@ fn hyprland_with_a_lua_config_gets_lua_dispatchers() {
             r#"dispatch hl.dsp.workspace.toggle_special("magic")"#.into()
         ]
     );
-    assert_eq!(fake.sent(compositor::HYPRLAND_LUA_PROBE), 1, "asked once which dispatchers it takes");
+    assert_eq!(fake.sent(nova_compositor::HYPRLAND_LUA_PROBE), 1, "asked once which dispatchers it takes");
 }
 
 #[test]
