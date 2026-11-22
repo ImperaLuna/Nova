@@ -1,0 +1,40 @@
+# Allowed outside crates:
+# - jiff
+# - libc
+# - png
+#
+# Allowed workspace crates:
+# - nova-apps
+# - nova-base
+# - nova-hub
+# - nova-log
+# - nova-process
+# - nova-screenshot-api
+
+[package]
+name = "nova-screenshot"
+description = "Screenshots: freezes the screens for the region picker, saves and copies a shot, and the card's buttons"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-screenshot-api.workspace = true
+nova-apps.workspace = true
+nova-base.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+nova-process.workspace = true
+jiff.workspace = true
+libc.workspace = true
+png.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-hub = { workspace = true, features = ["test-support"] }
+nova-test-support.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

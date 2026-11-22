@@ -1,0 +1,23 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-carrier
+
+[package]
+name = "nova-screenshot-api"
+description = "The screenshot feature's messages: screenshot, save_capture, cancel_capture, screenshot_action and their events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-carrier.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

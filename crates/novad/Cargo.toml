@@ -45,6 +45,8 @@
 # - nova-quickshell
 # - nova-resources
 # - nova-resources-api
+# - nova-screenshot
+# - nova-screenshot-api
 # - nova-session-bus
 # - nova-settings
 # - nova-socket
@@ -79,6 +81,8 @@ nova-power.workspace = true
 nova-power-api.workspace = true
 nova-resources.workspace = true
 nova-resources-api.workspace = true
+nova-screenshot.workspace = true
+nova-screenshot-api.workspace = true
 nova-compositor.workspace = true
 nova-host.workspace = true
 nova-theme.workspace = true

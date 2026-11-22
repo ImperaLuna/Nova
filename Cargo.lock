@@ -787,6 +787,7 @@ dependencies = [
  "nova-protocol",
  "nova-quickshell",
  "nova-resources-api",
+ "nova-screenshot-api",
  "nova-test-support",
  "novad",
  "serde",
@@ -959,6 +960,7 @@ dependencies = [
  "nova-lock-api",
  "nova-power-api",
  "nova-resources-api",
+ "nova-screenshot-api",
  "nova-theme",
  "proptest",
  "serde",
@@ -990,6 +992,33 @@ dependencies = [
 
 [[package]]
 name = "nova-resources-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nova-screenshot"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "libc",
+ "nova-apps",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-process",
+ "nova-screenshot-api",
+ "nova-test-support",
+ "png",
+ "serde_json",
+]
+
+[[package]]
+name = "nova-screenshot-api"
 version = "0.1.0"
 dependencies = [
  "nova-carrier",
@@ -1091,6 +1120,8 @@ dependencies = [
  "nova-quickshell",
  "nova-resources",
  "nova-resources-api",
+ "nova-screenshot",
+ "nova-screenshot-api",
  "nova-session-bus",
  "nova-settings",
  "nova-socket",

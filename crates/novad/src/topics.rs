@@ -20,7 +20,7 @@ pub const TOPICS: &[Topic] = &[
     topics::TOGGLE,
     nova_lock_api::TOPIC,
     topics::VOLUME,
-    topics::SCREENSHOT,
+    nova_screenshot_api::TOPIC,
     topics::RECORDING,
     topics::HOST,
     nova_resources_api::TOPIC,

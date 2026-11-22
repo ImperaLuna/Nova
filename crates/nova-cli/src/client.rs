@@ -162,6 +162,7 @@ pub enum Sent {
     Shared(Event),
     Lock(nova_lock_api::Event),
     Resources(nova_resources_api::Event),
+    Screenshot(nova_screenshot_api::Event),
 }
 
 enum Message {
