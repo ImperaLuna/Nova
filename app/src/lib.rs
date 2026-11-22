@@ -48,6 +48,7 @@ mod resources;
 mod screenshot;
 mod session_lock;
 mod settings;
+mod sound;
 mod supervisor;
 mod topics;
 mod tray;

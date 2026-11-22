@@ -123,6 +123,7 @@ var EVENT_PERIPHERALS = "peripherals";
 var EVENT_NETWORK = "network";
 var EVENT_NETWORK_TRAFFIC = "network_traffic";
 var EVENT_BLUETOOTH = "bluetooth";
+var EVENT_SOUND = "sound";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -144,6 +145,7 @@ var TOPIC_MEDIA = "media";
 var TOPIC_PERIPHERALS = "peripherals";
 var TOPIC_NETWORK = "network";
 var TOPIC_BLUETOOTH = "bluetooth";
+var TOPIC_SOUND = "sound";
 
 // What a compositor can report or do (Capability).
 var CAPABILITY_WORKSPACES = "workspaces";

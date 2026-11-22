@@ -13,6 +13,35 @@ check: fmt-check layout test-layout lint lint-nix lint-traps file-length deny te
 # `check` without the slow advisory fetch and the script tests
 check-branch: fmt-check layout lint lint-nix file-length test lint-qml test-qml shaders-check
 
+# The UI side: nova-ui and the crates that use GPUI, in their own cargo
+# workspace (AGENTS.md, Layout). Its recipes run inside `nix develop .#ui`.
+ui_manifest := "app-ui/Cargo.toml"
+
+# What CI checks on the UI side
+ui-check: ui-fmt-check ui-lint ui-test ui-deny
+
+# Build nova-ui into app-ui/target
+ui-build:
+    cargo build --manifest-path {{ui_manifest}} --workspace
+
+ui-fmt:
+    cargo fmt --manifest-path {{ui_manifest}} --all
+
+ui-fmt-check:
+    cargo fmt --manifest-path {{ui_manifest}} --all --check
+
+# Clippy on the UI side, with warnings as errors
+ui-lint:
+    cargo clippy --manifest-path {{ui_manifest}} --workspace --all-targets -- -D warnings
+
+# The UI side's unit tests (pure logic only: it has no UI test suite)
+ui-test:
+    cargo test --manifest-path {{ui_manifest}} --workspace
+
+# Advisories, licenses and sources of what GPUI brings in (app-ui/deny.toml), latest advisories
+ui-deny:
+    cargo deny --manifest-path {{ui_manifest}} check
+
 # Rust unit tests
 test:
     cargo test --workspace

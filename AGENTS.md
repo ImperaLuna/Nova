@@ -17,11 +17,13 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - One socket between novad and the UI, with concerns split in code: each
   service is its own QML singleton built on `Daemon.qml` and its own Rust
   module in novad. Clients subscribe to the topics they need.
-  Exception: audio (outputs, inputs, app streams, their volume and mute)
-  goes through Quickshell's PipeWire service in `ui/volume/service/`, since
-  a Rust PipeWire library would break the static musl build and Quickshell
-  already keeps the connection. Keep its logic in plain JS (`volume.js`,
-  `quick_settings.js`) so ui/tests can check it.
+  Exception: the Quickshell UI reads audio (outputs, inputs, app streams,
+  their volume and mute) through Quickshell's PipeWire service in
+  `ui/volume/service/`. Keep its logic in plain JS (`volume.js`,
+  `quick_settings.js`) so ui/tests can check it. The GPUI ports read the
+  `sound` topic instead: novad's sound core (`features/sound/core`) follows
+  PipeWire through its PulseAudio socket with a pure Rust client, since a
+  library that links PipeWire would break the static musl build.
 - The UI checks capabilities that novad reports, never which compositor is
   running (no `isNiri`).
 - A feature is `features/<id>/feature.toml`, the single source of truth for
@@ -64,9 +66,20 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   Quickshell" workflow, `just newest-quickshell`). Check Quickshell
   APIs in `docs/quickshell` (`just docs`), not from memory.
 
+- The UI is moving from Quickshell to GPUI (IMP-368). Until the switch
+  both are on main: the QML shell under `ui/`, which stays the default and
+  must keep working, and `nova-ui`, the GPUI program (`app-ui/`), which
+  shows only what has been ported. `ui = "gpui"` in `features.toml` (Nix:
+  `programs.nova.ui`) makes novad run `nova-ui` after a restart; an unknown
+  name or a missing `nova-ui` runs Quickshell with a warning. The GPUI side
+  has no UI test suite: a change to it is shown with screenshots or a
+  recording.
+
 ## Layout
 
-A crate's folder decides what it may use.
+A crate's folder decides what it may use, and which side it is on. The
+daemon side is everything novad is built from; the UI side is the only one
+that may use GPUI: `app-ui/`, `framework-ui/` and each feature's `ui`.
 
 - `framework/<name>/`: the shared part every feature plugs into. It never
   names a feature. Wire types that aren't a feature's sit in their own
@@ -77,8 +90,11 @@ A crate's folder decides what it may use.
   `nova-carrier` and other `-info` crates (rule I1).
 - `features/<id>/api/`: the feature's own messages and types, what other
   crates may use. `features/<id>/core/`: its work, the part that talks to
-  the system and draws nothing. `features/<id>/ui/`: reserved for the GPUI
-  ports. They sit beside the feature's `feature.toml`.
+  the system and draws nothing. `features/<id>/ui/`: what it draws, with
+  GPUI. They sit beside the feature's `feature.toml`.
+- `framework-ui/<name>/`: the UI side's shared part, which every feature's
+  ui plugs into (the socket client, the look, the stage). It never names a
+  feature.
 - `fronts/<name>/`: other ways in, the clients and outside interfaces
   (`fronts/cli`: the `nova` command's socket commands). The socket server
   itself is part of the framework.
@@ -86,6 +102,18 @@ A crate's folder decides what it may use.
   `nova` binary (`app/src/bin/nova`) parses the command line and keeps the
   commands that run Nova itself (start, restart, quit, setup, doctor,
   config, claude-statusline, daemon).
+- `app-ui/`: wiring only, for the UI side. The `nova-ui` binary starts GPUI
+  and what plugs into it.
+
+Each side is its own cargo workspace with its own `Cargo.lock`: the daemon
+side's at the repo root, the UI side's at `app-ui/Cargo.toml`. GPUI brings
+hundreds of crates, some in two versions, which novad's lock, its
+cargo-deny rules and its static build never see this way, and a change to
+the UI side leaves every daemon build as it was. A UI crate names its
+workspace in `[package]` (`workspace = "../../app-ui"`, one more `../` for
+a feature's ui) and uses the daemon side's api and `-info` crates by path.
+The UI workspace's `[workspace.package]` and `[workspace.lints]` are copies
+of the root's; `clippy.toml` and `rustfmt.toml` at the root hold for both.
 
 A glob in the workspace's `members` that matches nothing is an error to
 cargo, so the first crate of a kind adds its glob. Each `Cargo.toml` opens
@@ -100,7 +128,7 @@ these rules and names the one a change breaks:
 | Rule | A crate | What to do instead |
 |---|---|---|
 | C1 | sits in one of the folders above | move it there |
-| C2 | in those folders is a workspace member | add its folder or kind's glob to `members` |
+| C2 | in those folders is a member of its side's workspace | add its folder or kind's glob to that workspace's `members` |
 | C3 | under `features/<id>/` has a `feature.toml` beside it | name the folder after the feature's id |
 | W1 | in `framework/` uses only other framework crates | let the feature plug in (a module, a port, a message type) |
 | W2 | in `fronts/` uses only listed framework crates and api crates | send a message |
@@ -109,14 +137,19 @@ these rules and names the one a change breaks:
 | F2 | `core` uses only listed framework crates and api crates, never a `ui` | send an event |
 | F3 | `ui` uses only listed framework crates and api crates, never a `core` | send a message |
 | F4 | in a feature never uses another feature's `core` or `ui`, a front or the app | use its api, or a port in the framework |
+| U1 | on the daemon side never uses a UI crate or GPUI | send an event |
+| U2 | in `framework-ui/` uses only other `framework-ui` crates and listed framework crates, never a feature | let the feature's ui plug in |
+| U3 | `app-ui` uses only ui and api crates, `framework-ui` and listed framework crates | send novad a message |
+| S1 | workspace root has the same `[workspace.package]` and `[workspace.lints]` as the other | make the change in both |
 | T1 | in a feature has no dev-dependency on another feature's `core` or `ui`, unless `DEV_EXCEPTIONS` lists the pair | use a fake from the framework, or list the pair with its reason |
 | D1 | `Cargo.toml` has both allowed lists | add them |
 | D2 | depends only on crates its allowed lists name | add it to the list and say why in the PR |
 
 The framework crates each half may use are listed at the top of the
 script. A framework crate joins a list only when every crate of that kind
-may use it: a daemon-side part never on the `ui` list, a screen-side part
-never on the `core` list. Dev-dependencies are checked for T1 only.
+may use it: a daemon-side part never on the `ui` list (which holds for
+`framework-ui` and `app-ui` too), and a screen-side part goes in
+`framework-ui/`, not on a list. Dev-dependencies are checked for T1 only.
 Changing a rule or a list is a layout change: say so in the PR.
 
 ### Moving a feature out of novad
@@ -326,6 +359,20 @@ on every push: what `just check` runs plus the headless e2e, so locally
 that needs the network, setuid bits or a host tool fails although
 `cargo test` passes (cloud sessions can't fetch its GitHub inputs, so there CI
 is the first sandbox run). `just run` logs to `~/.local/state/nova-dev`.
+
+The UI side has its own shell and recipes, since GPUI needs libraries the
+default shell leaves out: `nix develop .#ui`, then `just ui-build`
+(`app-ui/target/debug/nova-ui`) and `just ui-check` (rustfmt, clippy, unit
+tests, cargo-deny), which a change to the UI side runs before its PR;
+`just check` covers the layout and file lengths of both sides. A cloud
+session can build it too: the first build takes about five minutes on four
+cores and a few GB of disk. Without a compositor `nova-ui` starts and prints
+its start line but opens no window; anything on screen is shown on the
+desktop, off the maintainer's screen like any other test run. To run it
+under a checkout's novad, pass `nova daemon --gpui-ui <path to nova-ui>`
+with `ui = "gpui"` in the features.toml it reads. CI builds and checks it
+in the flake checks named `ui-*`, and a PR that changes files only under
+`app-ui/`, `framework-ui/` or `features/<id>/ui/` skips the QML checks.
 
 Every change goes through a pull request; `main` is protected.
 

@@ -67,6 +67,8 @@
 # - nova-session-bus
 # - nova-settings
 # - nova-socket
+# - nova-sound
+# - nova-sound-api
 # - nova-theme
 # - nova-theme-info
 # - nova-tray
@@ -130,6 +132,8 @@ nova-resources.workspace = true
 nova-resources-api.workspace = true
 nova-screenshot.workspace = true
 nova-screenshot-api.workspace = true
+nova-sound.workspace = true
+nova-sound-api.workspace = true
 nova-theme-info.workspace = true
 nova-tray.workspace = true
 nova-tray-api.workspace = true

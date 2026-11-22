@@ -6,7 +6,7 @@ expression: all
 {"v":2,"event":"features","data":{"features":[{"id":"bar","status":"ready","slots":[{"host":"bar.center","view":"central-pill","order":10}]},{"id":"nova-files","status":"ready","slots":[{"host":"launcher.providers","view":"files","order":20}],"mode":"full"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications","media","peripherals","network","bluetooth"]}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications","media","peripherals","network","bluetooth","sound"]}}
 {"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","backdrop":"#000000","glassTint":"#0A0807","fg":"#FFF6EB","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
@@ -124,3 +124,4 @@ expression: all
 {"v":2,"id":65,"cmd":"bluetooth_answer","args":{"id":3,"answer":"accept"}}
 {"v":2,"id":66,"cmd":"bluetooth_answer","args":{"id":4,"answer":{"code":"0000"}}}
 {"v":2,"id":8,"error":"bad request"}
+{"v":2,"event":"sound","data":{"available":true,"outputs":[{"id":52,"name":"Arctis Nova 7","kind":"headphones","link":"usb","volume":0.4,"muted":false,"current":true},{"id":61,"name":"ALC1220 Analog","kind":"speakers","volume":0.4,"muted":false,"current":false}],"inputs":[{"id":53,"name":"Arctis Nova 7","kind":"headphones","link":"usb","volume":0.4,"muted":false,"current":true}],"apps":[{"id":77,"name":"Firefox","volume":1.0,"muted":true}],"recorders":["Discord"]}}

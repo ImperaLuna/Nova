@@ -179,6 +179,7 @@ pub enum Sent {
     Recording(nova_recording_api::Event),
     Resources(nova_resources_api::Event),
     Screenshot(nova_screenshot_api::Event),
+    Sound(nova_sound_api::Event),
     Tray(nova_tray_api::Event),
     VolumeOsd(nova_volume_osd_api::Event),
 }

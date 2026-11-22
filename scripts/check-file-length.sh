@@ -10,6 +10,12 @@ set -euo pipefail
 cd "${1:-.}"
 readonly MAX_LINES=800
 
+# The crate folders of both sides (AGENTS.md, Layout) that exist.
+crate_folders=()
+for folder in app app-ui framework framework-ui features fronts; do
+  [[ -d $folder ]] && crate_folders+=("$folder")
+done
+
 status=0
 while IFS= read -r -d '' file; do
   lines=$(wc -l <"$file")
@@ -17,5 +23,5 @@ while IFS= read -r -d '' file; do
     echo "$file: $lines lines (limit $MAX_LINES). Split it into smaller modules." >&2
     status=1
   fi
-done < <(find app framework features fronts -name '*.rs' -print0)
+done < <(find "${crate_folders[@]}" -name target -prune -o -name '*.rs' -print0)
 exit "$status"
