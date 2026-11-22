@@ -1,22 +1,18 @@
 //! The launcher's providers (`launcher.providers`): each one answers a search
 //! with items and runs the one picked. A feature offers one by slotting a view
 //! into `launcher.providers` in its manifest and naming the running service
-//! that answers for that view in `find`; the host asks the ready ones in their
-//! slot order. A provider with a trigger (like `=`) answers only queries that
+//! that answers for that view in novad's wiring (`PROVIDERS` there, a port:
+//! the launcher never names another feature's code); the host asks the ready
+//! ones in their slot order. A provider with a trigger (like `=`) answers only queries that
 //! start with it, and then it alone (with any others sharing it) does. One
 //! with a mode of its own (files, which the Nova Files app answers) answers
 //! only searches made in that mode, which the launcher names, and never
 //! shows among the others.
 
-use super::Launcher;
-use crate::compositor::Compositor;
-use crate::logger::Logger;
-use crate::modules::{Has, Module, Running};
-use crate::nova_files::NovaFiles;
-use crate::tray::Tray;
-use nova_protocol::{
-    FeatureState, FeatureStatus, LAUNCHER_SEARCH_MAX_CHARS, LauncherItem, PROVIDER_APPS, PROVIDER_FILES,
-};
+use super::{Launcher, TrayApps};
+use nova_compositor::Compositor;
+use nova_launcher_api::{LAUNCHER_SEARCH_MAX_CHARS, LauncherItem};
+use nova_log::Logger;
 use std::sync::Arc;
 
 /// The host providers slot into.
@@ -54,7 +50,7 @@ pub struct Run<'a> {
     /// even when one is open, a file shown in its folder.
     pub new_window: bool,
     pub compositor: Option<&'a Compositor>,
-    pub tray: Option<&'a Tray>,
+    pub tray: Option<&'a dyn TrayApps>,
     pub logger: &'a Logger,
     /// Says the item is underway when what's left only waits on it (an app
     /// asked to show or to start, its window still to focus), so the
@@ -62,24 +58,12 @@ pub struct Run<'a> {
     pub underway: &'a dyn Fn(),
 }
 
-/// The running module that answers a provider view, while its feature runs.
-type Finds = fn(&Running) -> Option<Arc<dyn Provider>>;
-
-/// Every provider view and the module that answers it: the one line a new
-/// provider adds outside its folder.
-const PROVIDERS: &[(&str, Finds)] = &[(PROVIDER_APPS, running::<Launcher>), (PROVIDER_FILES, running::<NovaFiles>)];
-
-/// The module `M`, while it runs, as a provider.
-fn running<M: Module + Provider>(modules: &Running) -> Option<Arc<dyn Provider>>
-where
-    Running: Has<M>,
-{
-    modules.get::<M>().map(|module| module as Arc<dyn Provider>)
-}
-
-/// The running module that answers the provider view `view`.
-pub fn find(view: &str, modules: &Running) -> Option<Arc<dyn Provider>> {
-    PROVIDERS.iter().find(|(known, _)| *known == view).and_then(|(_, finds)| finds(modules))
+/// A provider view a ready feature slots into [`HOST`], at `order`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Slotted<'a> {
+    pub order: i64,
+    pub feature: &'a str,
+    pub view: &'a str,
 }
 
 /// The ready features' providers, in their slot order.
@@ -88,21 +72,15 @@ pub struct Host {
 }
 
 impl Host {
-    /// The providers the ready features in `features` slot in, sorted by
+    /// The providers the ready features slot in (`slotted`), sorted by
     /// `order`, then feature id. `find` gives each view's provider; a view
     /// without one (its service stopped meanwhile) is left out.
-    pub fn new(features: &[FeatureState], find: impl Fn(&str) -> Option<Arc<dyn Provider>>) -> Self {
-        let mut slotted: Vec<(i64, &str, &str)> = features
-            .iter()
-            .filter(|feature| feature.status == FeatureStatus::Ready)
-            .flat_map(|feature| {
-                feature
-                    .slots
-                    .iter()
-                    .filter(|slot| slot.host == HOST)
-                    .map(|slot| (slot.order, feature.id.as_str(), slot.view.as_str()))
-            })
-            .collect();
+    pub fn new<'a>(
+        slotted: impl IntoIterator<Item = Slotted<'a>>,
+        find: impl Fn(&str) -> Option<Arc<dyn Provider>>,
+    ) -> Self {
+        let mut slotted: Vec<(i64, &str, &str)> =
+            slotted.into_iter().map(|slot| (slot.order, slot.feature, slot.view)).collect();
         slotted.sort();
         let providers = slotted
             .into_iter()
@@ -193,8 +171,9 @@ impl Provider for Launcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hub::Hub;
-    use nova_protocol::{LogLevel, Slot, TextRun};
+    use nova_carrier::log::LogLevel;
+    use nova_hub::Hub;
+    use nova_launcher_api::TextRun;
     use nova_test_support::TempDir;
     use std::sync::Mutex;
 
@@ -236,14 +215,9 @@ mod tests {
         }
     }
 
-    /// A feature `id` in `status`, filling `host` with the view `id` at `order`.
-    fn feature(id: &str, status: FeatureStatus, host: &str, order: i64) -> FeatureState {
-        let slot = Slot { host: host.into(), view: id.into(), order };
-        FeatureState { id: id.into(), status, missing: Vec::new(), slots: vec![slot], mode: None }
-    }
-
-    fn provider(id: &str, order: i64) -> FeatureState {
-        feature(id, FeatureStatus::Ready, HOST, order)
+    /// The ready feature `id`, filling the host with the view `id` at `order`.
+    fn provider(id: &'static str, order: i64) -> Slotted<'static> {
+        Slotted { order, feature: id, view: id }
     }
 
     fn echo(trigger: Option<&'static str>) -> Arc<Echo> {
@@ -254,29 +228,23 @@ mod tests {
         items.iter().map(|item| (item.provider.as_str(), item.id.as_str())).collect()
     }
 
+    /// Which features are ready, and which slots are this host's, is
+    /// novad's wiring's to tell (its test covers that).
     #[test]
-    fn providers_answer_in_slot_order_and_only_while_their_feature_is_ready() {
-        let features = [
-            provider("zeta", 10),
-            provider("calc", 20),
-            provider("alpha", 10),
-            feature("off", FeatureStatus::Off, HOST, 0),
-            feature("bar", FeatureStatus::Ready, "bar.left", 0),
-        ];
-        let host = Host::new(&features, |_| Some(echo(None) as Arc<dyn Provider>));
+    fn providers_answer_in_slot_order() {
+        let features = [provider("zeta", 10), provider("calc", 20), provider("alpha", 10)];
+        let host = Host::new(features, |_| Some(echo(None) as Arc<dyn Provider>));
         let dir = TempDir::new("providers-order");
         let logger = logger(&dir);
         let items = host.search("fi", None, &logger).unwrap();
         assert_eq!(found(&items), [("alpha", "fi"), ("zeta", "fi"), ("calc", "fi")]);
-        assert!(host.provider("off").is_err());
-        assert!(host.provider("bar").is_err());
     }
 
     #[test]
     fn a_trigger_sends_the_query_to_its_providers_alone() {
         let features = [provider("apps", 10), provider("calc", 20)];
         let calc = echo(Some("="));
-        let host = Host::new(&features, |view| {
+        let host = Host::new(features, |view| {
             Some(if view == "calc" { Arc::clone(&calc) as Arc<dyn Provider> } else { echo(None) })
         });
         let dir = TempDir::new("providers-trigger");
@@ -292,7 +260,7 @@ mod tests {
     fn a_provider_with_its_own_mode_answers_only_in_it_and_gets_the_whole_query() {
         let features = [provider("apps", 10), provider("files", 20)];
         let files = Arc::new(Echo { trigger: None, own_mode: true, ran: Mutex::new(Vec::new()) });
-        let host = Host::new(&features, |view| {
+        let host = Host::new(features, |view| {
             Some(if view == "files" { Arc::clone(&files) as Arc<dyn Provider> } else { echo(None) })
         });
         let dir = TempDir::new("providers-mode");
@@ -308,7 +276,7 @@ mod tests {
     fn a_failing_provider_leaves_the_others_and_runs_reach_the_one_named() {
         let features = [provider("apps", 10), provider("calc", 20)];
         let calc = echo(None);
-        let host = Host::new(&features, |view| {
+        let host = Host::new(features, |view| {
             Some(if view == "calc" { Arc::clone(&calc) as Arc<dyn Provider> } else { echo(None) })
         });
         let dir = TempDir::new("providers-fail");
@@ -319,27 +287,5 @@ mod tests {
         host.provider("calc").unwrap().run("1+2", &how).unwrap();
         assert_eq!(*calc.ran.lock().unwrap(), ["1+2"]);
         assert!(host.provider("nothing").is_err());
-    }
-
-    /// Every provider view a manifest in the repo slots in has a provider.
-    #[test]
-    fn every_provider_in_the_repo_is_known() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
-        let views: Vec<String> = nova_features::load_all(&root)
-            .unwrap()
-            .iter()
-            .flat_map(|manifest| {
-                manifest.slots.iter().filter(|slot| slot.host == HOST).map(|slot| slot.view.clone()).collect::<Vec<_>>()
-            })
-            .collect();
-        assert!(views.contains(&PROVIDER_APPS.to_string()));
-        let host = nova_features::host(HOST).expect("launcher.providers is in nova_features::HOSTS");
-        assert_eq!(host.views, nova_features::Views::Daemon);
-        for view in views {
-            assert!(
-                PROVIDERS.iter().any(|(known, _)| *known == view),
-                "no provider for the launcher view {view:?}; add it to PROVIDERS"
-            );
-        }
     }
 }

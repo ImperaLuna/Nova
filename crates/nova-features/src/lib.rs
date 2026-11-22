@@ -70,7 +70,7 @@ pub enum Views {
     /// A UI component each (ui/slots/views.js).
     Ui,
     /// A service in novad each, whose answers the owner's UI shows in its own
-    /// way (the launcher's providers, `novad::launcher::providers`).
+    /// way (the launcher's providers, `nova_launcher::providers`).
     Daemon,
 }
 
@@ -574,7 +574,7 @@ mod tests {
             for slot in &manifest.slots {
                 let known = host(&slot.host).unwrap_or_else(|| panic!("{}: unknown host {}", manifest.id, slot.host));
                 if known.views == Views::Daemon {
-                    // novad's tests check its own (launcher::providers).
+                    // novad's tests check its own (its launcher wiring's PROVIDERS).
                     continue;
                 }
                 let file = views
