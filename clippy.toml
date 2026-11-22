@@ -8,6 +8,7 @@ allow-panic-in-tests = true
 
 # Size limits.
 too-many-arguments-threshold = 5
+too-many-lines-threshold = 80
 excessive-nesting-threshold = 5
 
 disallowed-methods = [

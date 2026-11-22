@@ -853,32 +853,41 @@ async fn follow(shared: &Arc<Shared>) -> zbus::Result<()> {
             continue;
         }
         let mut state = lock(&shared.state);
-        match member.as_str() {
-            "InterfacesAdded" => {
-                let Ok((path, interfaces)) = message.body().deserialize::<(OwnedObjectPath, Interfaces)>() else {
-                    continue;
-                };
-                state.objects.added(path, interfaces);
-            }
-            "InterfacesRemoved" => {
-                let Ok((path, interfaces)) = message.body().deserialize::<(OwnedObjectPath, Vec<String>)>() else {
-                    continue;
-                };
-                state.objects.removed(&path, &interfaces);
-            }
-            "PropertiesChanged" => {
-                let Some(path) = header.path().map(|path| OwnedObjectPath::from(path.to_owned())) else { continue };
-                let Ok((interface, changed, invalidated)) =
-                    message.body().deserialize::<(String, Properties, Vec<String>)>()
-                else {
-                    continue;
-                };
-                state.objects.changed(&path, &interface, changed, &invalidated);
-            }
-            _ => continue,
+        if apply(&mut state.objects, &member, &message) {
+            shared.publish(&mut state);
         }
-        shared.publish(&mut state);
     }
+}
+
+/// Applies BlueZ's signal `member` (`message`) to what novad knows of its
+/// objects; `false` for one it can't read or doesn't follow.
+fn apply(objects: &mut Objects, member: &str, message: &zbus::Message) -> bool {
+    match member {
+        "InterfacesAdded" => {
+            let Ok((path, interfaces)) = message.body().deserialize::<(OwnedObjectPath, Interfaces)>() else {
+                return false;
+            };
+            objects.added(path, interfaces);
+        }
+        "InterfacesRemoved" => {
+            let Ok((path, interfaces)) = message.body().deserialize::<(OwnedObjectPath, Vec<String>)>() else {
+                return false;
+            };
+            objects.removed(&path, &interfaces);
+        }
+        "PropertiesChanged" => {
+            let header = message.header();
+            let Some(path) = header.path().map(|path| OwnedObjectPath::from(path.to_owned())) else { return false };
+            let Ok((interface, changed, invalidated)) =
+                message.body().deserialize::<(String, Properties, Vec<String>)>()
+            else {
+                return false;
+            };
+            objects.changed(&path, &interface, changed, &invalidated);
+        }
+        _ => return false,
+    }
+    true
 }
 
 /// Registers the agent with BlueZ, then reads everything BlueZ has: once

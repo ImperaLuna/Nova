@@ -325,6 +325,31 @@ impl Drop for InProcess {
 /// settings watcher.
 type Started = (std::os::unix::net::UnixListener, Arc<Daemon>, Option<nova_inotify::Stopper>);
 
+/// How Quickshell runs, for the UI.
+fn ui_settings(args: &Args, socket: &Path, path_var: &str, icons: &nova_icons::Icons) -> UiSettings {
+    UiSettings {
+        quickshell: args.quickshell.clone().unwrap_or_else(|| supervisor::default_quickshell(path_var)),
+        ui_dir: args.ui.clone(),
+        socket: socket.to_path_buf(),
+        path_var: path_var.to_owned(),
+        wayland_socket: wayland_socket(),
+        egl_vendor: egl::nvidia_only_vendor(Path::new("/"), |name| std::env::var_os(name)),
+        render_loop: render_loop::for_ui(|name| std::env::var_os(name)),
+        icon_theme: icons.theme().to_string(),
+    }
+}
+
+/// The running compositor, followed from now on; `None` (logged) when
+/// there's none novad knows.
+fn follow_compositor(hub: &Arc<Hub>, logger: &Arc<Logger>) -> Option<Arc<nova_compositor::Compositor>> {
+    let Some(backend) = nova_compositor::detect(|name| std::env::var_os(name)) else {
+        logger
+            .warn(LOG_SOURCE, "neither NIRI_SOCKET nor HYPRLAND_INSTANCE_SIGNATURE is set, so no workspaces will show");
+        return None;
+    };
+    Some(nova_compositor::Compositor::start(backend, Arc::clone(hub), Arc::clone(logger)))
+}
+
 fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Error>> {
     // The socket first: a second daemon is refused before it can rotate the
     // running one's log.
@@ -337,17 +362,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     let runtime_dir = socket.parent().unwrap_or(Path::new(".")).to_path_buf();
     let icons = Arc::new(nova_icons::Icons::for_session());
     logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
-    // How Quickshell runs, for the UI.
-    let ui_settings = UiSettings {
-        quickshell: args.quickshell.clone().unwrap_or_else(|| supervisor::default_quickshell(&path_var)),
-        ui_dir: args.ui.clone(),
-        socket: socket.clone(),
-        path_var: path_var.clone(),
-        wayland_socket: wayland_socket(),
-        egl_vendor: egl::nvidia_only_vendor(Path::new("/"), |name| std::env::var_os(name)),
-        render_loop: render_loop::for_ui(|name| std::env::var_os(name)),
-        icon_theme: icons.theme().to_string(),
-    };
+    let ui_settings = ui_settings(&args, &socket, &path_var, &icons);
     let env = modules::Env {
         args: &args,
         runtime_dir: &runtime_dir,
@@ -366,16 +381,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         icons,
     };
     // Before the modules: the wallpaper follows its outputs.
-    let compositor = match nova_compositor::detect(|name| std::env::var_os(name)) {
-        Some(backend) => Some(nova_compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger))),
-        None => {
-            logger.warn(
-                LOG_SOURCE,
-                "neither NIRI_SOCKET nor HYPRLAND_INSTANCE_SIGNATURE is set, so no workspaces will show",
-            );
-            None
-        }
-    };
+    let compositor = follow_compositor(&hub, &logger);
     let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
     if args.autostart {
         nova_launcher::autostart::start(

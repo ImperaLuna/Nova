@@ -14,6 +14,9 @@ use nova_host_info::Host;
 use nova_host_info::OperatingSystem;
 use nova_media_api::Command as MediaCommand;
 use nova_notifications_api::Command as NotificationCommand;
+use nova_power_api::{PowerAction, PowerMenu, PowerOption};
+use nova_recording_api::{ActiveRecording, LayoutRect, RecordAudio, SavedRecording};
+use nova_screenshot_api::{CaptureFrame, CaptureMode, PixelRect, SavedScreenshot, ScreenshotAction};
 use nova_theme_info::Theme;
 use nova_theme_info::{Color, Palette, ThemeMode};
 use nova_volume_osd_api::VolumeKey;
@@ -23,10 +26,35 @@ use serde_json::json;
 /// accept with `cargo insta review`, then run `just protocol-js`.
 #[test]
 fn wire_format() {
-    use nova_power_api::{PowerAction, PowerMenu, PowerOption};
-    use nova_recording_api::{ActiveRecording, LayoutRect, RecordAudio, SavedRecording};
-    use nova_screenshot_api::{CaptureFrame, CaptureMode, PixelRect, SavedScreenshot, ScreenshotAction};
     let lines = [
+        own_lines(),
+        ai_usage_lines(),
+        lock_lines(),
+        power_lines(),
+        screenshot_lines(),
+        recording_lines(),
+        resources_lines(),
+        launcher_lines(),
+        tray_lines(),
+        notifications_lines(),
+        wallpaper_lines(),
+        media_lines(),
+        peripherals_lines(),
+        network_lines(),
+        bluetooth_lines(),
+    ];
+    let all: String = lines.into_iter().flatten().map(Result::unwrap).collect();
+    assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
+    // The snapshot keeps the name and folder-relative file it had in
+    // nova-protocol, so the file is unchanged by the move.
+    insta::with_settings!({ prepend_module_to_snapshot => false }, {
+        insta::assert_snapshot!("nova_protocol__tests__wire_format", all);
+    });
+}
+
+/// novad's own messages, the -info crates' and the shared envelope's.
+fn own_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(Event::Hello { daemon: "0.1.0".into() }),
         encode(Event::Features {
             features: vec![
@@ -97,7 +125,12 @@ fn wire_format() {
         encode(Event::Logs(Logs { backlog: false, entries: vec![log_entry()] })),
         encode(Response { id: 10, outcome: Outcome::Result(serde_json::to_value(status()).unwrap()) }),
         encode(Response { id: 7, outcome: Outcome::Result(json!("pong")) }),
-        // The AI usage feature's own messages (`nova-ai-usage-api`), still on this one wire.
+    ]
+}
+
+/// The AI usage feature's own messages (`nova-ai-usage-api`), and what follows them.
+fn ai_usage_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_ai_usage_api::Event::AiUsage(ai_usage())),
         encode(nova_carrier::Request {
             id: Some(12),
@@ -117,13 +150,23 @@ fn wire_format() {
         encode(Request { id: Some(15), command: nova_bar_api::Command::Toggle { panel: Panel::AiUsage } }),
         encode(nova_bar_api::Event::Toggle { panel: Panel::AiUsage, output: Some("DP-1".into()) }),
         encode(nova_bar_api::Event::Toggle { panel: Panel::AiUsage, output: None }),
-        // The lock feature's own messages (`nova-lock-api`), still on this one wire.
+    ]
+}
+
+/// The lock feature's own messages (`nova-lock-api`), and what follows them.
+fn lock_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_carrier::Request { id: Some(16), command: nova_lock_api::Command::Lock }),
         encode(nova_lock_api::Event::Lock { locked: true }),
         encode(nova_carrier::Request { id: Some(20), command: nova_lock_api::Command::ReportLocked }),
         encode(nova_carrier::Request { id: Some(17), command: nova_lock_api::Command::ReportUnlocked }),
         encode(nova_lock_api::Event::Lock { locked: false }),
-        // The power feature's own messages (`nova-power-api`), still on this one wire.
+    ]
+}
+
+/// The power feature's own messages (`nova-power-api`), and what follows them.
+fn power_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_carrier::Request { id: Some(18), command: nova_power_api::Command::PowerOptions }),
         encode(Response {
             id: 18,
@@ -150,7 +193,12 @@ fn wire_format() {
         encode(Request { id: Some(21), command: nova_volume_osd_api::Command::Volume { key: VolumeKey::Up } }),
         encode(nova_volume_osd_api::Event::Volume { key: VolumeKey::Down }),
         encode(nova_volume_osd_api::Event::Volume { key: VolumeKey::Mute }),
-        // The screenshot feature's own messages (`nova-screenshot-api`), still on this one wire.
+    ]
+}
+
+/// The screenshot feature's own messages (`nova-screenshot-api`), and what follows them.
+fn screenshot_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_carrier::Request {
             id: Some(30),
             command: nova_screenshot_api::Command::Screenshot { mode: CaptureMode::Region },
@@ -190,7 +238,12 @@ fn wire_format() {
             id: None,
             command: nova_screenshot_api::Command::ScreenshotAction { id: 1, action: ScreenshotAction::Delete },
         }),
-        // The recording feature's own messages (`nova-recording-api`), still on this one wire.
+    ]
+}
+
+/// The recording feature's own messages (`nova-recording-api`), and what follows them.
+fn recording_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_carrier::Request { id: Some(35), command: nova_recording_api::Command::Record }),
         encode(nova_recording_api::Event::PickRecording),
         encode(nova_carrier::Request {
@@ -226,7 +279,12 @@ fn wire_format() {
         }),
         encode(nova_carrier::Request { id: None, command: nova_recording_api::Command::OpenLog }),
         encode(nova_host_info::Event::Host(host())),
-        // The resources feature's own messages (`nova-resources-api`), still on this one wire.
+    ]
+}
+
+/// The resources feature's own messages (`nova-resources-api`), and what follows them.
+fn resources_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_carrier::Request {
             id: Some(22),
             command: nova_resources_api::Command::WatchResources { watching: true },
@@ -236,6 +294,12 @@ fn wire_format() {
             id: Some(23),
             command: nova_resources_api::Command::EndApp { key: "/usr/lib/firefox/firefox".into() },
         }),
+    ]
+}
+
+/// The quick settings toggle and the launcher's own messages (`nova-launcher-api`).
+fn launcher_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(Request { id: None, command: nova_bar_api::Command::Toggle { panel: Panel::QuickSettings } }),
         encode(nova_launcher_api::Event::Launcher(launcher())),
         encode(nova_carrier::Request {
@@ -310,7 +374,12 @@ fn wire_format() {
             id: Some(26),
             command: nova_launcher_api::Command::PinApp { id: "foot.desktop".into(), pinned: true },
         }),
-        // The tray feature's own messages (`nova-tray-api`), still on this one wire.
+    ]
+}
+
+/// The tray feature's own messages (`nova-tray-api`), and what follows them.
+fn tray_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_carrier::Request {
             id: Some(27),
             command: nova_tray_api::Command::HideTrayApp { id: "steam".into(), hidden: true },
@@ -325,7 +394,12 @@ fn wire_format() {
         }),
         encode(nova_carrier::Request { id: None, command: nova_bar_api::Command::Toggle { panel: Panel::Launcher } }),
         encode(nova_tray_api::Event::Tray(tray())),
-        // The notifications feature's own messages (`nova-notifications-api`), still on this one wire.
+    ]
+}
+
+/// The notifications feature's own messages (`nova-notifications-api`), and what follows them.
+fn notifications_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_notifications_api::Event::Notifications(notifications())),
         encode(nova_notifications_api::Event::NotificationPopup(notifications().items[0].clone())),
         encode(nova_carrier::Request {
@@ -348,7 +422,12 @@ fn wire_format() {
             id: Some(43),
             command: NotificationCommand::MuteNotificationApp { app: "Discord".into(), muted: true },
         }),
-        // The wallpaper feature's own messages (`nova-wallpaper-api`), still on this one wire.
+    ]
+}
+
+/// The wallpaper feature's own messages (`nova-wallpaper-api`), and what follows them.
+fn wallpaper_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_carrier::Request {
             id: Some(50),
             command: nova_wallpaper_api::Command::SetWallpaper {
@@ -389,7 +468,12 @@ fn wire_format() {
             ),
         }),
         encode(Request { id: None, command: nova_bar_api::Command::Toggle { panel: Panel::Wallpaper } }),
-        // The media feature's own messages (`nova-media-api`), still on this one wire.
+    ]
+}
+
+/// The media feature's own messages (`nova-media-api`), and what follows them.
+fn media_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_media_api::Event::Media(media())),
         encode(nova_carrier::Request {
             id: Some(45),
@@ -433,10 +517,20 @@ fn wire_format() {
             command: MediaCommand::MediaWindow { player: "org.mpris.MediaPlayer2.spotify".into() },
         }),
         encode(Response { id: 49, outcome: Outcome::Result(json!("3")) }),
-        // The peripherals feature's own messages (`nova-peripherals-api`), still on this one wire.
+    ]
+}
+
+/// The peripherals feature's own messages (`nova-peripherals-api`), and what follows them.
+fn peripherals_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_peripherals_api::Event::Peripherals(peripherals())),
         encode(nova_peripherals_api::Event::Peripherals(nova_peripherals_api::Peripherals { devices: vec![] })),
-        // The network feature's own messages (`nova-network-api`), still on this one wire.
+    ]
+}
+
+/// The network feature's own messages (`nova-network-api`), and what follows them.
+fn network_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_network_api::Event::Network(network())),
         encode(nova_network_api::Event::Network(nova_network_api::Network {
             running: false,
@@ -477,7 +571,12 @@ fn wire_format() {
             today_down: 4_200_000_000,
             today_up: 310_000_000,
         })),
-        // The Bluetooth feature's own messages (`nova-bluetooth-api`), still on this one wire.
+    ]
+}
+
+/// The Bluetooth feature's own messages (`nova-bluetooth-api`), and what follows them.
+fn bluetooth_lines() -> Vec<serde_json::Result<String>> {
+    vec![
         encode(nova_bluetooth_api::Event::Bluetooth(bluetooth())),
         encode(nova_carrier::Request {
             id: Some(60),
@@ -514,14 +613,7 @@ fn wire_format() {
             },
         }),
         encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
-    ];
-    let all: String = lines.into_iter().map(Result::unwrap).collect();
-    assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
-    // The snapshot keeps the name and folder-relative file it had in
-    // nova-protocol, so the file is unchanged by the move.
-    insta::with_settings!({ prepend_module_to_snapshot => false }, {
-        insta::assert_snapshot!("nova_protocol__tests__wire_format", all);
-    });
+    ]
 }
 
 /// One request line, read as one of novad's own commands.
