@@ -25,13 +25,14 @@
 //! - [`Spinner`]: the loading spinner, and the dashed ring of something
 //!   that isn't there.
 //! - [`Glass`]: the smoked glass pills and panels are made of, with its
-//!   edge and its shadow.
+//!   edge and its shadow; a [`Fillet`] curves it into a screen edge.
 //! - [`Shape`], [`set_blur_region`]: what a window draws, as the region
 //!   the compositor blurs behind and takes clicks on.
 //! - [`motion`]: the panel curve and the spring. [`Wheel`]: a mouse
 //!   wheel's notches. [`fade_color`], [`fade`] and [`Hovered`]: the short
 //!   fades of a hover wash or a fill, kept by an element's id.
-//! - [`bytes`]: sizes in bytes as people read them.
+//! - [`bytes`]: sizes in bytes as people read them; [`span`]: spans of
+//!   time ("2h 14m", an uptime).
 //! - [`ShellWindow`]: the options every shell window opens with, and
 //!   [`lock_surface`] for the lock screen's. No other crate builds
 //!   `WindowOptions`.
@@ -46,6 +47,7 @@ mod device_battery;
 mod fade;
 mod family;
 mod field;
+mod fillet;
 mod glass;
 pub mod graph;
 mod icon;
@@ -58,6 +60,7 @@ mod round_button;
 mod segments;
 mod shape;
 mod slider;
+pub mod span;
 mod spinner;
 mod style;
 mod theme;
@@ -74,6 +77,7 @@ pub use device_battery::{DeviceBattery, LOW_PERCENT};
 pub use fade::{Hovered, fade, fade_color, keyed};
 pub use family::Family;
 pub use field::{Editing, FieldEvent, TextField};
+pub use fillet::{Fillet, FilletSide};
 pub use glass::Glass;
 pub use icon::{Glyph, Icon, IconAssets};
 pub use list_row::ListRow;

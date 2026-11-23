@@ -1,5 +1,5 @@
 //! What `quick_settings.js` and the drawer's QML worked out, with no GPUI
-//! drawing in it: the greeting, the uptime, which logo, the button's badge,
+//! drawing in it: the greeting, which logo, the button's badge,
 //! when each section shows as the drawer opens, and where a page sits as
 //! pages swap.
 
@@ -21,25 +21,6 @@ pub fn greeting(hour: i8) -> &'static str {
         12..=17 => "Good afternoon",
         _ => "Good evening",
     }
-}
-
-const MINUTE: i64 = 60;
-const HOUR_MINUTES: i64 = 60;
-const DAY_MINUTES: i64 = 24 * HOUR_MINUTES;
-
-/// "up 3h 12m" for `seconds` since boot, whole minutes rounded down
-/// (`duration.js`'s `uptime`).
-pub fn uptime(seconds: i64) -> String {
-    let minutes = seconds.max(0) / MINUTE;
-    let (days, hours, rest) = (minutes / DAY_MINUTES, minutes % DAY_MINUTES / HOUR_MINUTES, minutes % HOUR_MINUTES);
-    let span = match (days, hours, rest) {
-        (1.., 0, _) => format!("{days}d"),
-        (1.., _, _) => format!("{days}d {hours}h"),
-        (_, 1.., 0) => format!("{hours}h"),
-        (_, 1.., _) => format!("{hours}h {rest}m"),
-        _ => format!("{rest}m"),
-    };
-    format!("up {span}")
 }
 
 /// Distributions with a logo of Nova's own (`ui/quick_settings/logos`).
@@ -145,17 +126,6 @@ mod tests {
         assert_eq!(greeting(17), "Good afternoon");
         assert_eq!(greeting(18), "Good evening");
         assert_eq!(greeting(0), "Good evening");
-    }
-
-    #[test]
-    fn the_uptime_reads_as_duration_js_writes_it() {
-        assert_eq!(uptime(59), "up 0m");
-        assert_eq!(uptime(45 * 60 + 59), "up 45m");
-        assert_eq!(uptime(2 * 3600), "up 2h");
-        assert_eq!(uptime(2 * 3600 + 14 * 60), "up 2h 14m");
-        assert_eq!(uptime(3 * 86_400), "up 3d");
-        assert_eq!(uptime(3 * 86_400 + 2 * 3600 + 5 * 60), "up 3d 2h");
-        assert_eq!(uptime(-5), "up 0m", "a clock that went back");
     }
 
     fn os(id: &str, like: &[&str], logo: Option<&str>) -> OperatingSystem {

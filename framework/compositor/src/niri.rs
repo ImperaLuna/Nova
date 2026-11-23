@@ -92,6 +92,11 @@ impl Backend for Niri {
         NAME
     }
 
+    /// niri refuses a new lock only while the one holding it still runs.
+    fn restores_session_lock(&self) -> Result<bool, String> {
+        Ok(true)
+    }
+
     fn capabilities(&self) -> &'static [Capability] {
         CAPABILITIES
     }

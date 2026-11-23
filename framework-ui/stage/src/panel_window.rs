@@ -1,6 +1,6 @@
 //! The window beside a screen's stage for the panels placed off the top
-//! strip (`Placement`): a drawer against the right edge, a panel over the
-//! whole screen. On the strip they would make the stage's window as tall
+//! strip (`Placement`): a drawer or a tab against the right edge, a panel
+//! over the whole screen. On the strip they would make the stage's window as tall
 //! as the screen for as long as their feature is on. `PanelSurface.qml` in
 //! today's shell.
 //!
@@ -174,7 +174,7 @@ fn needs(off_strip: &OffStrip, screen: Size<Pixels>, now: Instant) -> Size<Pixel
     let panel = &off_strip.panel;
     match panel.spec.placement {
         Placement::WholeScreen => screen,
-        Placement::RightEdge | Placement::Top => {
+        Placement::RightEdge | Placement::RightTab | Placement::Top => {
             let width = px(panel.width.target().max(panel.width.value(now)));
             let stands_open = panel.morph.target() > 0.0 && panel.morph.settled(now);
             match off_strip.pill_box().filter(|_| !stands_open) {

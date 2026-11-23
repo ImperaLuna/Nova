@@ -23,6 +23,7 @@
 
 use crate::geometry::{
     Align, between, covered, edge_box, edge_origin, left_of_panels, open_box, overlaps, past_edge, radius_between,
+    tab_box, tab_nub,
 };
 use crate::item::Placement;
 use crate::middle;
@@ -34,8 +35,10 @@ use gpui::{
     KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollEvent, Size,
     StatefulInteractiveElement, Styled, Window, canvas, div, point, px, size,
 };
-use nova_look::tokens::{BAR_GAP, BAR_HEIGHT, BAR_MARGIN, GAP, REVEAL_STRIP, SHADOW_ROOM};
-use nova_look::{Glass, LookStyled, Shape, region, set_blur_region};
+use nova_look::tokens::{
+    BAR_GAP, BAR_HEIGHT, BAR_MARGIN, EDGE_TAB_FILLET, EDGE_TAB_NUB, GAP, REVEAL_STRIP, SHADOW_ROOM,
+};
+use nova_look::{Fillet, FilletSide, Glass, LookStyled, Shape, region, set_blur_region};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
@@ -59,6 +62,9 @@ pub(crate) struct PanelFrame {
     pub content_opacity: f32,
     /// Whether it is glass; a panel over the whole screen draws all it is.
     pub glassy: bool,
+    /// How big the concave corners are that curve a tab into the right
+    /// edge above and below it; nothing for the other placements.
+    pub fillet: Pixels,
 }
 
 impl PanelFrame {
@@ -80,6 +86,7 @@ impl PanelFrame {
             opacity: 1.0,
             content_opacity: panel.reveal.opacity(progress, now),
             glassy: true,
+            fillet: px(0.0),
         }
     }
 }
@@ -109,6 +116,7 @@ pub(crate) fn frame(
                 opacity: progress,
                 content_opacity: panel.reveal.opacity(progress, now),
                 glassy: true,
+                fillet: px(0.0),
             }
         }
         (Placement::RightEdge, _) => {
@@ -125,8 +133,30 @@ pub(crate) fn frame(
                 opacity: progress,
                 content_opacity: 1.0,
                 glassy: false,
+                fillet: px(0.0),
             }
         }
+        (Placement::RightTab, _) => tab_frame(panel, open_size, screen, now),
+    }
+}
+
+/// Where a tab against the right edge is at `now`, `open_size` big once
+/// open: it grows out of a nub at the edge, its corners never rounder than
+/// half its height, and its fillets grow with it. `PowerMenu.qml` in
+/// today's shell.
+fn tab_frame(panel: &PanelItem, open_size: Size<Pixels>, screen: Size<Pixels>, now: Instant) -> PanelFrame {
+    let progress = panel.morph.value(now);
+    let open = tab_box(open_size, screen);
+    let radius = panel.spec.radius;
+    let glass = between(tab_nub(EDGE_TAB_NUB, radius, screen), past_edge(open, radius), progress);
+    PanelFrame {
+        glass,
+        radius: radius.min(glass.size.height / 2.0),
+        open,
+        opacity: 1.0,
+        content_opacity: panel.reveal.opacity(progress, now),
+        glassy: true,
+        fillet: EDGE_TAB_FILLET * progress.clamp(0.0, 1.0),
     }
 }
 
@@ -220,7 +250,11 @@ pub(crate) fn panel(
         .h(frame.open.size.height)
         .opacity(frame.content_opacity)
         .child(panel.spec.content.clone());
-    let back = if frame.glassy { Glass::new(frame.radius).shadow(frame.opacity).build(cx) } else { div() };
+    // A tab's edge runs on into its fillets, from where they start.
+    let rim_cut =
+        if frame.fillet > px(0.0) { frame.glass.right() - frame.open.right() + frame.fillet } else { px(0.0) };
+    let glass = Glass::new(frame.radius).shadow(frame.opacity).rim_cut(rim_cut);
+    let back = if frame.glassy { glass.build(cx) } else { div() };
     back.absolute()
         .left(frame.glass.left() - origin.x)
         .top(frame.glass.top() - origin.y)
@@ -230,7 +264,33 @@ pub(crate) fn panel(
         .child(record(shapes, frame.radius, true, None))
         // The glass can't clip (its shadow lies outside it), so a child does.
         .child(div().absolute().inset_0().overflow_hidden().child(content))
+        .children(fillets(frame, origin, shapes))
         .into_any_element()
+}
+
+/// The concave corners that curve a tab into the right edge (`frame.fillet`
+/// big, none for other panels), placed on its glass, with their shapes
+/// recorded for the regions. The edge is where the tab's content ends.
+fn fillets(frame: &PanelFrame, origin: Point<Pixels>, shapes: &Shapes) -> Vec<AnyElement> {
+    let fillet = frame.fillet;
+    if fillet <= px(0.0) {
+        return Vec::new();
+    }
+    let left = frame.open.right() - fillet;
+    [(FilletSide::Above, frame.glass.top() - fillet), (FilletSide::Below, frame.glass.bottom())]
+        .into_iter()
+        .map(|(side, top)| {
+            let on_window = Bounds { origin: point(left - origin.x, top - origin.y), size: size(fillet, fillet) };
+            shapes.borrow_mut().extend(Fillet::shapes(side, on_window));
+            div()
+                .absolute()
+                .left(left - frame.glass.left())
+                .top(top - frame.glass.top())
+                .size(fillet)
+                .child(Fillet::new(side))
+                .into_any_element()
+        })
+        .collect()
 }
 
 impl StageView {

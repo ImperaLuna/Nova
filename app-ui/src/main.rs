@@ -29,7 +29,29 @@ use nova_ui_client::fake::FakeDaemon;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+/// GPUI's errors, as nova-ui's own lines; its warnings and below are
+/// routine.
+struct GpuiErrors;
+
+impl log::Log for GpuiErrors {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Error
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            eprintln!("ERROR nova-ui: gpui: {}", record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
 fn main() -> ExitCode {
+    // Only when none is set yet, which nothing else in nova-ui does.
+    if log::set_logger(&GpuiErrors).is_ok() {
+        log::set_max_level(log::LevelFilter::Error);
+    }
     let args = match Args::parse(std::env::args().skip(1)) {
         Ok(args) => args,
         Err(problem) => {
@@ -47,6 +69,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // Only `--demo-toggles` quits on purpose: anything else that ends GPUI's
+    // event loop (a Wayland protocol error, the compositor gone) is a
+    // crash, which novad's supervisor logs and restarts with a backoff.
+    let quits_by_itself = args.demo_toggles.is_some();
     application().with_assets(IconAssets).run(move |cx: &mut App| {
         // GPUI quits a Linux program when its last window closes, which
         // every window does when the last screen goes (a monitor turned
@@ -67,7 +93,11 @@ fn main() -> ExitCode {
             demo::toggle_by_itself(panel, times, cx);
         }
     });
-    ExitCode::SUCCESS
+    if quits_by_itself {
+        return ExitCode::SUCCESS;
+    }
+    eprintln!("ERROR nova-ui: GPUI's event loop stopped, most likely because the compositor closed the connection");
+    ExitCode::FAILURE
 }
 
 /// Each ported feature's ui registers its views with the stage here, one
@@ -86,6 +116,7 @@ fn register_features(cx: &mut App) {
     nova_network_ui::register(cx);
     nova_notifications_ui::register(cx);
     nova_peripherals_ui::register(cx);
+    nova_power_ui::register(cx);
     nova_quick_settings_ui::register(cx);
     nova_resources_ui::register(cx);
     nova_screenshot_ui::register(cx);

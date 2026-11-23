@@ -179,7 +179,7 @@ impl Drawer {
         let size = logic::greeting_size(FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, wide, room);
         let detail = host.as_ref().map(|host| {
             let up = jiff::Timestamp::now().as_second() - host.booted_at;
-            format!("{} · {}", host.host, logic::uptime(up))
+            format!("{} · {}", host.host, nova_look::span::uptime(up))
         });
         let logo = match logic::logo(host.as_ref().map(|host| &host.os)) {
             Logo::Bundled(_) => logo_image(img(NIXOS_LOGO.clone())),
