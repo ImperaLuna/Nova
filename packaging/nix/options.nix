@@ -85,6 +85,16 @@ in
       '';
     };
 
+    fonts.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Whether to install the fonts Nova's look is drawn in: Inter,
+        JetBrains Mono and Instrument Serif. Without them both UIs draw
+        fontconfig's nearest match (often DejaVu).
+      '';
+    };
+
     features = lib.mapAttrs (
       _: manifest:
       lib.mkOption {
