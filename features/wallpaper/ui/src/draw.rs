@@ -2,29 +2,29 @@
 //! under the deck, the deck of cards, the label with the screen picker
 //! under it, and the mark on the screen picked for.
 //!
-//! A card turned away is drawn narrower by the cosine of its turn, without
-//! perspective: GPUI draws no 3D transforms. Every card is laid out by the
-//! deck's numbers (`deck.rs`), not by GPUI: only the cards near the middle
-//! are built, the furthest first so nearer ones lie over them.
+//! Every card is laid out by the deck's numbers (`deck.rs`), not by GPUI:
+//! only the cards near the middle are built, the furthest first so nearer
+//! ones lie over them. `card.rs` draws one, turned.
 
+use crate::card::{CardLook, draw_card};
 use crate::carousel::{Carousel, NAME};
 use crate::deck::{file_name, offset, shown};
 use crate::images::Wanted;
+use crate::tilt::Tilt;
 use crate::tokens::{
     CARD_SHARE, CHIP_HEIGHT, DEPTH_SCALE, ENTER_RISE, ENTER_SPREAD, LABEL_GAP, LABEL_HEIGHT, LABEL_PAD, LEGEND_DOT,
-    LOADING, MINI_GAP, MINI_IDLE, MINI_RADIUS, MINI_RING, MINI_WIDTH, NEIGHBOUR, NOTE_WIDTH, PICKER_HEIGHT, RING,
+    LOADING, MINI_GAP, MINI_IDLE, MINI_RADIUS, MINI_RING, MINI_WIDTH, NEIGHBOUR, NOTE_WIDTH, PICKER_HEIGHT,
     SCREEN_RING, SHADE, SHADE_FROM, SIDE_DIM, SIDE_SCALE, SIDES, STEP, TILT,
 };
 use gpui::{
     AnyElement, App, Context, DevicePixels, Div, Hsla, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     ObjectFit, ParentElement, Pixels, Render, ScrollEvent, Styled, StyledImage, Window, black, div, img,
-    linear_color_stop, linear_gradient, px, size,
+    linear_color_stop, linear_gradient, point, px, size,
 };
 use nova_look::motion::Eased;
 use nova_look::tokens::{
-    BAR_GAP, BAR_HEIGHT, CHIP_HEIGHT as SMALL_CHIP_HEIGHT, CHIP_PAD, DURATION_FADE, FONT_MONO, FONT_SIZE_HEADING,
-    FONT_SIZE_SMALL, FONT_SIZE_TITLE, GAP, ICON_GAP, ICON_SIZE, PAD, PANEL_PAD, RADIUS_CARD, RADIUS_PANEL,
-    WEIGHT_LABEL, WEIGHT_TITLE,
+    BAR_GAP, BAR_HEIGHT, CHIP_PAD, DURATION_FADE, FONT_MONO, FONT_SIZE_HEADING, FONT_SIZE_SMALL, FONT_SIZE_TITLE, GAP,
+    ICON_GAP, ICON_SIZE, PANEL_PAD, RADIUS_PANEL, WEIGHT_LABEL, WEIGHT_TITLE,
 };
 use nova_look::{Glyph, Icon, Theme};
 use nova_stage::Stage;
@@ -182,6 +182,7 @@ impl Carousel {
         let picked = self.deck.picked();
         let middle = self.screen.size.width / 2.0;
         let placed = self.placed(now);
+        let deck_shown = self.deck_shown.value(now);
         placed
             .into_iter()
             .map(|card| {
@@ -191,31 +192,25 @@ impl Carousel {
                 let across = card.away.signum() * (near * NEIGHBOUR + far * STEP) * f32::from(width) * spread;
                 let sized = 1.0 - near * (1.0 - SIDE_SCALE) - far * DEPTH_SCALE;
                 let turn = card.away.clamp(-1.0, 1.0) * TILT;
-                let (drawn_width, drawn_height) = (width * sized * turn.to_radians().cos(), height * sized);
-                let left = middle + px(across) - drawn_width / 2.0;
-                let card_top = top + (height - drawn_height) / 2.0;
+                let tilt = Tilt::new(f32::from(width) * sized, f32::from(height) * sized, turn);
+                let at = point(middle + px(across), top + height / 2.0);
                 let wanted = Wanted::new(&path, pixels);
-                let picture = self.cards.update(cx, |pictures, cx| pictures.get(&wanted, cx));
                 let look = CardLook {
+                    picture: self.cards.update(cx, |pictures, cx| pictures.get(&wanted, cx)),
                     picked: Some(card.index) == picked,
                     now: self.deck.is_now(&path),
                     marks: self.deck.marks(&path).into_iter().map(str::to_owned).collect(),
                     dim: near * SIDE_DIM,
+                    opacity: card.opacity * deck_shown,
+                    sized,
                 };
                 let by = card.away.round() as i64;
-                draw_card(picture, look, drawn_width, drawn_height, cx)
-                    .absolute()
-                    .left(left)
-                    .top(card_top)
-                    .opacity(card.opacity)
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |carousel, _: &MouseDownEvent, _, cx| {
-                            cx.stop_propagation();
-                            if by == 0 { carousel.choose(cx) } else { carousel.step(by, cx) }
-                        }),
-                    )
-                    .into_any_element()
+                let clicked = cx.listener(
+                    move |carousel, _: &MouseDownEvent, _, cx| {
+                        if by == 0 { carousel.choose(cx) } else { carousel.step(by, cx) }
+                    },
+                );
+                draw_card(look, tilt, at, clicked, cx).opacity(card.opacity).into_any_element()
             })
             .collect()
     }
@@ -404,64 +399,6 @@ impl Carousel {
         let centered = div().absolute().inset_0().flex().items_center().justify_center().child(swallow_clicks(note));
         Some(centered.into_any_element())
     }
-}
-
-/// How a card is marked.
-struct CardLook {
-    picked: bool,
-    now: bool,
-    /// The other screens picking it.
-    marks: Vec<String>,
-    /// How much darker it is than the middle card (0 to 1).
-    dim: f32,
-}
-
-/// One image in the deck, `width` by `height`: the picture cut to the
-/// card's rounding (a quiet card until it loads), dimmed, ringed while
-/// picked, marked "Now" while it's the screen's wallpaper, and with the
-/// names of the other screens picking it.
-fn draw_card(
-    picture: Option<std::sync::Arc<gpui::RenderImage>>,
-    look: CardLook,
-    width: Pixels,
-    height: Pixels,
-    cx: &App,
-) -> Div {
-    let theme = Theme::of(cx);
-    let chip = || div().h(SMALL_CHIP_HEIGHT).px(CHIP_PAD).rounded_full().bg(theme.surface()).flex().items_center();
-    let base = match picture {
-        Some(picture) => img(picture).size_full().rounded(RADIUS_CARD).object_fit(ObjectFit::Fill).into_any_element(),
-        None => div().size_full().rounded(RADIUS_CARD).bg(theme.fg.opacity(LOADING)).into_any_element(),
-    };
-    let ring = look.picked.then(|| {
-        div()
-            .absolute()
-            .left(-RING)
-            .top(-RING)
-            .w(width + RING * 2.0)
-            .h(height + RING * 2.0)
-            .rounded(RADIUS_CARD + RING)
-            .border(RING)
-            .border_color(theme.fg)
-    });
-    let dim =
-        (look.dim > 0.0).then(|| div().absolute().inset_0().rounded(RADIUS_CARD).bg(theme.backdrop).opacity(look.dim));
-    let now = look.now.then(|| {
-        chip()
-            .absolute()
-            .top(PAD)
-            .right(PAD)
-            .gap(ICON_GAP)
-            .child(div().size(LEGEND_DOT).rounded_full().bg(theme.primary))
-            .child(div().text_size(FONT_SIZE_SMALL).font_weight(WEIGHT_LABEL).child("Now"))
-    });
-    let marks =
-        (!look.marks.is_empty()).then(|| {
-            div().absolute().top(PAD).left(PAD).flex().gap(ICON_GAP).children(look.marks.into_iter().map(|mark| {
-                chip().font_family(FONT_MONO).text_size(FONT_SIZE_SMALL).font_weight(WEIGHT_LABEL).child(mark)
-            }))
-        });
-    div().w(width).h(height).child(base).children(dim).children(ring).children(now).children(marks)
 }
 
 /// `width` by `height` on `window`'s screen, in its pixels.
