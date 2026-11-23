@@ -1,13 +1,13 @@
 //! What `quick_settings.js` and the drawer's QML worked out, with no GPUI
 //! drawing in it: the greeting, the uptime, which logo, the button's badge,
-//! when each section shows as the drawer opens, where a page sits as pages
-//! swap, and the room the top row leaves for the pill's buttons.
+//! when each section shows as the drawer opens, and where a page sits as
+//! pages swap.
 
 use crate::tokens::{BADGE_MAX, DURATION_PAGE, PAGE_SLIDE, REVEAL_FIRST, REVEAL_RISE, REVEAL_STAGGER};
 use gpui::{Pixels, px};
 use nova_host_info::OperatingSystem;
 use nova_look::motion::ease;
-use nova_look::tokens::{BAR_MARGIN, DURATION_PANEL, GAP, PILL_BUTTON_GAP, PILL_BUTTON_INSET, PILL_BUTTON_SIZE};
+use nova_look::tokens::DURATION_PANEL;
 use std::time::Duration;
 
 /// The drawer's first page, as `Stage::page` gives it: none.
@@ -132,19 +132,6 @@ pub const fn page_takes() -> Duration {
     DURATION_PAGE
 }
 
-/// The room the first page's top row leaves on its right for the pill's
-/// `buttons`, which quick settings draws where the pill had them: from the
-/// pages' right edge (`pad` in from the drawer's) to the pill's left end,
-/// and a gap.
-pub fn header_inset(buttons: usize, pad: Pixels) -> Pixels {
-    if buttons == 0 {
-        return px(0.0);
-    }
-    let count = buttons as f32;
-    let row = PILL_BUTTON_SIZE * count + PILL_BUTTON_GAP * (count - 1.0);
-    BAR_MARGIN + PILL_BUTTON_INSET * 2.0 + row - pad + GAP
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,14 +210,5 @@ mod tests {
         assert_eq!(page_offset(true, 0.0), -PAGE_SLIDE);
         assert_eq!(page_offset(false, 0.0), PAGE_SLIDE);
         assert_eq!(page_offset(false, 1.0), px(0.0));
-    }
-
-    #[test]
-    fn the_top_row_leaves_room_for_the_pill_s_buttons() {
-        assert_eq!(header_inset(0, px(16.0)), px(0.0));
-        // QuickSettings.qml: output.width - pad - (buttonsX - inset) + gap,
-        // with the pill's right end BAR_MARGIN from the screen's.
-        assert_eq!(header_inset(1, px(16.0)), px(8.0 + 8.0 + 28.0 - 16.0 + 8.0));
-        assert_eq!(header_inset(2, px(16.0)), px(8.0 + 8.0 + 58.0 - 16.0 + 8.0));
     }
 }

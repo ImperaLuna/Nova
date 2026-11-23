@@ -29,6 +29,8 @@
 //! - [`link`]: the socket itself, on its own thread, without GPUI.
 //! - [`daemon`]: the link brought to GPUI's thread, and [`Live`].
 //! - [`fake`]: a novad that replays recorded events.
+//! - [`watch`]: something novad does only while asked, which views on
+//!   several screens share ([`Watch`]).
 
 pub mod daemon;
 pub mod fake;
@@ -37,6 +39,8 @@ mod log;
 mod routes;
 #[cfg(test)]
 mod tests;
+pub mod watch;
 
 pub use daemon::{Connection, Daemon, Live, Status};
 pub use link::Refusal;
+pub use watch::Watch;
