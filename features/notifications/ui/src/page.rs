@@ -8,11 +8,11 @@
 use crate::app_icon::AppIcon;
 use crate::model::{self, Model};
 use crate::pieces::switch;
-use crate::tokens::{LINE_HEIGHT, PAGE_GAP, PAGE_HEADER_HEIGHT, ROW_ICON, SWITCH_ROW_HEIGHT};
+use crate::tokens::{PAGE_GAP, PAGE_HEADER_HEIGHT, ROW_ICON, SWITCH_ROW_HEIGHT};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div, relative,
+    StatefulInteractiveElement, Styled, Window, div,
 };
 use nova_look::tokens::{
     FONT_SIZE, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP, LABEL_NUDGE, PAD, PILL_BUTTON_SIZE, RADIUS_ROW, WEIGHT_LABEL,
@@ -86,19 +86,13 @@ impl Render for Page {
             })
             .unwrap_or_default();
         let has_apps = !apps.is_empty();
-        div()
-            .size_full()
-            .body_text(cx)
-            .line_height(relative(LINE_HEIGHT))
-            .flex()
-            .flex_col()
-            .gap(PAGE_GAP)
-            .child(header)
-            .child(dnd)
-            .when(has_apps, |page| {
+        div().size_full().body_text(cx).flex().flex_col().gap(PAGE_GAP).child(header).child(dnd).when(
+            has_apps,
+            |page| {
                 page.child(div().px(PAD).text_size(FONT_SIZE_SMALL).text_color(theme.fg_soft()).child("APPS"))
                     .child(div().id("apps").flex_1().min_h_0().overflow_y_scroll().flex().flex_col().children(apps))
-            })
+            },
+        )
     }
 }
 

@@ -14,13 +14,13 @@ use crate::logic::{Group, ago, groups};
 use crate::model::{self, Model};
 use crate::pieces::{RoundButton, battery_amount, who};
 use crate::tokens::{
-    BUTTON, CHIP_HEIGHT, CHIP_PAD, CLOSE_INSET, CLOSE_SIZE, EMPTY_ICON, LINE_HEIGHT, LIST_GAP, MENU_ITEM_HEIGHT,
-    MENU_PAD, MENU_WIDTH, PEEK, PEEK_HEIGHT, PEEK_INSET, ROW_ICON, ROW_LINES,
+    BUTTON, CHIP_HEIGHT, CHIP_PAD, CLOSE_INSET, CLOSE_SIZE, EMPTY_ICON, LIST_GAP, MENU_ITEM_HEIGHT, MENU_PAD,
+    MENU_WIDTH, PEEK, PEEK_HEIGHT, PEEK_INSET, ROW_ICON, ROW_LINES,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, ElementId, Entity, InteractiveElement, IntoElement, ParentElement,
-    Render, StatefulInteractiveElement, Styled, Window, deferred, div, relative,
+    Render, StatefulInteractiveElement, Styled, Window, deferred, div,
 };
 use nova_look::tokens::{
     DIVIDER_WIDTH, DOT_SIZE, FONT_DISPLAY, FONT_MONO, FONT_SIZE_DISPLAY, FONT_SIZE_MICRO, FONT_SIZE_SMALL, GAP,
@@ -387,14 +387,7 @@ impl Render for List {
         self.expanded.retain(|app| items.iter().filter(|item| &item.app == app).count() > 1);
         self.menu_for = self.menu_for.filter(|id| items.iter().any(|item| item.id == *id));
         let heading = self.heading(items.len(), do_not_disturb, cx);
-        let list = div()
-            .size_full()
-            .body_text(cx)
-            .line_height(relative(LINE_HEIGHT))
-            .flex()
-            .flex_col()
-            .gap(GAP)
-            .child(heading);
+        let list = div().size_full().body_text(cx).flex().flex_col().gap(GAP).child(heading);
         if items.is_empty() {
             return list.child(Self::empty(cx));
         }
