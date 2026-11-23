@@ -13,9 +13,10 @@
 //! for every theme.
 
 use crate::tokens::{
-    DIM_OPACITY, FG_DIM_OPACITY, FG_SOFT_OPACITY, GLASS_HIGHLIGHT_OPACITY, GLASS_INNER_LINE_OPACITY, GLASS_OPACITY,
-    GLASS_OUTLINE_OPACITY, GLASS_RIM_OPACITY, HOVER_OPACITY, METER_OPACITY, OUTLINE_OPACITY, RAISED_OPACITY,
-    SELECTED_OPACITY, SELECTED_QUIET_OPACITY, SHADOW_OPACITY, SURFACE_OPACITY, TRACK_OPACITY,
+    ACCENT_FILL_OPACITY, DIM_OPACITY, FG_DIM_OPACITY, FG_SOFT_OPACITY, GLASS_HIGHLIGHT_OPACITY,
+    GLASS_INNER_LINE_OPACITY, GLASS_OPACITY, GLASS_OUTLINE_OPACITY, GLASS_RIM_OPACITY, HOVER_OPACITY, METER_OPACITY,
+    OUTLINE_OPACITY, RAISED_OPACITY, SELECTED_OPACITY, SELECTED_QUIET_OPACITY, SHADOW_OPACITY, SURFACE_OPACITY,
+    TRACK_OPACITY,
 };
 use gpui::{App, Global, Hsla, Rgba, black};
 use nova_theme_info::{Color, Palette, ThemeMode};
@@ -186,6 +187,11 @@ impl Theme {
     /// The selected row of a list.
     pub fn selected(&self) -> Hsla {
         self.fg.alpha(SELECTED_OPACITY)
+    }
+
+    /// The accent behind something that is running or picked.
+    pub fn accent_fill(&self) -> Hsla {
+        self.primary.alpha(ACCENT_FILL_OPACITY)
     }
 
     /// What's selected where the focus isn't.

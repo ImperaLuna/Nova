@@ -22,6 +22,7 @@
 # Allowed workspace crates:
 # - nova-bar-api
 # - nova-daemon-info
+# - nova-launcher-ui
 # - nova-look
 # - nova-stage
 # - nova-theme-info
@@ -41,6 +42,7 @@ gpui.workspace = true
 gpui_platform.workspace = true
 nova-bar-api.workspace = true
 nova-daemon-info.workspace = true
+nova-launcher-ui.workspace = true
 nova-look.workspace = true
 nova-stage.workspace = true
 nova-theme-info.workspace = true
@@ -51,9 +53,7 @@ workspace = true
 
 [workspace]
 resolver = "3"
-# A glob that matches nothing is an error to cargo, so the first
-# `features/<id>/ui` crate adds "../features/*/ui".
-members = [".", "../framework-ui/*"]
+members = [".", "../framework-ui/*", "../features/*/ui"]
 
 [workspace.package]
 version = "0.1.0"
@@ -86,10 +86,16 @@ nova-look = { path = "../framework-ui/look" }
 nova-stage = { path = "../framework-ui/stage" }
 nova-ui-client = { path = "../framework-ui/client" }
 
+# Each ported feature's ui (features/<id>/ui).
+nova-launcher-ui = { path = "../features/launcher/ui" }
+
 # The daemon side's crates the UI side may use, by path: api and -info crates.
+nova-app-info = { path = "../framework/app-info" }
 nova-carrier = { path = "../framework/carrier" }
 nova-bar-api = { path = "../features/bar/api" }
 nova-daemon-info = { path = "../framework/daemon-info" }
+nova-launcher-api = { path = "../features/launcher/api" }
+nova-nova-files-api = { path = "../features/nova-files/api" }
 nova-sound-api = { path = "../features/sound/api" }
 nova-test-support = { path = "../framework/test-support" }
 nova-theme-info = { path = "../framework/theme-info" }

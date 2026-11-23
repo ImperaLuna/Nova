@@ -56,6 +56,9 @@ tokens! {
     SELECTED_OPACITY: ratio = 0.18, "selected";
     /// What's selected where the focus isn't: a quiet fill, not the accent.
     SELECTED_QUIET_OPACITY: ratio = 0.14, "selectedQuiet";
+    /// The accent as a fill behind something that is running or picked,
+    /// like a row the launcher is starting.
+    ACCENT_FILL_OPACITY: ratio = 0.92, "accentFillOpacity";
     /// A meter's empty track, and its neutral fill.
     TRACK_OPACITY: ratio = 0.14, "track";
     METER_OPACITY: ratio = 0.85, "meter";
@@ -131,6 +134,18 @@ tokens! {
     /// Small labels in a pill shape, like a plan name.
     CHIP_HEIGHT: px = 22.0, "chipHeight";
     CHIP_PAD: px = 10.0, "chipPad";
+    /// A row of tabs (`crate::Segments`): its padding, also between two
+    /// tabs, and a tab's height.
+    SEGMENT_PAD: px = 4.0, "segmentPad";
+    SEGMENT_HEIGHT: px = 30.0, "segmentHeight";
+    /// The text cursor in a field (`crate::TextField`).
+    CARET_WIDTH: px = 2.0, "caretWidth";
+    /// An app's icon in a row (`crate::AppIcon`). Without an image it is
+    /// the app's letter on a swatch, this round at this size, the letter
+    /// this share of the tile.
+    APP_ICON_SIZE: px = 30.0, "launcherRowIcon";
+    LETTER_TILE_RADIUS: px = 9.0, "letterTileRadius";
+    LETTER_SCALE: ratio = 0.47, "letterScale";
     /// The round buttons inside a pill: this far from its ends and each
     /// other.
     PILL_BUTTON_SIZE: px = 28.0, "pillButtonSize";

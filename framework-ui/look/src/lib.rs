@@ -11,6 +11,10 @@
 //!   corners).
 //! - [`Icon`]: the line icons ([`Glyph`]), which need [`IconAssets`] as the
 //!   app's asset source.
+//! - [`AppIcon`]: an app's icon from its image file, or its letter on a
+//!   swatch.
+//! - [`TextField`]: a one-line text field ([`FieldEvent`] when it changes).
+//! - [`Segments`]: a row of tabs, one of them picked.
 //! - [`Glass`]: the smoked glass pills and panels are made of, with its
 //!   edge and its shadow.
 //! - [`Shape`], [`set_blur_region`]: what a window draws, as the region
@@ -22,17 +26,23 @@
 //! `examples/sample.rs` draws a pill and a panel with all of it, to look at
 //! and to screenshot.
 
+mod app_icon;
+mod field;
 mod glass;
 mod icon;
 pub mod motion;
+mod segments;
 mod shape;
 mod style;
 mod theme;
 pub mod tokens;
 mod window;
 
+pub use app_icon::AppIcon;
+pub use field::{Editing, FieldEvent, TextField};
 pub use glass::Glass;
 pub use icon::{Glyph, Icon, IconAssets};
+pub use segments::Segments;
 pub use shape::{Shape, region, set_blur_region};
 pub use style::{LookStyled, Touching};
 pub use theme::{Theme, mix};

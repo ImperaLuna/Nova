@@ -65,7 +65,9 @@ fn main() -> ExitCode {
 /// Each ported feature's ui registers its views with the stage here, one
 /// line per feature, sorted by feature id:
 /// `nova_<id>_ui::register(cx);`
-fn register_features(_cx: &mut App) {}
+fn register_features(cx: &mut App) {
+    nova_launcher_ui::register(cx);
+}
 
 /// What novad sends that no feature's ui follows: the theme's colors, which
 /// repaint every window, and `nova toggle`, which opens a panel on the
