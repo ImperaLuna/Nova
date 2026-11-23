@@ -16,18 +16,17 @@
 //! - config.toml and features.toml, commented, when missing.
 //! - The systemd user unit, from `packaging/systemd/nova.service.in`, and
 //!   its drop-in that starts login apps after it (`app-.service.d`).
-//! - A `NovaUI` link to Quickshell in `~/.local/bin`, which novad runs so
-//!   the UI shows as NovaUI in ps and btop (the Nix package has a launcher).
 //! - niri's blur behind Nova's glass and a rule hiding xembedsniproxy's
 //!   window (`packaging/compositor/niri.kdl`),
 //!   included from the user's niri config; Hyprland's rules (the lock
 //!   screen's restore, `packaging/compositor/hyprland.lua` required from a
-//!   Lua config, or `hyprland.conf` sourced from an old one). Hyprland
-//!   blurs what Quickshell asks for without a rule.
+//!   Lua config, or `hyprland.conf` sourced from an old one).
+//!
+//! It doesn't install `nova-ui`, the UI: only Nova's Nix flake ships it so
+//! far, and the end of setup says so when it isn't on `PATH`.
 
 use crate::host::{Distro, Host};
 use nova_features::{Gpu, Manifest, Selection};
-use nova_quickshell::Range;
 use novad::checks;
 use std::fmt;
 use std::io::{BufRead, IsTerminal, Write};
@@ -48,8 +47,6 @@ const HYPRLAND_LUA_RULES: &str = include_str!("../../../../packaging/compositor/
 /// Hyprland's own config file in its folder, in each of its two formats.
 const HYPRLAND_RULES_FILE: &str = "hyprland.conf";
 const HYPRLAND_LUA_RULES_FILE: &str = "hyprland.lua";
-/// Fedora's Quickshell, until a Fedora release ships it.
-const FEDORA_QUICKSHELL_COPR: &str = "errornointernet/quickshell";
 /// AUR helpers, in the order setup prefers them. They install repo packages
 /// too, and ask for sudo themselves.
 const AUR_HELPERS: &[&str] = &["paru", "yay"];
@@ -75,8 +72,6 @@ pub struct Paths {
     pub config_dir: PathBuf,
     /// systemd's user units (`~/.config/systemd/user`).
     pub units_dir: PathBuf,
-    /// `~/.local/bin`, which novad adds to its PATH.
-    pub bin_dir: PathBuf,
     /// niri's config file (`~/.config/niri/config.kdl`), when there is one.
     pub niri_config: Option<PathBuf>,
     /// Hyprland's config file, when there is one: `~/.config/hypr/hyprland.lua`
@@ -89,7 +84,6 @@ pub struct Paths {
 
 impl Paths {
     fn of_this_user() -> Result<Self, String> {
-        let home = nova_paths::home().ok_or("HOME isn't set")?;
         let config_home = nova_paths::config_home().ok_or("HOME isn't set")?;
         let niri_config = nova_paths::path_var("NIRI_CONFIG").unwrap_or_else(|| config_home.join("niri/config.kdl"));
         let niri_config = niri_config.is_file().then_some(niri_config);
@@ -100,7 +94,6 @@ impl Paths {
         Ok(Self {
             config_dir: nova_paths::config_dir(),
             units_dir: config_home.join("systemd/user"),
-            bin_dir: home.join(".local/bin"),
             niri_config,
             hyprland_config,
             nova: std::env::current_exe().map_err(|e| format!("can't find the nova binary: {e}"))?,
@@ -150,9 +143,6 @@ pub enum Step {
     Replace { path: PathBuf, contents: String },
     /// Adds a line to the end of the user's file, unless it already has it.
     AppendLine { path: PathBuf, line: String },
-    /// Points `link` at Quickshell's binary, found on PATH when the step
-    /// runs (it may have just been installed).
-    LinkQuickshell { link: PathBuf },
 }
 
 impl fmt::Display for Step {
@@ -162,7 +152,6 @@ impl fmt::Display for Step {
             Self::Create { path, .. } => write!(f, "create {}", path.display()),
             Self::Replace { path, .. } => write!(f, "write {}", path.display()),
             Self::AppendLine { path, line } => write!(f, "add to {}:\n    {line}", path.display()),
-            Self::LinkQuickshell { link } => write!(f, "link {} to quickshell", link.display()),
         }
     }
 }
@@ -182,7 +171,7 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
     let Some(distro) = facts.host.distro.packages_key() else {
         return Err(format!(
             "nova setup installs packages on Arch, Fedora and Debian and distros built on them, not on {}. \
-             Install Quickshell and the packages in features/*/feature.toml yourself, then run `nova doctor`.",
+             Install the packages in features/*/feature.toml yourself, then run `nova doctor`.",
             facts.host.distro
         ));
     };
@@ -206,7 +195,6 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
         why: "start novad with the graphical session".into(),
         argv: words(&["systemctl", "--user", "enable", crate::systemd::UNIT]),
     });
-    steps.push(Step::LinkQuickshell { link: paths.bin_dir.join(checks::UI_PROCESS_NAME) });
     if let Some(niri_config) = &paths.niri_config {
         let rules = paths.config_dir.join(NIRI_RULES_FILE);
         steps.push(Step::Replace { path: rules.clone(), contents: NIRI_RULES.into() });
@@ -239,13 +227,9 @@ fn hyprland_steps(hyprland_config: &Path, config_dir: &Path) -> [Step; 2] {
     ]
 }
 
-/// Installs Quickshell while a feature with a UI is on, and the packages of
-/// every feature that's on and isn't complete yet.
+/// Installs the packages of every feature that's on and isn't complete yet.
 fn package_steps(facts: &Facts, distro: &str) -> Vec<Step> {
     let gpu = gpu_for_packages(&facts.host);
-    let range = nova_quickshell::Range::supported();
-    let ui_needed = facts.manifests.iter().any(|manifest| manifest.has_ui() && facts.selection.is_on(manifest));
-    let quickshell = if ui_needed { range.packages(distro) } else { &[] };
     let needed: Vec<&Manifest> = facts
         .manifests
         .iter()
@@ -261,22 +245,12 @@ fn package_steps(facts: &Facts, distro: &str) -> Vec<Step> {
             }
         }
     }
-    for package in quickshell.iter().rev() {
-        if !packages.contains(package) {
-            packages.insert(0, package.clone());
-        }
-    }
     if packages.is_empty() {
         return vec![];
     }
     let yes = facts.yes;
     let ids = needed.iter().map(|manifest| manifest.id.as_str()).collect::<Vec<_>>().join(", ");
-    let mut why = match (quickshell.is_empty(), ids.is_empty()) {
-        (false, true) => "install Quickshell for the UI".to_owned(),
-        (false, false) => format!("install Quickshell for the UI, and packages for {ids}"),
-        _ => format!("install packages for {ids}"),
-    };
-    let mut steps = Vec::new();
+    let mut why = format!("install packages for {ids}");
     let install = match distro {
         "arch" => match AUR_HELPERS.iter().find(|helper| facts.on_path(helper).is_some()) {
             Some(helper) => [words(&[helper, "-S", "--needed"]), flag(yes, "--noconfirm")].concat(),
@@ -285,19 +259,10 @@ fn package_steps(facts: &Facts, distro: &str) -> Vec<Step> {
                 [words(&["sudo", "pacman", "-S", "--needed"]), flag(yes, "--noconfirm")].concat()
             }
         },
-        "fedora" => {
-            if !quickshell.is_empty() && facts.on_path("quickshell").is_none() {
-                steps.push(Step::Run {
-                    why: "add the Quickshell package repository".into(),
-                    argv: words(&["sudo", "dnf", "copr", "enable", "-y", FEDORA_QUICKSHELL_COPR]),
-                });
-            }
-            [words(&["sudo", "dnf", "install"]), flag(yes, "-y")].concat()
-        }
+        "fedora" => [words(&["sudo", "dnf", "install"]), flag(yes, "-y")].concat(),
         _ => [words(&["sudo", "apt-get", "install"]), flag(yes, "-y")].concat(),
     };
-    steps.push(Step::Run { why, argv: [install, packages].concat() });
-    steps
+    vec![Step::Run { why, argv: [install, packages].concat() }]
 }
 
 /// The GPU whose variant a feature installs: NVIDIA's when its own driver
@@ -439,7 +404,7 @@ fn confirmed() -> Result<bool, String> {
     Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
 }
 
-/// Runs one step. `path_var` is where Quickshell is looked for.
+/// Runs one step. `path_var` is where its command is looked for.
 pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
     match step {
         Step::Run { argv, .. } => {
@@ -475,23 +440,6 @@ pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
                 writeln!(file, "{separator}{line}").map_err(|e| format!("can't write {}: {e}", path.display()))?;
             }
         }
-        Step::LinkQuickshell { link } => {
-            let quickshell = nova_paths::find_program("quickshell", path_var)
-                .ok_or("quickshell isn't on PATH, so there's nothing to link NovaUI to")?;
-            let target =
-                quickshell.canonicalize().map_err(|e| format!("can't resolve {}: {e}", quickshell.display()))?;
-            if std::fs::read_link(link).is_ok_and(|existing| existing == target) {
-                return Ok(());
-            }
-            create_parent(link)?;
-            match std::fs::remove_file(link) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                    return Err(format!("can't replace {}: {e}", link.display()));
-                }
-                _ => {}
-            }
-            std::os::unix::fs::symlink(&target, link).map_err(|e| format!("can't link {}: {e}", link.display()))?;
-        }
     }
     Ok(())
 }
@@ -516,12 +464,10 @@ fn create_parent(path: &Path) -> Result<(), String> {
     }
 }
 
-/// After the steps: Quickshell must now be in the tested range.
+/// After the steps: what's left to do.
 fn finish(path_var: &str) -> Result<(), String> {
-    let quickshell = checks::default_quickshell(path_var);
-    let version = checks::read_quickshell_version(&quickshell, path_var)?;
-    if let Some(problem) = Range::supported().problem(&version) {
-        return Err(format!("{problem}. Install a Quickshell in that range, then run `nova doctor`."));
+    if nova_paths::find_program(checks::GPUI_UI, path_var).is_none() {
+        println!("{} isn't on PATH, so Nova has no UI yet: so far only Nova's Nix flake ships it.", checks::GPUI_UI);
     }
     println!("Nova is set up. Start it with `nova`; `nova doctor` checks the rest.");
     println!("On Hyprland without uwsm, also add `exec-once = nova` to hyprland.conf so novad gets the session.");
@@ -540,7 +486,6 @@ mod tests {
         Paths {
             config_dir: home.join(".config/nova"),
             units_dir: home.join(".config/systemd/user"),
-            bin_dir: home.join(".local/bin"),
             niri_config: None,
             hyprland_config: None,
             nova: home.join(".local/bin/nova"),
@@ -611,18 +556,9 @@ mod tests {
         fn new(name: &str) -> Self {
             let home = nova_test_support::TempDir::new(&format!("setup-{name}"));
             std::fs::create_dir_all(home.join("usr/bin")).unwrap();
-            for bin in [
-                "quickshell",
-                "wf-recorder",
-                "grim",
-                "wl-copy",
-                "xdg-open",
-                "awww",
-                "awww-daemon",
-                "upower",
-                "bluetoothctl",
-                "paru",
-            ] {
+            for bin in
+                ["wf-recorder", "grim", "wl-copy", "xdg-open", "awww", "awww-daemon", "upower", "bluetoothctl", "paru"]
+            {
                 nova_test_support::write_program(&home.join("usr/bin"), bin, "exit 0");
             }
             Self(home)
@@ -636,40 +572,16 @@ mod tests {
     #[test]
     fn installed_features_are_skipped_and_the_aur_helper_is_used() {
         let home = Home::new("installed");
+        // Everything the default features check for is there: no install.
         let facts = Facts { path_var: home.path_var(), ..facts(Distro::Arch, vec![Gpu::Amd], false) };
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
+        assert!(!steps.iter().any(|step| matches!(step, Step::Run { why, .. } if why.starts_with("install"))));
+        // Without paru's own check, the AUR helper installs what's missing.
+        std::fs::remove_file(home.0.join("usr/bin/wf-recorder")).unwrap();
+        let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         let Step::Run { why, argv } = &steps[0] else { panic!("{:?}", steps[0]) };
-        // recording's wf-recorder, screenshot's grim, wl-copy and xdg-open
-        // wallpaper's awww, peripherals' upower and bluetooth's bluetoothctl
-        // are there; Quickshell has no binary check (the package manager
-        // skips it when it's installed).
-        assert_eq!(why, "install Quickshell for the UI");
-        assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell"]));
-    }
-
-    /// Quickshell (and Fedora's COPR for it) only while a feature that draws
-    /// is on: wallpaper-engine alone has no UI.
-    #[test]
-    fn quickshell_is_installed_only_for_a_ui() {
-        let all = manifests();
-        let only = |id: &str| Selection {
-            enabled: vec![id.into()],
-            disabled: all.iter().filter(|m| m.id != id).map(|m| m.id.clone()).collect(),
-            ..Selection::default()
-        };
-        let run_lines = |selection: Selection| {
-            let facts = Facts { selection, ..facts(Distro::Fedora, vec![], false) };
-            let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
-            steps
-                .iter()
-                .filter(|step| matches!(step, Step::Run { .. }))
-                .map(|step| step.to_string())
-                .collect::<String>()
-        };
-        let headless = run_lines(only("wallpaper-engine"));
-        assert!(!headless.contains("quickshell"), "{headless}");
-        let bar = run_lines(only("bar"));
-        assert!(bar.contains(FEDORA_QUICKSHELL_COPR) && bar.contains("dnf install quickshell"), "{bar}");
+        assert_eq!(why, "install packages for recording");
+        assert_eq!(argv, &words(&["paru", "-S", "--needed", "wf-recorder"]));
     }
 
     #[test]
@@ -679,14 +591,12 @@ mod tests {
         assert_eq!(
             steps[0],
             Step::Run {
-                why: "install Quickshell for the UI, and packages for bluetooth, peripherals, recording, screenshot"
-                    .into(),
+                why: "install packages for bluetooth, peripherals, recording, screenshot".into(),
                 argv: words(&[
                     "sudo",
                     "apt-get",
                     "install",
                     "-y",
-                    "quickshell",
                     "bluez",
                     "upower",
                     "wf-recorder",
@@ -723,8 +633,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(paths.config_dir.join(NIRI_RULES_FILE)).unwrap(), NIRI_RULES);
         let unit = std::fs::read_to_string(paths.units_dir.join("nova.service")).unwrap();
         assert!(unit.contains(&format!("ExecStart=@\"{}\" Nova daemon", paths.nova.display())), "{unit}");
-        let link = paths.bin_dir.join("NovaUI");
-        assert_eq!(std::fs::read_link(&link).unwrap(), home.0.join("usr/bin/quickshell"));
     }
 
     #[test]

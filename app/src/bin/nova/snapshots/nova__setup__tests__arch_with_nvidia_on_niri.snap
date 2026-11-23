@@ -1,9 +1,9 @@
 ---
-source: crates/nova-cli/src/setup.rs
+source: app/src/bin/nova/setup.rs
 expression: shown(&facts)
 ---
-install Quickshell for the UI, and packages for bluetooth, peripherals, recording, screenshot, wallpaper (packages only in the AUR need paru or yay installed first):
-    sudo pacman -S --needed quickshell bluez bluez-utils upower headsetcontrol gpu-screen-recorder grim wl-clipboard xdg-utils awww
+install packages for bluetooth, peripherals, recording, screenshot, wallpaper (packages only in the AUR need paru or yay installed first):
+    sudo pacman -S --needed bluez bluez-utils upower headsetcontrol gpu-screen-recorder grim wl-clipboard xdg-utils awww
 create /home/me/.config/nova/config.toml
 create /home/me/.config/nova/features.toml
 write /home/me/.config/systemd/user/nova.service
@@ -12,7 +12,6 @@ reload systemd's units:
     systemctl --user daemon-reload
 start novad with the graphical session:
     systemctl --user enable nova.service
-link /home/me/.local/bin/NovaUI to quickshell
 write /home/me/.config/nova/niri.kdl
 add to /home/me/.config/niri/config.kdl:
     include "/home/me/.config/nova/niri.kdl"

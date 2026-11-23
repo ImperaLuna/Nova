@@ -16,10 +16,9 @@
 //! says so (`available: false`) and tries again with a doubling wait, since
 //! a server that isn't there sends nothing to wait on.
 //!
-//! While novad does the volume keys and the Bluetooth follow for the UI
-//! (the GPUI UI; Quickshell's shell does them itself), [`Sound::press`]
-//! steps the output in use and a Bluetooth device that appears becomes the
-//! one in use.
+//! novad does the volume keys and the Bluetooth follow for the UI:
+//! [`Sound::press`] steps the output in use, and a Bluetooth device that
+//! appears becomes the one in use.
 //!
 //! novad runs it as a module (its wiring adapts [`Sound`] to novad's
 //! `Module` trait).
@@ -63,8 +62,6 @@ const CLOSED: &str = "the connection closed";
 
 pub struct Sound {
     sources: Sources,
-    /// A Bluetooth device that appears becomes the one in use.
-    follows_bluetooth: bool,
     state: Mutex<State>,
     /// The connection that asks, with its count, while there is one. Never
     /// taken while `state` is held.
@@ -100,14 +97,11 @@ struct State {
 }
 
 impl Sound {
-    /// Starts following the server. With `follows_bluetooth` (while novad
-    /// does what today's shell's `VolumeService.qml` does, for the GPUI UI),
-    /// a Bluetooth output or input that appears becomes the one in use
-    /// ([`changes::arrived_bluetooth`]).
-    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>, follows_bluetooth: bool) -> Arc<Self> {
+    /// Starts following the server. A Bluetooth output or input that
+    /// appears becomes the one in use ([`changes::arrived_bluetooth`]).
+    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let sound = Arc::new(Self {
             sources,
-            follows_bluetooth,
             state: Mutex::new(State::default()),
             asking: Mutex::new(None),
             pressing: Mutex::new(()),
@@ -324,12 +318,8 @@ impl Sound {
     }
 
     /// What makes a Bluetooth device in `listing` that the last listing
-    /// from the same connection didn't have the one in use, while it
-    /// follows Bluetooth.
+    /// from the same connection didn't have the one in use.
     fn arrived_bluetooth(&self, listing: &Listing, connection: u64) -> Vec<Request> {
-        if !self.follows_bluetooth {
-            return Vec::new();
-        }
         let state = lock(&self.state);
         let before = state.listing.as_ref().filter(|(_, listed_by)| *listed_by == connection);
         changes::arrived_bluetooth(before.map(|(listing, _)| listing), listing)

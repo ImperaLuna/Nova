@@ -43,7 +43,7 @@ rules_doc="AGENTS.md (Layout)"
 FRAMEWORK_FOR_API=(app-info carrier daemon-info desktop-info host-info theme-info)
 FRAMEWORK_FOR_CORE=(app-info apps base carrier compositor daemon-info desktop-info host-info hub icons inotify log mime modules paths process session-bus settings socket theme-info watch)
 FRAMEWORK_FOR_UI=(app-info carrier daemon-info desktop-info host-info theme-info)
-FRAMEWORK_FOR_FRONT=(app-info base carrier daemon-info desktop-info host-info paths quickshell theme-info)
+FRAMEWORK_FOR_FRONT=(app-info base carrier daemon-info desktop-info host-info paths theme-info)
 # The UI side's workspace root, relative to the repo's.
 UI_WORKSPACE=app-ui
 

@@ -173,37 +173,20 @@ fn toggle_names_the_focused_output() {
     assert_eq!(toggle, json!({"panel": "ai-usage", "output": focused_output(&desktop)}));
 }
 
+/// novad changes the volume itself, through the sound feature (here with
+/// no sound server to change it on), and the UI only shows the capsule.
 #[test]
-fn volume_keys_reach_the_ui_once_it_listens() {
+fn novad_changes_the_volume_and_the_ui_shows_the_key() {
     let novad = TestDaemon::start("volume", None);
-    let mut cli = novad.connect();
-    let reply = cli.request(1, "volume", Some(json!({"key": "up"})));
-    assert!(reply["error"].as_str().unwrap().contains("UI isn't connected"), "{reply}");
-
     let mut ui = novad.connect();
     ui.request(1, "subscribe", Some(json!({"topics": ["volume"]})));
+    let mut cli = novad.connect();
     for (id, key) in [(2, "up"), (3, "down"), (4, "mute")] {
-        assert_eq!(cli.request(id, "volume", Some(json!({"key": key})))["result"], Value::Null);
+        let reply = cli.request(id, "volume", Some(json!({"key": key})));
+        assert_eq!(reply["error"], "there is no sound server", "{reply}");
         assert_eq!(ui.next_event("volume"), json!({"key": key}));
     }
     assert!(cli.request(5, "volume", Some(json!({"key": "louder"})))["error"].is_string());
-}
-
-/// For the GPUI UI novad changes the volume itself, through the sound
-/// feature (here with no sound server to change it on), and the UI only
-/// shows the capsule.
-#[test]
-fn for_the_gpui_ui_novad_changes_the_volume_itself() {
-    let scripts = nova_test_support::TempDir::new("gpui-volume");
-    let fake_ui = write_program(&scripts, "nova-ui", "exec sleep 60");
-    let settings = super::ui_settings(Program::Gpui(fake_ui), PathBuf::from("no-quickshell"));
-    let novad = TestDaemon::start("gpui-volume", Some(settings));
-    let mut ui = novad.connect();
-    ui.request(1, "subscribe", Some(json!({"topics": ["volume"]})));
-    let mut cli = novad.connect();
-    let reply = cli.request(2, "volume", Some(json!({"key": "up"})));
-    assert_eq!(reply["error"], "there is no sound server", "{reply}");
-    assert_eq!(ui.next_event("volume"), json!({"key": "up"}));
 }
 
 #[test]
@@ -242,8 +225,8 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
 #[test]
 fn only_the_supervised_ui_reports_the_lock_screen() {
     let scripts = nova_test_support::TempDir::new("lock-ui");
-    let fake_ui = write_program(&scripts, "quickshell", "exec sleep 30");
-    let settings = ui_settings(Program::Quickshell, fake_ui);
+    let fake_ui = write_program(&scripts, "nova-ui", "exec sleep 30");
+    let settings = ui_settings(fake_ui);
     let novad = TestDaemon::start("lock-reports", Some(settings));
     let mut other = novad.connect();
     for report in ["report_locked", "report_unlocked"] {

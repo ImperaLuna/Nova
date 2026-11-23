@@ -1,18 +1,18 @@
 //! What `nova doctor` and `nova setup` ask of novad's own readers, so they
 //! and the daemon never disagree about a config file, a feature's binaries,
-//! the Quickshell they'd run or the compositor they'd follow. The CLI runs
+//! the UI they'd run or the compositor they'd follow. The CLI runs
 //! its own short commands (systemctl) through novad's timed wait too.
 
 use std::ffi::OsString;
 use std::path::Path;
 
 pub use crate::features::{read_selection, states as feature_states};
-pub use crate::supervisor::{UI_PROCESS_NAME, default_quickshell, read_quickshell_version};
+pub use crate::supervisor::GPUI_UI;
 pub use nova_host::os_release_field;
 pub use nova_process::child::output_within;
 pub use nova_theme::{DEFAULT_THEME_ID, default_dir as default_themes_dir};
 
-/// The `PATH` novad looks for binaries in (feature checks, Quickshell).
+/// The `PATH` novad looks for binaries in (feature checks, the UI).
 pub fn session_path() -> String {
     crate::session_path()
 }

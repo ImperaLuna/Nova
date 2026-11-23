@@ -94,18 +94,11 @@ fn status_json_is_novads_answer() {
     assert!(status.features.iter().any(|f| f.id == "bar"));
 }
 
-/// A novad that runs stand-ins as its UI: `quickshell` always, and
-/// `nova-ui` when `with_gpui_ui`, both waiting to be stopped.
-fn novad_with_stand_in_uis(name: &str, selection: &str, with_gpui_ui: bool) -> Novad {
+/// A novad that runs a stand-in `nova-ui`, waiting to be stopped.
+fn novad_with_a_stand_in_ui(name: &str, selection: &str) -> Novad {
     let dir = TempDir::new(name);
-    let version = "case \"$1\" in --version) echo 'Quickshell 0.3.2 (revision test)' ;; *) exec sleep 60 ;; esac";
-    let quickshell = nova_test_support::write_program(dir.path(), "quickshell", version);
-    let gpui_ui = dir.join("nova-ui");
-    if with_gpui_ui {
-        nova_test_support::write_program(dir.path(), "nova-ui", "exec sleep 60");
-    }
-    let ui = ["--quickshell".into(), quickshell.into(), "--gpui-ui".into(), gpui_ui.into()];
-    Novad::start_in(dir, selection, &ui)
+    let ui = nova_test_support::write_program(dir.path(), "nova-ui", "exec sleep 60");
+    Novad::start_in(dir, selection, &["--gpui-ui".into(), ui.into()])
 }
 
 fn status_once_the_ui_runs(novad: &Novad) -> Status {
@@ -115,33 +108,26 @@ fn status_once_the_ui_runs(novad: &Novad) -> Status {
     })
 }
 
+/// `nova-ui` runs whatever `ui` in features.toml says: the Nix modules'
+/// `gpui` quietly, anything else with a warning.
 #[test]
-fn features_toml_picks_the_gpui_program() {
-    let novad = novad_with_stand_in_uis("ui-gpui", "ui = \"gpui\"", true);
-    let status = status_once_the_ui_runs(&novad);
-    assert_eq!((status.ui.program, status.quickshell), (UiProgram::Gpui, None));
-    assert!(stdout(&novad.run(&["status"])).contains(", GPUI"));
-}
-
-/// A setting never leaves the session without a shell: Quickshell runs
-/// when `ui` is unset, names no program, or names one that isn't installed.
-#[test]
-fn quickshell_runs_unless_the_gpui_program_is_picked_and_there() {
-    let warned = |novad: &Novad, what: &str| {
-        let log = std::fs::read_to_string(nova_paths::log_file(&novad.dir.join("logs"))).unwrap();
+fn nova_ui_runs_whatever_features_toml_picks() {
+    let log = |novad: &Novad| std::fs::read_to_string(nova_paths::log_file(&novad.dir.join("logs"))).unwrap();
+    for (name, selection) in [("ui-unset", ""), ("ui-gpui", "ui = \"gpui\"")] {
+        let novad = novad_with_a_stand_in_ui(name, selection);
+        assert_eq!(status_once_the_ui_runs(&novad).ui.program, UiProgram::Gpui);
+        assert!(!log(&novad).contains("features.toml picks"), "{name}: {}", log(&novad));
+    }
+    for (name, selection, what) in [
+        ("ui-quickshell", "ui = \"quickshell\"", "Quickshell UI, which Nova no longer has"),
+        ("ui-unknown", "ui = \"qtquick\"", "a \"qtquick\" UI"),
+    ] {
+        let novad = novad_with_a_stand_in_ui(name, selection);
+        let status = status_once_the_ui_runs(&novad);
+        assert_eq!((status.ui.program, status.quickshell), (UiProgram::Gpui, None));
+        let log = log(&novad);
         assert!(log.lines().any(|line| line.contains("WARN") && line.contains(what)), "{what}: {log}");
-    };
-    let unset = novad_with_stand_in_uis("ui-unset", "", true);
-    assert_eq!(status_once_the_ui_runs(&unset).ui.program, UiProgram::Quickshell);
-
-    let unknown = novad_with_stand_in_uis("ui-unknown", "ui = \"qtquick\"", true);
-    assert_eq!(status_once_the_ui_runs(&unknown).ui.program, UiProgram::Quickshell);
-    warned(&unknown, "there is no \"qtquick\" UI");
-
-    let missing = novad_with_stand_in_uis("ui-missing", "ui = \"gpui\"", false);
-    let status = status_once_the_ui_runs(&missing);
-    assert_eq!((status.ui.program, status.quickshell.as_deref()), (UiProgram::Quickshell, Some("0.3.2")));
-    warned(&missing, "running Quickshell instead");
+    }
 }
 
 #[test]
@@ -296,10 +282,6 @@ fn wallpaper_says_why_it_cant() {
 #[test]
 fn volume_reaches_the_ui_quietly() {
     let novad = Novad::start("volume");
-    let output = novad.run(&["volume", "up"]);
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
-
     // Stands in for the UI: subscribes to volume events.
     let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
     ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
@@ -308,8 +290,12 @@ fn volume_reaches_the_ui_quietly() {
     assert!(lines.next().unwrap().unwrap().contains("hello"));
     assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
 
+    // The test has no sound server, so novad can't change the volume, but
+    // the UI hears the key and nothing goes to stdout.
     for key in ["up", "down", "mute"] {
-        assert_eq!(stdout(&novad.run(&["volume", key])), "", "quiet for keybinds");
+        let output = novad.run(&["volume", key]);
+        assert!(String::from_utf8_lossy(&output.stderr).contains("no sound server"), "{output:?}");
+        assert!(output.stdout.is_empty(), "quiet for keybinds");
         let event = lines.next().unwrap().unwrap();
         assert_eq!(event, format!(r#"{{"v":2,"event":"volume","data":{{"key":"{key}"}}}}"#));
     }

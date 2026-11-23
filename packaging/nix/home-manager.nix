@@ -42,9 +42,6 @@ in
     programs.nova = {
       # Inside a NixOS configuration, the GPU it drives.
       gpu = lib.mkIf (osConfig != null) (lib.mkDefault (features.gpuOf osConfig));
-      # The UI program Nova's NixOS module picks, when it's in use too: this
-      # module's features.toml is read before the system's.
-      ui = lib.mkIf (osConfig.programs.nova.enable or false) (lib.mkDefault osConfig.programs.nova.ui);
       # Nova Files installed by the system runs in the system's mode, which
       # novad has to know to route folders.
       features.nova-files.mode = lib.mkIf novaFilesBySystem (
@@ -56,7 +53,7 @@ in
       cfg.package
     ]
     # novad finds `nova-ui` on PATH.
-    ++ lib.optional (cfg.ui == "gpui") cfg.uiPackage
+    ++ [ cfg.uiPackage ]
     ++ features.packagesFor pkgs cfg.gpu on
     ++ lib.optionals cfg.fonts.enable (import ./fonts.nix { inherit pkgs; })
     # The Nova Files app, unless the system installs it; the session bus
@@ -67,7 +64,7 @@ in
     fonts.fontconfig.enable = lib.mkIf cfg.fonts.enable (lib.mkDefault true);
     xdg = {
       configFile = {
-        "nova/features.toml".text = features.selectionFile cfg.ui cfg.features;
+        "nova/features.toml".text = features.selectionFile cfg.features;
         # The package's own unit, linked where systemd looks, and wanted by
         # graphical-session.target (which niri, and Hyprland through uwsm,
         # start).
@@ -106,6 +103,9 @@ in
         "Nova's screen recording uses gpu-screen-recorder, whose capture helper needs `programs.gpu-screen-recorder.enable = true;` in your NixOS configuration (or Nova's NixOS module)."
       ++
         lib.optional (novaFilesOn && !novaFilesBySystem && cfg.features.nova-files.mode != "basic")
-          "Nova Files' `${cfg.features.nova-files.mode}` mode needs Nova's NixOS module; home-manager installs the whole app, as in the `basic` mode, without making it the folder default or file picker.";
+          "Nova Files' `${cfg.features.nova-files.mode}` mode needs Nova's NixOS module; home-manager installs the whole app, as in the `basic` mode, without making it the folder default or file picker."
+      ++
+        lib.optional (cfg.ui == "quickshell")
+          "programs.nova.ui = \"quickshell\": Nova no longer has the Quickshell UI, so it runs nova-ui. Remove the option.";
   };
 }

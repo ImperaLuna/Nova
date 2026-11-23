@@ -61,7 +61,6 @@ nova-watch = { path = "framework/watch" }
 nova-icons = { path = "framework/icons" }
 nova-inotify = { path = "framework/inotify" }
 nova-paths = { path = "framework/paths" }
-nova-quickshell = { path = "framework/quickshell" }
 nova-process = { path = "framework/process" }
 nova-session-bus = { path = "framework/session-bus" }
 nova-settings = { path = "framework/settings" }

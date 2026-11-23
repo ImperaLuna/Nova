@@ -5,7 +5,6 @@
 
 use crate::Daemon;
 use nova_carrier::Outcome;
-use nova_daemon_info::UiProgram;
 use nova_hub::ClientId;
 use nova_socket::{Answer, Caller, done};
 use nova_sound::{FEATURE_ID, Sources};
@@ -59,10 +58,8 @@ impl nova_modules::Module for Sound {
         (): &(),
         _: &[nova_daemon_info::FeatureState],
     ) -> Arc<Self> {
-        // Quickshell's shell follows Bluetooth itself (`VolumeService.qml`).
-        let follows_bluetooth = ctx.ui == UiProgram::Gpui;
         let (hub, logger) = (Arc::clone(&ctx.hub), Arc::clone(&ctx.logger));
-        Arc::new(Self(nova_sound::Sound::start(sources.clone(), hub, logger, follows_bluetooth)))
+        Arc::new(Self(nova_sound::Sound::start(sources.clone(), hub, logger)))
     }
 
     fn send_state(&self, client: ClientId) {
