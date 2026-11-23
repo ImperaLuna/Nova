@@ -173,6 +173,11 @@ sample`). Every ui crate draws with it:
   literal in a view.
 - Colors are `Theme::of(cx)`, read while rendering and never kept, so a
   theme change redraws everything with no code in the view.
+- Text starts from `.body_text(cx)` on the root of what a window draws
+  (the stage sets it for pills and panels; an overlay's window sets it
+  itself): the face, size, weight, ink and Qt's line height
+  (`tokens::LINE_HEIGHT`), so text sits as it does in the QML. A view
+  changes only what differs and sets no line height.
 - The shared tokens and the icon glyphs also live in `ui/theme/Tokens.qml`
   and `ui/theme/icons.js` until the Quickshell shell is removed. nova-look's
   tests hold the two equal: change a value in both.
@@ -369,6 +374,11 @@ merge main before every push and keep every line, sorted.
 - Hover is `group(name)` on the row and `group_hover(name, ...)` on what
   appears. A button inside a clickable row calls `cx.stop_propagation()`
   in its own mouse-down.
+- Until IMP-435 lands in the GPUI fork, hover sticks when the pointer
+  leaves a window: `.hover()` and `on_hover` work from where the pointer
+  last was. At a window's edge, follow `on_mouse_move` and the window's
+  own leave as `Popups::pointer` in `features/notifications/ui` does.
+  Delete this note with that fix.
 - What another feature adds comes through its slots: `Slots::for_host`
   says which views a host has (the launcher shows its Files tab while
   `launcher.providers` has `files`), with `cx.observe` on `Stage::slots`.
