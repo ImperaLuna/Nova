@@ -3204,6 +3204,7 @@ dependencies = [
  "nova-theme-info",
  "nova-tray-ui",
  "nova-ui-client",
+ "nova-volume-osd-ui",
  "nova-wallpaper-ui",
  "nova-workspaces-ui",
 ]
@@ -3219,6 +3220,27 @@ dependencies = [
  "nova-test-support",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "nova-volume-osd-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-volume-osd-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-desktop-info",
+ "nova-look",
+ "nova-sound-api",
+ "nova-stage",
+ "nova-ui-client",
+ "nova-volume-osd-api",
 ]
 
 [[package]]
