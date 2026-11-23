@@ -1,11 +1,7 @@
-//! A card's small uppercase heading, like "Resources" or "Nearby".
-//! Drawn without wider letter spacing: GPUI's text has none.
-
 use crate::Theme;
 use crate::tokens::FONT_SIZE_SMALL;
 use gpui::{App, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div};
 
-/// A card's heading (see the module).
 #[derive(IntoElement)]
 pub struct CardTitle {
     text: SharedString,

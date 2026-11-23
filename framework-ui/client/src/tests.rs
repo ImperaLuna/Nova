@@ -1,5 +1,3 @@
-//! The link against the fake novad, over a real socket.
-
 use crate::fake::{FakeDaemon, Recorded, VERSION};
 use crate::link::{Incoming, Link, Refusal};
 use nova_carrier::Topic;
@@ -14,8 +12,6 @@ const WAIT: Duration = Duration::from_secs(5);
 const WEATHER: Topic = Topic::named("weather");
 const TIDE: Topic = Topic::named("tide");
 
-/// Two topics as `nova ipc subscribe` prints them: weather changes twice,
-/// the tide never.
 fn recorded() -> Recorded {
     let weather = r#"{"event":"weather","data":{"sky":"rain"}}
 {"event":"weather","data":{"sky":"sun"}}
@@ -28,7 +24,6 @@ fn recorded() -> Recorded {
     recorded
 }
 
-/// A link to `socket` and what it tells its sink.
 fn link(socket: &Path) -> (Link, Receiver<Incoming>) {
     let (sender, incoming) = mpsc::channel();
     let link = Link::open(socket.to_path_buf(), move |message| {
@@ -49,7 +44,6 @@ fn connected() -> Incoming {
     Incoming::Connected { daemon: VERSION.into() }
 }
 
-/// What novad answers `command` with.
 fn answer(link: &Link, command: Command) -> Result<Value, Refusal> {
     let (sender, answer) = mpsc::channel();
     link.request(command, move |result| {
@@ -72,7 +66,6 @@ fn a_topic_sends_its_state_then_its_changes() {
     assert_eq!(next(&incoming), event("weather", json!({"sky": "rain"})));
     assert_eq!(next(&incoming), event("weather", json!({"sky": "sun"})));
     assert_eq!(next(&incoming), event("storm", Value::Null));
-    // A topic asked for once connected is subscribed to right away.
     link.subscribe(TIDE);
     assert_eq!(next(&incoming), event("tide", json!({"high": true})));
     assert!(incoming.recv_timeout(Duration::from_millis(100)).is_err());
@@ -96,8 +89,6 @@ fn a_request_without_novad_is_refused_at_once() {
     assert_eq!(answer(&link, Command::Ping), Err(Refusal::NotConnected));
 }
 
-/// novad starts after the UI, goes away and comes back: each time the link
-/// connects by itself and the topics send their state again.
 #[test]
 fn it_connects_again_when_novad_restarts() {
     let dir = TempDir::new("client-restart");
@@ -114,7 +105,6 @@ fn it_connects_again_when_novad_restarts() {
     }
 }
 
-/// A novad that hangs up before it answers: the request is told so.
 #[test]
 fn a_request_novad_never_answers_is_told_it_went_away() {
     use std::io::{BufRead, BufReader, Write};
@@ -123,7 +113,6 @@ fn a_request_novad_never_answers_is_told_it_went_away() {
     let novad = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         stream.write_all(b"{\"v\":2,\"event\":\"hello\",\"data\":{\"daemon\":\"silent\"}}\n").unwrap();
-        // Hangs up once the request has arrived.
         let mut request = String::new();
         BufReader::new(stream.try_clone().unwrap()).read_line(&mut request).unwrap();
         request
@@ -134,7 +123,6 @@ fn a_request_novad_never_answers_is_told_it_went_away() {
     assert_eq!(novad.join().unwrap().trim(), r#"{"v":2,"id":1,"cmd":"ping"}"#);
 }
 
-/// A novad that speaks another protocol version is not talked to.
 #[test]
 fn another_protocol_version_is_no_connection() {
     use std::io::Write;
@@ -166,8 +154,6 @@ fn recordings_are_read_from_a_folder() {
     assert!(problem.contains("weather.jsonl: line 1: not an event"), "{problem}");
 }
 
-/// A view that starts later asks for a topic already subscribed to, and
-/// gets its state like the first did.
 #[test]
 fn asking_for_a_topic_again_sends_its_state_again() {
     let dir = TempDir::new("client-again");
@@ -180,7 +166,6 @@ fn asking_for_a_topic_again_sends_its_state_again() {
     }
 }
 
-/// A line without an end is not read for ever.
 #[test]
 fn a_line_over_the_limit_is_an_error() {
     use crate::link::read_line;
@@ -192,7 +177,6 @@ fn a_line_over_the_limit_is_an_error() {
     assert!(!read_line(&mut "".as_bytes(), 8, &mut line).unwrap());
 }
 
-/// A topic nobody asks for any more is left out of the next connection.
 #[test]
 fn a_topic_nobody_asks_for_is_dropped_on_the_next_connection() {
     let dir = TempDir::new("client-unsubscribe");
@@ -204,13 +188,10 @@ fn a_topic_nobody_asks_for_is_dropped_on_the_next_connection() {
     link.unsubscribe(TIDE);
     let _novad = FakeDaemon::start(&socket(&dir), recorded()).unwrap();
     assert_eq!(next(&incoming), connected());
-    // The tide still has one asker; the weather has none.
     assert_eq!(next(&incoming), event("tide", json!({"high": true})));
     assert!(incoming.recv_timeout(Duration::from_millis(100)).is_err());
 }
 
-/// Lines with fields novad never sends, or that are neither an event nor an
-/// answer, are no messages.
 #[test]
 fn odd_lines_are_ignored() {
     use std::io::{BufRead, BufReader, Write};
@@ -228,7 +209,6 @@ fn odd_lines_are_ignored() {
             r#"{"v":2,"event":"tide"}"#,
             r#"{"v":2,"id":1,"result":null}"#,
         ];
-        // Sent once the request has arrived, so its id is waited for.
         let mut request = String::new();
         stream.write_all(format!("{}\n", lines[0]).as_bytes()).unwrap();
         BufReader::new(stream.try_clone().unwrap()).read_line(&mut request).unwrap();

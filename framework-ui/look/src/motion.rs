@@ -1,23 +1,9 @@
-//! How things move: the one curve every panel motion runs on, and the
-//! damped spring behind what follows a target (the volume capsule).
-//!
-//! Both are plain numbers in and out, so the same code drives a GPUI
-//! animation (`gpui::Animation::with_easing(motion::ease)`) and a value a
-//! view steps itself on each frame ([`Eased`], [`Spring`]). Neither asks for
-//! frames: whoever draws asks for the next one only while `settled` is
-//! false, so nothing moves, or costs a frame, out of sight.
-
 use crate::tokens::{DURATION_PANEL, EASING};
 use std::time::{Duration, Instant};
 
-/// How close Newton's method gets to the curve's `x` before it stops, and
-/// how many rounds it may take. Eight rounds reach this on any curve with
-/// control points inside the unit square.
 const SOLVE_ROUNDS: usize = 8;
 const SOLVE_FLAT_SLOPE: f32 = 1e-5;
 
-/// One coordinate of a cubic Bézier from 0 to 1 with control values `first`
-/// and `second`, at parameter `at`.
 fn bezier(at: f32, first: f32, second: f32) -> f32 {
     let rest = 1.0 - at;
     3.0 * rest * rest * at * first + 3.0 * rest * at * at * second + at * at * at
@@ -28,10 +14,8 @@ fn bezier_slope(at: f32, first: f32, second: f32) -> f32 {
     3.0 * rest * rest * first + 6.0 * rest * at * (second - first) + 3.0 * at * at * (1.0 - second)
 }
 
-/// A CSS-style `cubic-bezier(x1, y1, x2, y2)` at `progress` (0..1).
 pub fn cubic_bezier(progress: f32, [x1, y1, x2, y2]: [f32; 4]) -> f32 {
     let progress = progress.clamp(0.0, 1.0);
-    // Find the curve parameter whose x is `progress`, then read its y.
     let mut at = progress;
     for _ in 0..SOLVE_ROUNDS {
         let slope = bezier_slope(at, x1, x2);
@@ -43,14 +27,10 @@ pub fn cubic_bezier(progress: f32, [x1, y1, x2, y2]: [f32; 4]) -> f32 {
     bezier(at, y1, y2)
 }
 
-/// Nova's panel curve (fast out, gentle stop) at `progress` (0..1).
 pub fn ease(progress: f32) -> f32 {
     cubic_bezier(progress, EASING)
 }
 
-/// A value that moves to each new target on the panel curve, starting from
-/// wherever it is: a panel toggled half-way turns
-/// round from there.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Eased {
     from: f32,
@@ -60,19 +40,15 @@ pub struct Eased {
 }
 
 impl Eased {
-    /// At rest at `value`, moving with the panel's duration.
     pub fn at(value: f32, now: Instant) -> Self {
         Self::lasting(value, DURATION_PANEL, now)
     }
 
-    /// At rest at `value`; each move takes `duration`.
     pub fn lasting(value: f32, duration: Duration, now: Instant) -> Self {
-        // Started a whole duration ago: it has arrived.
         let started = now.checked_sub(duration).unwrap_or(now);
         Self { from: value, to: value, started, duration }
     }
 
-    /// Heads for `target` from where it is at `now`.
     pub fn set_target(&mut self, target: f32, now: Instant) {
         if target == self.to {
             return;
@@ -90,7 +66,6 @@ impl Eased {
         self.from + (self.to - self.from) * ease(self.progress(now))
     }
 
-    /// Whether it has arrived, so no more frames are needed.
     pub fn settled(&self, now: Instant) -> bool {
         self.from == self.to || self.progress(now) >= 1.0
     }
@@ -103,32 +78,21 @@ impl Eased {
     }
 }
 
-/// The longest step a spring takes at once. A frame that came late is cut
-/// into steps this long, so a stiff spring stays stable at any frame rate.
 const SPRING_STEP: f32 = 1.0 / 240.0;
-/// The longest time one frame may cover: after a stall the spring carries
-/// on from where it was instead of jumping.
 const SPRING_FRAME_MAX: f32 = 1.0 / 30.0;
-/// Closer to its target and slower than this (per second), a spring is at
-/// rest: less than a tenth of a pixel on a 100 px way.
 const SPRING_REST_DISTANCE: f32 = 0.0005;
 const SPRING_REST_SPEED: f32 = 0.005;
 
-/// A damped spring: how stiff it is, and its damping ratio (below 1 it
-/// overshoots and swings back, at 1 it just arrives).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Spring {
     pub stiffness: f32,
     pub damping: f32,
 }
 
-/// Where something on a [`Spring`] is, and how fast it moves (per second).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct SpringState {
     pub value: f32,
     pub speed: f32,
-    /// Its acceleration over the last step, for what reacts to it (the
-    /// capsule's liquid tilts with it).
     pub acceleration: f32,
 }
 
@@ -139,7 +103,6 @@ impl SpringState {
 }
 
 impl Spring {
-    /// `state` after `elapsed` more time on the way to `target`.
     pub fn step(self, mut state: SpringState, target: f32, elapsed: Duration) -> SpringState {
         let friction = 2.0 * self.stiffness.sqrt() * self.damping;
         let mut left = elapsed.as_secs_f32().min(SPRING_FRAME_MAX);
@@ -156,7 +119,6 @@ impl Spring {
         state
     }
 
-    /// Whether `state` rests at `target`, so no more frames are needed.
     pub fn settled(self, state: SpringState, target: f32) -> bool {
         (state.value - target).abs() < SPRING_REST_DISTANCE && state.speed.abs() < SPRING_REST_SPEED
     }
@@ -172,7 +134,6 @@ mod tests {
     fn the_panel_curve_starts_fast_and_stops_gently() {
         assert_eq!(ease(0.0), 0.0);
         assert_eq!(ease(1.0), 1.0);
-        // Most of the way in the first third, and never backwards.
         assert!(ease(0.33) > 0.8, "{}", ease(0.33));
         let mut previous = 0.0;
         for step in 1..=100 {
@@ -228,8 +189,6 @@ mod tests {
         assert!(value.settled(start + DURATION_PANEL));
     }
 
-    /// Runs `spring` from 0 to 1 a frame at a time; returns the highest
-    /// value it reached and how many frames it took to rest.
     fn run(spring: Spring) -> (f32, usize) {
         let mut state = SpringState::at(0.0);
         let mut highest = 0.0_f32;

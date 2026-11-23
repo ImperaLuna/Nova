@@ -1,12 +1,3 @@
-//! The concave corner that joins glass to a screen edge: the power menu's tab
-//! curves into the right edge above and below it. A square of the glass's tint
-//! with a quarter circle cut from its corner away from the glass and the edge,
-//! and the glass's outline along the curve.
-//!
-//! It takes clicks and blur like the glass beside it, all but its cutout:
-//! whoever draws one adds [`Fillet::shapes`] to its window's shapes
-//! (`crate::shape`), rows a pixel high that follow the curve.
-
 use crate::Theme;
 use crate::shape::Shape;
 use crate::spinner::arc;
@@ -14,17 +5,12 @@ use crate::tokens::GLASS_EDGE_WIDTH;
 use gpui::{App, Bounds, IntoElement, PathBuilder, Pixels, Point, RenderOnce, Styled, Window, canvas, point, px, size};
 use std::f32::consts::FRAC_PI_2;
 
-/// Which side of the glass a fillet sits on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilletSide {
-    /// On top of the glass, curving up into the edge.
     Above,
-    /// Below it, curving down.
     Below,
 }
 
-/// A fillet as an element that fills its parent, which its caller sizes
-/// and places: a square, its right side on the screen edge.
 #[derive(Debug, Clone, Copy, IntoElement)]
 pub struct Fillet {
     side: FilletSide,
@@ -35,9 +21,6 @@ impl Fillet {
         Self { side }
     }
 
-    /// The fillet filling `bounds` as rows on whole pixels, for the
-    /// window's blur and click regions: each runs from the curve to the
-    /// edge, and rows that start equally far in are one.
     pub fn shapes(side: FilletSide, bounds: Bounds<Pixels>) -> Vec<Shape> {
         let left = f32::from(bounds.left()).round();
         let right = f32::from(bounds.right()).round();
@@ -66,11 +49,8 @@ impl Fillet {
     }
 }
 
-/// How far in from the fillet's left side its pixel row `row` starts: the
-/// curve's reach at the row's middle, in whole pixels.
 fn cut(side: FilletSide, radius: f32, row: f32) -> f32 {
     let middle = row + 0.5;
-    // How far the row is from the circle's centre, up or down.
     let off_centre = match side {
         FilletSide::Above => middle,
         FilletSide::Below => radius - middle,
@@ -81,16 +61,10 @@ fn cut(side: FilletSide, radius: f32, row: f32) -> f32 {
     (radius * radius - off_centre * off_centre).max(0.0).sqrt().round()
 }
 
-/// The curve from the corner it shares with the edge's far end to the one
-/// it shares with the glass's, round the centre of the cut-out circle.
 fn curve(side: FilletSide, bounds: Bounds<Pixels>) -> Vec<Point<Pixels>> {
     let radius = bounds.size.width;
     match side {
-        // Centred on the top left corner: from the top right down to the
-        // bottom left.
         FilletSide::Above => arc(bounds.origin, radius, 0.0, FRAC_PI_2),
-        // Centred on the bottom left corner: from the bottom right up to
-        // the top left.
         FilletSide::Below => arc(point(bounds.left(), bounds.bottom()), radius, 0.0, -FRAC_PI_2),
     }
 }
@@ -107,8 +81,6 @@ impl RenderOnce for Fillet {
                     return;
                 }
                 let curve = curve(side, bounds);
-                // The corner it shares with the glass and the edge, then
-                // the curve back round.
                 let corner = match side {
                     FilletSide::Above => [point(bounds.left(), bounds.bottom()), bounds.bottom_right()],
                     FilletSide::Below => [bounds.origin, bounds.top_right()],
@@ -137,7 +109,6 @@ mod tests {
         Bounds { origin: point(px(x), px(y)), size: size(px(side), px(side)) }
     }
 
-    /// Whether the pixel at (`x`, `y`) is in any of `shapes`.
     fn covered(shapes: &[Shape], x: f32, y: f32) -> bool {
         shapes.iter().any(|shape| shape.bounds.contains(&point(px(x + 0.5), px(y + 0.5))))
     }

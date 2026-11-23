@@ -1,10 +1,3 @@
-//! A toggle tile in quick settings: an icon and a title, filled with the accent
-//! while on. The fill says its state, so no line under the title does. With an
-//! arrow at its end, a click there opens the tile's page instead of toggling.
-//!
-//! [`Tile::empty`] is a tile's place with nothing in it yet: quick settings
-//! keeps it for a feature whose tile isn't drawn here yet.
-
 use crate::tokens::{
     DIM_OPACITY, DURATION_COLOR, FONT_SIZE, GAP, ICON_SIZE_MENU, LABEL_NUDGE, PAD, RADIUS_CARD, ROW_INSET,
     TILE_ARROW_WIDTH, TILE_HEIGHT, WEIGHT_TITLE,
@@ -19,7 +12,6 @@ use std::rc::Rc;
 
 type Clicked = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
-/// A toggle tile (see the module).
 #[derive(IntoElement)]
 pub struct Tile {
     id: ElementId,
@@ -46,12 +38,10 @@ impl Tile {
         }
     }
 
-    /// A tile's place with nothing in it: the raised fill alone.
     pub fn empty(id: impl Into<ElementId>) -> Self {
         Self { glyph: None, available: false, ..Self::new(id, Glyph::STAR, "") }
     }
 
-    /// The icon's solid parts.
     pub fn filled(mut self, fill: Glyph) -> Self {
         self.fill = Some(fill);
         self
@@ -62,7 +52,6 @@ impl Tile {
         self
     }
 
-    /// `false` dims it and takes no clicks (the mic with no input).
     pub fn available(mut self, available: bool) -> Self {
         self.available = available;
         self
@@ -73,7 +62,6 @@ impl Tile {
         self
     }
 
-    /// Gives it the arrow, which opens its page.
     pub fn on_open(mut self, opened: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_open = Some(Rc::new(opened));
         self
@@ -83,8 +71,6 @@ impl Tile {
 impl RenderOnce for Tile {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (available, has_glyph) = (self.available, self.glyph.is_some());
-        // The fill fades between the accent, the hover wash and the raised
-        // fill, as today's does.
         let hovered = Hovered::of(keyed(&self.id, "hovered"), window, cx);
         let pointed = available && hovered.is(cx);
         let theme = Theme::of(cx).clone();

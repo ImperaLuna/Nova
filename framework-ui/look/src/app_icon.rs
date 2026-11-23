@@ -1,13 +1,3 @@
-//! An app's icon: the image file novad found for it, else the app's first
-//! letter on a swatch picked by its id, so a missing icon still looks
-//! deliberate. The launcher's rows and tiles and a notification's card
-//! draw it.
-//!
-//! novad looks icon names up in the icon theme and sends an absolute path
-//! (`nova_app_info::App::icon`). GPUI reads and decodes the file off the
-//! main thread and keeps the picture, so an icon costs its file once; the
-//! letter shows until then, and stays when the file can't be read.
-
 use crate::Theme;
 use crate::tokens::{APP_ICON_SIZE, LETTER_SCALE, LETTER_TILE_RADIUS, WEIGHT_TITLE};
 use gpui::{
@@ -16,7 +6,6 @@ use gpui::{
 };
 use std::path::PathBuf;
 
-/// An app's icon, square (see the module).
 #[derive(Debug, Clone, IntoElement)]
 pub struct AppIcon {
     id: SharedString,
@@ -26,14 +15,10 @@ pub struct AppIcon {
 }
 
 impl AppIcon {
-    /// The icon of the app `id` (its desktop file id, or whatever names it
-    /// for good) called `name`.
     pub fn new(id: impl Into<SharedString>, name: impl Into<SharedString>) -> Self {
         Self { id: id.into(), name: name.into(), icon: None, size: APP_ICON_SIZE }
     }
 
-    /// The absolute path of its image, as novad sends it. Anything else,
-    /// like an icon's name, draws the letter.
     pub fn icon(mut self, icon: Option<impl Into<SharedString>>) -> Self {
         self.icon = icon.map(Into::into).filter(|icon| icon.starts_with('/'));
         self
@@ -68,7 +53,6 @@ impl RenderOnce for AppIcon {
     }
 }
 
-/// An app's letter on its swatch.
 #[derive(Clone)]
 struct LetterTile {
     letter: SharedString,
@@ -79,7 +63,6 @@ struct LetterTile {
 
 impl LetterTile {
     fn build(self) -> AnyElement {
-        // As round as a row's icon is, at any size.
         let radius = LETTER_TILE_RADIUS * (self.size / APP_ICON_SIZE);
         div()
             .size(self.size)
@@ -97,17 +80,12 @@ impl LetterTile {
     }
 }
 
-/// The letter an app without an icon shows: its name's first letter or
-/// digit.
 fn letter(name: &str) -> String {
     let first = name.chars().find(|character| character.is_alphanumeric());
     first.map_or_else(|| "?".into(), |character| character.to_uppercase().collect())
 }
 
-/// Which of `swatches` swatches an app's letter sits on: the same for the
-/// same id every time.
 fn swatch(id: &str, swatches: usize) -> usize {
-    // JavaScript's `(hash * 31 + code) | 0` over UTF-16 code units.
     let hash = id.encode_utf16().fold(0i32, |hash, unit| hash.wrapping_mul(31).wrapping_add(i32::from(unit)));
     hash.unsigned_abs() as usize % swatches.max(1)
 }

@@ -1,17 +1,3 @@
-//! The active theme's colors, as GPUI draws them, and the fills the look
-//! derives from them.
-//!
-//! One [`Theme`] is the app's, held as a GPUI global. [`Theme::of`] reads
-//! it and [`Theme::set`] replaces it and redraws every window, so a theme
-//! change shows on the next frame with no view watching for it: views read
-//! the theme while they render and never keep a color. Until novad's first
-//! `theme` event arrives the theme is Carbonfox dark, compiled in from
-//! `themes/carbonfox.toml` like novad's own fallback (`nova-theme`).
-//!
-//! A theme sets colors only. How strong each derived fill is (the dim ink,
-//! the hover wash, the glass tint) is a token (`crate::tokens`), the same
-//! for every theme.
-
 use crate::tokens::{
     ACCENT_FILL_OPACITY, DIM_OPACITY, FG_DIM_OPACITY, FG_SOFT_OPACITY, GLASS_HIGHLIGHT_OPACITY,
     GLASS_INNER_LINE_OPACITY, GLASS_OPACITY, GLASS_OUTLINE_OPACITY, GLASS_RIM_OPACITY, HOVER_OPACITY, METER_OPACITY,
@@ -27,37 +13,27 @@ const FALLBACK_ID: &str = "carbonfox";
 const FALLBACK_FILE: &str = include_str!("../../../themes/carbonfox.toml");
 const CHANNEL_MAX: f32 = 255.0;
 
-/// The colors everything is drawn in. Each field is a token of the theme
-/// file, under the same name.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Theme {
-    /// The theme file's name without `.toml`, e.g. `carbonfox`.
     pub id: String,
     pub mode: ThemeMode,
     pub bg: Hsla,
     pub bg_alt: Hsla,
-    /// Behind everything when nothing else is drawn, like the lock screen.
     pub backdrop: Hsla,
-    /// Glass's tint, opaque; [`Theme::glass`] is it as glass lays it.
     pub glass_tint: Hsla,
-    /// Text and icons.
     pub fg: Hsla,
     pub primary: Hsla,
     pub secondary: Hsla,
-    /// Text on a solid accent fill.
     pub on_accent: Hsla,
     pub info: Hsla,
     pub success: Hsla,
     pub warning: Hsla,
     pub error: Hsla,
-    /// Distinct colors for things told apart by color, used in order.
     pub swatches: [Hsla; 8],
 }
 
 impl Global for Theme {}
 
-/// A theme file, as far as the fallback needs it. `nova-theme` owns the
-/// format; novad reads the files and sends the theme the user picked.
 #[derive(Deserialize)]
 struct ThemeFile {
     dark: Palette,
@@ -76,12 +52,10 @@ impl From<&nova_theme_info::Theme> for Theme {
 }
 
 impl Theme {
-    /// The app's theme: the last one [`Theme::set`], else Carbonfox dark.
     pub fn of(cx: &App) -> &Theme {
         cx.try_global::<Theme>().unwrap_or(&FALLBACK)
     }
 
-    /// Makes `theme` the app's and redraws every window in it.
     pub fn set(theme: Theme, cx: &mut App) {
         if cx.try_global::<Theme>() == Some(&theme) {
             return;
@@ -120,43 +94,34 @@ impl Theme {
         }
     }
 
-    /// Secondary text: the ink, dimmer.
     pub fn fg_dim(&self) -> Hsla {
         self.fg.alpha(FG_DIM_OPACITY)
     }
 
-    /// Between the ink and its dim level.
     pub fn fg_soft(&self) -> Hsla {
         self.fg.alpha(FG_SOFT_OPACITY)
     }
 
-    /// The ink of something that can't be used right now.
     pub fn fg_disabled(&self) -> Hsla {
         self.fg.alpha(DIM_OPACITY)
     }
 
-    /// A solid-looking surface.
     pub fn surface(&self) -> Hsla {
         self.bg.alpha(SURFACE_OPACITY)
     }
 
-    /// Something raised off a surface, like a card or a field.
     pub fn surface_raised(&self) -> Hsla {
         self.fg.alpha(RAISED_OPACITY)
     }
 
-    /// A hairline between things on a surface.
     pub fn outline(&self) -> Hsla {
         self.fg.alpha(OUTLINE_OPACITY)
     }
 
-    /// Glass's tint as it lies over the compositor's blur.
     pub fn glass(&self) -> Hsla {
         self.glass_tint.alpha(GLASS_OPACITY)
     }
 
-    /// Glass's edge: the dark outline, the light line inside it and the
-    /// highlight along its top.
     pub fn glass_outline(&self) -> Hsla {
         black().alpha(GLASS_OUTLINE_OPACITY)
     }
@@ -169,57 +134,43 @@ impl Theme {
         self.fg.alpha(GLASS_HIGHLIGHT_OPACITY)
     }
 
-    /// A hairline around things inside glass.
     pub fn glass_rim(&self) -> Hsla {
         self.fg.alpha(GLASS_RIM_OPACITY)
     }
 
-    /// The soft shadow under glass.
     pub fn shadow(&self) -> Hsla {
         black().alpha(SHADOW_OPACITY)
     }
 
-    /// The hover wash on things inside glass.
     pub fn hover(&self) -> Hsla {
         self.fg.alpha(HOVER_OPACITY)
     }
 
-    /// The selected row of a list.
     pub fn selected(&self) -> Hsla {
         self.fg.alpha(SELECTED_OPACITY)
     }
 
-    /// The accent behind something that is running or picked.
     pub fn accent_fill(&self) -> Hsla {
         self.primary.alpha(ACCENT_FILL_OPACITY)
     }
 
-    /// What's selected where the focus isn't.
     pub fn selected_quiet(&self) -> Hsla {
         self.fg.alpha(SELECTED_QUIET_OPACITY)
     }
 
-    /// A meter's empty track.
     pub fn track(&self) -> Hsla {
         self.fg.alpha(TRACK_OPACITY)
     }
 
-    /// A meter's neutral fill.
     pub fn meter(&self) -> Hsla {
         self.fg.alpha(METER_OPACITY)
     }
 
-    /// `target` mixed into the background: 0 is the background, 1 the color
-    /// itself. One function for every ramp and tint, so they follow the
-    /// theme: a heatmap steps through `tint(primary, level)`, a status row
-    /// sits on `tint(error, 0.15)`.
     pub fn tint(&self, target: Hsla, amount: f32) -> Hsla {
         mix(self.bg, target, amount)
     }
 }
 
-/// `from` blended into `to` by `amount` (0 is `from`, 1 is `to`), alpha
-/// too, so glass can turn solid.
 pub fn mix(from: Hsla, to: Hsla, amount: f32) -> Hsla {
     let (from, to, amount) = (Rgba::from(from), Rgba::from(to), amount.clamp(0.0, 1.0));
     let between = |from: f32, to: f32| from + (to - from) * amount;
@@ -275,7 +226,6 @@ mod tests {
             "swatch7",
             "swatch8",
         ];
-        // Color N is #(3N+1)(3N+2)(3N+3), so each lands where it belongs or the test says which didn't.
         let colors: String = names
             .iter()
             .enumerate()
@@ -325,7 +275,6 @@ mod tests {
         assert_eq!(rgb(theme.tint(theme.error, 0.0)), rgb(theme.bg));
         assert_eq!(rgb(theme.tint(theme.error, 1.0)), rgb(theme.error));
         let half = rgb(theme.tint(theme.error, 0.5));
-        // Half-way between #1D1D1D and #EE5396.
         assert_eq!(half, [0x86, 0x38, 0x5A]);
     }
 

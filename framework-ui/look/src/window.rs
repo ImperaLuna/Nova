@@ -1,57 +1,28 @@
-//! The one place a shell window's options are built.
-//!
-//! Everything Nova puts on screen is a layer surface: see-through, without
-//! a title bar, and never focused the way an app's window is. GPUI takes a
-//! window without focus for one in the background and draws it at 30
-//! frames a second at most, which would halve every animation in the
-//! shell. [`ShellWindow::options`] turns that cap off, along with the rest
-//! every shell window shares, so no feature builds `WindowOptions` itself
-//! (`scripts/lint-traps.sh` checks that).
-//!
-//! The one window that is no layer surface is the lock screen's, a session
-//! lock surface the compositor sizes to its screen ([`lock_surface`]).
-
 use gpui::{
     Bounds, DisplayId, Pixels, Size, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions},
     point, px,
 };
 
-/// What every Nova surface's namespace starts with. Compositor rules match
-/// on it (`packaging/compositor/niri.kdl` turns on blur of the windows
-/// behind for `^nova-`), so a surface that names itself keeps the prefix.
 pub const NAMESPACE_PREFIX: &str = "nova-";
-/// The namespace of a surface that did not name itself.
 pub const NAMESPACE: &str = "nova-shell";
-/// The app id of Nova's windows.
 pub const APP_ID: &str = "nova";
-/// An exclusive zone that keeps a surface where it is anchored whatever
-/// room other surfaces reserved: without it Hyprland moves the stage down
-/// by the bar's reserved space.
+// Without -1 Hyprland moves the stage down by the bar's reserved space:
+// https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:request:set_exclusive_zone
 pub const IGNORE_RESERVED_SPACE: Pixels = px(-1.0);
 
-/// A window of the shell: a layer surface on one screen.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShellWindow {
-    /// The screen it is on.
     pub display: DisplayId,
     pub size: Size<Pixels>,
     pub layer: Layer,
-    /// The screen edges it is fixed to.
     pub anchor: Anchor,
-    /// Whether it takes the keyboard: none for most, while a panel with a
-    /// field is open for the stage.
     pub keyboard: KeyboardInteractivity,
-    /// The room it reserves from app windows along its edge, or
-    /// [`IGNORE_RESERVED_SPACE`].
     pub exclusive_zone: Pixels,
-    /// What compositor rules name it by.
     pub namespace: &'static str,
 }
 
 impl ShellWindow {
-    /// A window across the top of `display`, above app windows, that takes
-    /// no keyboard and reserves no room.
     pub fn new(display: DisplayId, size: Size<Pixels>) -> Self {
         Self {
             display,
@@ -64,7 +35,6 @@ impl ShellWindow {
         }
     }
 
-    /// The options to open it with.
     pub fn options(self) -> WindowOptions {
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds { origin: point(px(0.0), px(0.0)), size: self.size })),
@@ -75,12 +45,9 @@ impl ShellWindow {
             is_resizable: false,
             is_minimizable: false,
             app_id: Some(APP_ID.into()),
-            // A shell surface never has the focus an app's window has, so
-            // GPUI would take it for a background window and cap it at 30
-            // frames a second.
+            // GPUI caps a window without focus at 30 frames a second, and a shell surface never has an app's focus:
+            // https://github.com/ImperaLuna/zed/tree/47424cdc3f1a49829960e1ecbcdcdd967d034265/crates/gpui
             inactive_frame_interval: None,
-            // Glass needs the compositor's blur behind it. The window's
-            // owner limits it to the glass (`crate::set_blur_region`).
             window_background: WindowBackgroundAppearance::Blurred,
             kind: WindowKind::LayerShell(LayerShellOptions {
                 namespace: self.namespace.into(),
@@ -95,10 +62,6 @@ impl ShellWindow {
     }
 }
 
-/// The options a lock screen's window on `display` opens with: a session
-/// lock surface (ext-session-lock-v1), opaque, as big as the screen. The
-/// compositor shows nothing else of the session while the lock holds, and
-/// sends the surface every key.
 pub fn lock_surface(display: DisplayId, size: Size<Pixels>) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds { origin: point(px(0.0), px(0.0)), size })),
@@ -108,7 +71,6 @@ pub fn lock_surface(display: DisplayId, size: Size<Pixels>) -> WindowOptions {
         is_resizable: false,
         is_minimizable: false,
         app_id: Some(APP_ID.into()),
-        // As for every shell window: GPUI's cap on a window without focus.
         inactive_frame_interval: None,
         window_background: WindowBackgroundAppearance::Opaque,
         kind: WindowKind::SessionLock,
