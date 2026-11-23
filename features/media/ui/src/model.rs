@@ -146,9 +146,14 @@ impl NowPlaying {
         self.follow(cx);
     }
 
-    /// The stage opened or closed a panel.
+    /// The stage opened or closed a panel. With nothing playing there is
+    /// no panel (`nova toggle media`): it closes before it draws.
     fn follow_open(&mut self, cx: &mut Context<Self>) {
         let open = Stage::is_open(NAME, self.screen.id, cx);
+        if open && self.media(cx).and_then(logic::shown).is_none() {
+            Stage::close(NAME, self.screen.id, cx);
+            return;
+        }
         if open == self.open {
             return;
         }

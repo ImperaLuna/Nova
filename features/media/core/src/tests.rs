@@ -373,6 +373,40 @@ fn a_paused_pick_that_moves_on_ends() {
 }
 
 #[test]
+fn a_short_clip_is_left_out_until_its_track_is_longer() {
+    // A chat app's notification sound: a 6 second clip, as Ferdium plays.
+    const CHAT: &str = "org.mpris.MediaPlayer2.chromium.instance_7";
+    let fixture = Fixture::new("short-clip");
+    let media = fixture.media();
+    let _spotify = fixture.play(SPOTIFY, Track::playing("Feather"));
+    fixture.until(|event| event["shown"] == SPOTIFY);
+    media.show(SPOTIFY).unwrap();
+    let clip = Track { length_us: 6_000_000, position_us: 0, artists: Vec::new(), ..Track::playing("WhatsApp") };
+    let chat = fixture.play(CHAT, Track { desktop_entry: "ferdium", ..clip });
+    // Read, and refused: no command reaches it.
+    wait_until(WAIT, "the clip is read", || {
+        media.control(CHAT, MediaAction::PlayPause).is_err_and(|e| e.contains("short clip"))
+    });
+    assert!(media.show(CHAT).is_err());
+    assert!(chat.calls().is_empty());
+    // Not listed, and its start ends no pick: nothing new to publish.
+    let now = media.shared.event(&lock(&media.shared.state));
+    assert_eq!(now.players.iter().map(|player| player.id.as_str()).collect::<Vec<_>>(), [SPOTIFY]);
+    assert_eq!(now.shown.as_deref(), Some(SPOTIFY));
+    assert_eq!(lock(&media.shared.state).picked.as_deref(), Some(SPOTIFY));
+
+    // A longer track (a voice note): listed again, and it can be shown.
+    chat.change(|track| track.length_us = 40_000_000);
+    let event = fixture.until(|event| !player(event, CHAT).is_null());
+    assert_eq!(event["shown"], SPOTIFY, "the pick holds");
+    media.show(CHAT).unwrap();
+    fixture.until(|event| event["shown"] == CHAT);
+    // Back to a clip: it can't keep the pill, even picked.
+    chat.change(|track| track.length_us = 3_000_000);
+    fixture.until(|event| player(event, CHAT).is_null() && event["shown"] == SPOTIFY);
+}
+
+#[test]
 fn a_player_is_found_by_its_process_when_its_desktop_entry_is_wrong() {
     // Zen's player says it's `zen`; its app is zen-beta.desktop, and its
     // process (`.zen-beta-wrapped`) and windows are `zen-beta`.
