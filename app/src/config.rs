@@ -84,6 +84,14 @@ mod tests {
     }
 
     #[test]
+    fn the_example_config_sets_every_section() {
+        let config: Config = toml::from_str(include_str!("../../packaging/config.example.toml")).unwrap();
+        assert_eq!(config.quick_settings.name.as_deref(), Some("Luna"));
+        assert_ne!(config.wallpaper, WallpaperConfig::default());
+        assert!(config.screenshot.folder().is_ok() && config.recording.folder().is_ok());
+    }
+
+    #[test]
     fn the_greeting_name_is_the_login_unless_set() {
         let config: Config = toml::from_str("").unwrap();
         assert_eq!(config.quick_settings.name, None);

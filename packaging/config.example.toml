@@ -1,0 +1,23 @@
+# ~/.config/nova/config.toml
+[theme]
+name = "carbonfox"
+mode = "dark"
+
+[ai-usage]
+claude-usage-endpoint = true
+codex-usage-endpoint = true
+
+[screenshot]
+folder = "~/Pictures/Screenshots"
+
+[recording]
+folder = "~/Videos/Recordings"
+
+[quick-settings]
+name = "Luna"
+
+[wallpaper]
+path = "~/Pictures/Wallpapers/dusk.jpg"
+folder = "~/Pictures/Wallpapers"
+[wallpaper.outputs]
+DP-2 = "2861349227"  # a Wallpaper Engine Workshop item
