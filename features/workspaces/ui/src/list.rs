@@ -9,7 +9,8 @@ use gpui::{
 };
 use nova_desktop_info::{Capability, Desktop, Event, TOPIC, WorkspaceId};
 use nova_look::tokens::{
-    BAR_HEIGHT, DOT_SIZE, FONT_MONO, FONT_SIZE_SMALL, ICON_SIZE_SMALL, RING_INSET, WEIGHT_LABEL, WORKSPACE_SIZE,
+    BAR_HEIGHT, DOT_SIZE, FONT_MONO, FONT_SIZE_SMALL, ICON_SIZE_SMALL, RING_INSET, WEIGHT_LABEL, WORKSPACE_INSET,
+    WORKSPACE_SIZE,
 };
 use nova_look::{Glyph, Icon, Theme, mix};
 use nova_stage::Screen;
@@ -153,7 +154,7 @@ impl Render for WorkspaceList {
             div()
                 .absolute()
                 .left(px(x))
-                .top((BAR_HEIGHT - WORKSPACE_SIZE) / 2.0)
+                .top(WORKSPACE_INSET)
                 .size(WORKSPACE_SIZE)
                 .rounded(WORKSPACE_SIZE / 2.0)
                 .bg(fill)
