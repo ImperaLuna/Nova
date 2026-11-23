@@ -8,12 +8,12 @@
 //!
 //! Each screen's window opens when the overlay starts, never at the start
 //! of a motion (opening one stalls every window's frames), and is only as
-//! big as the stack plus its shadow. Frames are asked for only while a
-//! card moves; a card's time drains on a slow tick of its own.
+//! big as the stack plus its shadow. Only the window on the screen they
+//! came out on draws, and it asks for frames only while a card moves; a
+//! card's time drains in slow steps between its frames.
 
 use crate::model::{self, Model, Popped};
 use crate::stack::{Leaving, Stack};
-use crate::tokens::COUNTDOWN_TICK;
 use crate::window::PopupWindow;
 use gpui::{App, AppContext, Context, DisplayId, Entity, Pixels, SharedString, Subscription, WeakEntity, WindowHandle};
 use nova_daemon_info::{Event as DaemonEvent, FeatureState, FeatureStatus, topics};
@@ -53,8 +53,6 @@ pub struct Popups {
     features: Entity<Live<Vec<FeatureState>>>,
     /// Quick settings is open on some screen.
     list_open: bool,
-    /// A tick that drains the cards' time is running.
-    ticking: bool,
     _followed: Vec<Subscription>,
 }
 
@@ -99,7 +97,6 @@ impl Popups {
                 desktop,
                 features,
                 list_open: false,
-                ticking: false,
                 _followed: followed,
             }
         });
@@ -204,21 +201,25 @@ impl Popups {
         if !self.stack.busy() || self.target.is_none() {
             self.target = self.focused_screen(cx);
         }
+        // Only that screen's window moves the stack on: without one (it
+        // couldn't open) nothing would ever take the pop-up off again.
+        if !self.target.is_some_and(|target| self.has_window(target)) {
+            return;
+        }
         let now = Instant::now();
         eprintln!("INFO nova-ui: notification {} pops up", notification.id);
         self.stack.add(notification, now);
         // The list came first: a pop-up already in it is marked listed now,
         // so it goes when the list next loses it.
         self.stack.sync(&self.model.read(cx).popups(cx), now);
-        // Those that came together open together.
-        let this = cx.weak_entity();
-        cx.defer(move |cx| {
-            let _ = this.update(cx, |popups, cx| {
-                popups.stack.open_arrivals(Instant::now());
-                cx.notify();
-            });
-        });
+        // The window opens it, with the others that came meanwhile, once
+        // it has grown to hold them.
         cx.notify();
+    }
+
+    /// `screen` has a window, or is about to.
+    fn has_window(&self, screen: DisplayId) -> bool {
+        self.windows.iter().any(|(id, _)| *id == screen) || self.opening.contains(&screen)
     }
 
     fn sync(&mut self, cx: &mut Context<Self>) {
@@ -256,35 +257,22 @@ impl Popups {
         if bar { BAR_GAP + BAR_HEIGHT + GAP } else { BAR_MARGIN }
     }
 
-    /// Moves the stack on, and keeps the slow tick running while a card's
-    /// time drains.
-    pub fn step(&mut self, now: Instant, cx: &mut Context<Self>) {
+    /// Moves the stack on to `now`, for the window that draws it.
+    pub fn step(&mut self, now: Instant) {
         self.stack.step(now);
         let entries = self.stack.entries();
         self.heights.borrow_mut().retain(|key, _| entries.iter().any(|entry| entry.key == *key));
-        if self.stack.counting() && !self.ticking {
-            self.ticking = true;
-            cx.spawn(async move |popups, cx| {
-                let mut counting = true;
-                while counting {
-                    cx.background_executor().timer(COUNTDOWN_TICK).await;
-                    counting = popups.update(cx, |popups, cx| popups.countdown_tick(cx)).unwrap_or(false);
-                }
-            })
-            .detach();
-        }
     }
 
-    /// Redraws the draining lines; false once none drains.
-    fn countdown_tick(&mut self, cx: &mut Context<Self>) -> bool {
-        cx.notify();
-        self.ticking = self.stack.counting();
-        self.ticking
+    /// The new ones open, now that the window that draws them holds them.
+    pub fn open_arrivals(&mut self, now: Instant) {
+        self.stack.open_arrivals(now);
     }
 
-    /// The screen they come out on, while any are up.
-    pub fn target(&self) -> Option<DisplayId> {
-        self.target
+    /// Whether `screen`'s window has anything to draw: the pop-ups are up,
+    /// and came out there.
+    pub fn shows_on(&self, screen: DisplayId) -> bool {
+        self.target == Some(screen) && self.stack.busy()
     }
 
     pub fn stack(&self) -> &Stack {
