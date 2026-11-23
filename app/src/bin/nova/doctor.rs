@@ -372,6 +372,10 @@ mod tests {
                 title: String::new(),
                 app: None,
                 menu_only: false,
+                icon: None,
+                attention: false,
+                has_menu: false,
+                is_menu: false,
             }],
         };
         let text = rendered(&facts);

@@ -1,5 +1,6 @@
 # Allowed outside crates:
 # - futures-core
+# - png
 # - serde
 # - serde_json
 # - zbus
@@ -10,6 +11,7 @@
 # - nova-base
 # - nova-carrier
 # - nova-hub
+# - nova-icons
 # - nova-log
 # - nova-process
 # - nova-session-bus
@@ -35,10 +37,12 @@ nova-apps.workspace = true
 nova-base.workspace = true
 nova-carrier.workspace = true
 nova-hub.workspace = true
+nova-icons.workspace = true
 nova-log.workspace = true
 nova-process.workspace = true
 nova-session-bus.workspace = true
 futures-core.workspace = true
+png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 zbus.workspace = true

@@ -258,6 +258,8 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             bus: nova_session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
             state_file: dir.join("tray.json"),
             proc_root: nova_process::procfs::PROC.into(),
+            icons: Arc::clone(icons),
+            pictures: dir.join("tray"),
         },
         notifications: nova_notifications::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),

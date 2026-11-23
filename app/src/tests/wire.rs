@@ -417,6 +417,23 @@ fn tray_lines() -> Vec<serde_json::Result<String>> {
             id: Some(29),
             command: nova_tray_api::Command::TrayMenuPicked { address: ":1.42/StatusNotifierItem".into() },
         }),
+        encode(nova_carrier::Request {
+            id: Some(30),
+            command: nova_tray_api::Command::SecondaryActivateTrayItem { address: ":1.42/StatusNotifierItem".into() },
+        }),
+        encode(nova_carrier::Request {
+            id: Some(31),
+            command: nova_tray_api::Command::TrayMenu { address: ":1.42/StatusNotifierItem".into(), id: 0 },
+        }),
+        encode(nova_carrier::Request {
+            id: Some(32),
+            command: nova_tray_api::Command::RunTrayMenuEntry {
+                address: ":1.42/StatusNotifierItem".into(),
+                id: 7,
+                revision: 3,
+            },
+        }),
+        encode(Response { id: 31, outcome: Outcome::Result(serde_json::to_value(tray_menu_level()).unwrap()) }),
         encode(nova_carrier::Request { id: None, command: nova_bar_api::Command::Toggle { panel: Panel::Launcher } }),
         encode(nova_tray_api::Event::Tray(tray())),
     ]

@@ -178,6 +178,10 @@ spawn "not-at-startup"
             title: String::new(),
             app: app.map(|(id, name)| App { id: id.into(), name: name.into(), description: None, icon: None }),
             menu_only: false,
+            icon: None,
+            attention: false,
+            has_menu: false,
+            is_menu: false,
         }
     }
 
