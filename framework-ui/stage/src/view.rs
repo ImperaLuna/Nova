@@ -12,7 +12,7 @@
 use crate::aside::Aside;
 use crate::frames::FrameLog;
 use crate::geometry::{Align, stage_height};
-use crate::item::{Panel, Pill};
+use crate::item::{Panel, Pill, Shown};
 use crate::kept::Kept;
 use crate::registry;
 use crate::reveal::Reveal;
@@ -39,6 +39,9 @@ use std::time::Instant;
 pub(crate) const ROWS: [(&str, Align); 3] =
     [(HOST_BAR_LEFT, Align::Left), (HOST_BAR_CENTER, Align::Center), (HOST_BAR_RIGHT, Align::Right)];
 
+/// The center row's place in [`ROWS`].
+pub(crate) const CENTER_ROW: usize = 1;
+
 /// Where a pill was laid out, shared with the element that finds out.
 pub(crate) type PillBox = Rc<Cell<Option<Bounds<Pixels>>>>;
 
@@ -47,11 +50,20 @@ pub(crate) struct PillItem {
     pub view: SharedString,
     pub content: AnyView,
     pub opens_on_click: bool,
+    /// Whether its view has something to show (`Pill::shown_while`).
+    pub present: Option<Shown>,
     /// Where it was laid out in the last frame, in the window.
     pub bounds: PillBox,
     /// 1 shown, 0 hidden under an open panel.
     pub shown: Eased,
     pub panel: Option<PanelItem>,
+}
+
+impl PillItem {
+    /// Whether it is drawn at all: not while its view has nothing to show.
+    pub fn is_present(&self) -> bool {
+        self.present.as_ref().is_none_or(Shown::get)
+    }
 }
 
 /// A panel on the stage, a pill's own or one from `stage.panels`.
@@ -130,6 +142,12 @@ pub(crate) struct StageView {
     /// arrives.
     pub focus: FocusHandle,
     pub frames: Option<FrameLog>,
+    /// How far left of the center row's right edge the point it keeps at
+    /// the screen's middle is (`middle.rs`), when a view marks one.
+    pub middle_from_right: Option<Pixels>,
+    /// Whether the center row's content is drawn in the frame under way,
+    /// so a mark is to be expected from it.
+    pub center_drawn: bool,
     /// The window's height, shared with the click catcher below it.
     height: Rc<Cell<Pixels>>,
     held: Held,
@@ -185,6 +203,8 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 catching: false,
                 focus: cx.focus_handle(),
                 frames,
+                middle_from_right: None,
+                center_drawn: true,
                 height: Rc::new(Cell::new(height)),
                 held: Held::default(),
                 catcher: None,
@@ -222,7 +242,7 @@ impl StageView {
     /// Where the pill with view id `view` is, and the way its row keeps.
     pub fn pill_box(&self, view: &SharedString) -> Option<(Bounds<Pixels>, Align)> {
         self.rows.iter().zip(ROWS).find_map(|(row, (_, align))| {
-            let pill = row.iter().find(|pill| pill.view == *view)?;
+            let pill = row.iter().find(|pill| pill.view == *view && pill.is_present())?;
             Some((pill.bounds.get()?, align))
         })
     }
@@ -238,11 +258,12 @@ impl StageView {
         let wanted_panels = slots.for_host(HOST_STAGE_PANELS, cx);
         for ((row, (host, _)), wanted) in self.rows.iter_mut().zip(ROWS).zip(&wanted_rows) {
             row.sync(wanted, |view| {
-                let Pill { content, panel, opens_on_click } = registry::build_pill(view, host, &screen, cx)?;
+                let Pill { content, panel, opens_on_click, shown } = registry::build_pill(view, host, &screen, cx)?;
                 Some(PillItem {
                     view: view.clone(),
                     content,
                     opens_on_click,
+                    present: shown,
                     bounds: Rc::default(),
                     shown: Eased::lasting(1.0, DURATION_FAST, now),
                     panel: panel.map(|panel| PanelItem::new(panel, Some(view), now)),

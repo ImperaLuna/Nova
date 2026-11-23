@@ -21,6 +21,7 @@
 #
 # Allowed workspace crates:
 # - nova-bar-api
+# - nova-bar-ui
 # - nova-clock-ui
 # - nova-daemon-info
 # - nova-desktop-info
@@ -43,6 +44,7 @@ publish.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 nova-bar-api.workspace = true
+nova-bar-ui.workspace = true
 nova-clock-ui.workspace = true
 nova-daemon-info.workspace = true
 nova-desktop-info.workspace = true
@@ -94,6 +96,7 @@ nova-stage = { path = "../framework-ui/stage" }
 nova-ui-client = { path = "../framework-ui/client" }
 
 # Each feature's ui, sorted by feature id.
+nova-bar-ui = { path = "../features/bar/ui" }
 nova-clock-ui = { path = "../features/clock/ui" }
 nova-workspaces-ui = { path = "../features/workspaces/ui" }
 

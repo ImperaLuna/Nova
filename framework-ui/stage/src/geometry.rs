@@ -17,7 +17,10 @@ pub enum Align {
 
 /// Where a panel of `size` is once open: `top` down the screen, and across
 /// it lined up with the pill it grows out of (`from`, with the way its row
-/// keeps), or centered without one. It never leaves the bar's margins.
+/// keeps), or centered. A panel of the center row is centered on the
+/// screen, not on its pill: the central pill sits off the middle when it
+/// keeps its time there (the launcher opens in the middle, as today). It
+/// never leaves the bar's margins.
 pub fn open_box(
     from: Option<(Bounds<Pixels>, Align)>,
     size: Size<Pixels>,
@@ -27,8 +30,7 @@ pub fn open_box(
     let left = match from {
         Some((pill, Align::Left)) => pill.left(),
         Some((pill, Align::Right)) => pill.right() - size.width,
-        Some((pill, Align::Center)) => pill.center().x - size.width / 2.0,
-        None => (screen_width - size.width) / 2.0,
+        Some((_, Align::Center)) | None => (screen_width - size.width) / 2.0,
     };
     let furthest = (screen_width - BAR_MARGIN - size.width).max(BAR_MARGIN);
     Bounds { origin: point(left.clamp(BAR_MARGIN, furthest), top), size }
@@ -115,14 +117,15 @@ mod tests {
         let open = |pill, align| open_box(Some((pill, align)), panel, BAR_GAP, SCREEN);
         assert_eq!(open(pill(100.0, 120.0), Align::Left), rect(100.0, 4.0, 300.0, 400.0));
         assert_eq!(open(pill(900.0, 120.0), Align::Center), rect(810.0, 4.0, 300.0, 400.0));
+        assert_eq!(open(pill(700.0, 120.0), Align::Center), rect(810.0, 4.0, 300.0, 400.0), "the screen's middle");
         assert_eq!(open(pill(1700.0, 120.0), Align::Right), rect(1520.0, 4.0, 300.0, 400.0));
     }
 
     #[test]
     fn a_panel_never_leaves_the_bar_s_margins() {
         let panel = size(px(300.0), px(400.0));
-        let centered_on_a_pill_at_the_edge = open_box(Some((pill(8.0, 60.0), Align::Center)), panel, BAR_GAP, SCREEN);
-        assert_eq!(centered_on_a_pill_at_the_edge.left(), BAR_MARGIN);
+        let right_of_a_pill_at_the_edge = open_box(Some((pill(8.0, 60.0), Align::Right)), panel, BAR_GAP, SCREEN);
+        assert_eq!(right_of_a_pill_at_the_edge.left(), BAR_MARGIN);
         let past_the_right = open_box(Some((pill(1800.0, 112.0), Align::Left)), panel, BAR_GAP, SCREEN);
         assert_eq!(past_the_right.right(), SCREEN - BAR_MARGIN);
     }
