@@ -103,10 +103,10 @@ publish = false
 # and makes NVIDIA's driver load CUDA. `version` picks Zed's real gpui: the
 # repo also holds a test fixture crate named gpui. Move both pins together,
 # and the hashes in packaging/nix/nova-ui.nix with them.
-gpui = { git = "https://github.com/ImperaLuna/zed", rev = "0127398408581fe5ccca103a376dee8ce5f2b776", version = "0.2.2" }
+gpui = { git = "https://github.com/ImperaLuna/zed", rev = "6fab5ba6d9562f331e9c581696432f52ec260429", version = "0.2.2" }
 # The platform half of GPUI (windows, input, the renderer). Wayland is off
 # by default; without it the program runs but never opens a window.
-gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "0127398408581fe5ccca103a376dee8ce5f2b776", version = "0.1.0", features = ["wayland"] }
+gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "6fab5ba6d9562f331e9c581696432f52ec260429", version = "0.1.0", features = ["wayland"] }
 # The versions GPUI's own tree already holds.
 futures = "0.3"
 # Decoding frozen screens (grim's PPM), saved shots (PNG) and wallpapers at
