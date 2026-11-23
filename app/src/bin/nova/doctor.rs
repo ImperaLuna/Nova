@@ -16,12 +16,17 @@ use nova_tray_api::TrayItem;
 use novad::checks;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Duration;
 
 /// Qt's render loop variable, and the value that keeps the UI's memory down
 /// on NVIDIA's driver.
 const SETUP_COMMAND: &str = "nova setup";
 /// Where Nova's NixOS module puts its Hyprland rules (`packaging/nix/nixos.nix`).
 const NIXOS_HYPRLAND_RULES: &str = "/etc/xdg/nova/hyprland.lua";
+/// How long fontconfig gets to match one family; a cold font cache can take
+/// a few seconds to build.
+const FC_MATCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {
@@ -84,6 +89,9 @@ pub struct Facts {
     /// Whether the compositor lets a restarted lock screen lock again, or
     /// why it couldn't be asked; `None` with no compositor.
     pub lock_restore: Option<Result<bool, String>>,
+    /// The family fontconfig draws for each of the look's fonts, or why it
+    /// couldn't be asked.
+    pub fonts: Result<Vec<(&'static str, String)>, String>,
 }
 
 impl Facts {
@@ -100,8 +108,24 @@ impl Facts {
             features: features(&nova_features::default_dir(), &nova_paths::config_files("features.toml"), &path_var),
             startup: config_dir.parent().map(login_apps::read).unwrap_or_default(),
             lock_restore: checks::restores_session_lock(|name| std::env::var_os(name)),
+            fonts: match_fonts(&path_var),
         }
     }
+}
+
+/// Asks fontconfig, as both UIs do, which families it draws for the look's
+/// fonts ([`nova_theme_info::FONTS`]).
+fn match_fonts(path_var: &str) -> Result<Vec<(&'static str, String)>, String> {
+    nova_theme_info::FONTS
+        .into_iter()
+        .map(|family| {
+            let mut command = Command::new("fc-match");
+            command.args(["--format", "%{family}", family]).env("PATH", path_var);
+            let output =
+                checks::output_within(command, FC_MATCH_TIMEOUT).map_err(|e| format!("can't run fc-match: {e}"))?;
+            Ok((family, String::from_utf8_lossy(&output.stdout).into_owned()))
+        })
+        .collect()
 }
 
 /// Tells "not running" from "stuck" by how the one connection fails
@@ -140,6 +164,7 @@ pub fn lines(facts: &Facts) -> Vec<Line> {
         quickshell(&facts.quickshell, &Range::supported()),
         daemon(&facts.daemon),
         config(&facts.config),
+        fonts(&facts.fonts, &facts.host.distro),
     ];
     lines.extend(features_lines(&facts.features, &facts.host.distro));
     lines.extend(login_apps_line(&facts.daemon, &facts.startup));
@@ -238,6 +263,35 @@ fn config(read: &Result<Vec<String>, String>) -> Line {
         Ok(problems) if problems.is_empty() => Line::new(Level::Ok, "config", "config.toml reads fine"),
         Ok(problems) => Line::new(Level::Warn, "config", problems.join("; ")),
     }
+}
+
+/// A missing font only warns: the UI draws fontconfig's nearest match (often
+/// DejaVu), which works but isn't the look.
+fn fonts(matched: &Result<Vec<(&'static str, String)>, String>, distro: &Distro) -> Line {
+    let matched = match matched {
+        Ok(matched) => matched,
+        Err(problem) => {
+            return Line::new(Level::Warn, "fonts", format!("{problem}, so the look's fonts weren't checked"));
+        }
+    };
+    // fontconfig lists a face's families comma-separated (`Inter,Inter Display`).
+    let missing: Vec<String> = matched
+        .iter()
+        .filter(|(family, drawn)| !drawn.split(',').any(|name| name.trim().eq_ignore_ascii_case(family)))
+        .map(|(family, drawn)| match drawn.split(',').next().map(str::trim).filter(|name| !name.is_empty()) {
+            Some(drawn) => format!("{family} (draws {drawn})"),
+            None => (*family).to_owned(),
+        })
+        .collect();
+    let families: Vec<&str> = matched.iter().map(|(family, _)| *family).collect();
+    if missing.is_empty() {
+        return Line::new(Level::Ok, "fonts", families.join(", "));
+    }
+    let install = match distro {
+        Distro::NixOs => "Nova's Nix module installs them with `programs.nova.fonts.enable = true;` and a rebuild",
+        _ => "install them from your distro's packages or fonts.google.com",
+    };
+    Line::new(Level::Warn, "fonts", format!("{} not installed; {install}", missing.join(", ")))
 }
 
 /// One line for all features when they're fine, one per feature that isn't.
@@ -398,6 +452,7 @@ mod tests {
             ]),
             startup: vec![],
             lock_restore: Some(Ok(true)),
+            fonts: Ok(nova_theme_info::FONTS.into_iter().map(|family| (family, family.to_owned())).collect()),
         }
     }
 
@@ -471,8 +526,34 @@ mod tests {
                  ok    quickshell  0.3.2 (tested: {range})\n\
                  ok    novad       running {version}\n\
                  ok    config      config.toml reads fine\n\
+                 ok    fonts       Inter, JetBrains Mono, Instrument Serif\n\
                  ok    features    ai-usage, bar on, nothing missing\n"
             )
+        );
+    }
+
+    #[test]
+    fn a_font_fontconfig_swaps_for_another_warns_with_how_to_install_it() {
+        let mut facts = healthy();
+        facts.fonts = Ok(vec![
+            ("Inter", "Inter,Inter Display".into()),
+            ("JetBrains Mono", "DejaVu Sans Mono".into()),
+            ("Instrument Serif", "DejaVu Serif".into()),
+        ]);
+        assert!(
+            rendered(&facts).contains(
+                "warn  fonts       JetBrains Mono (draws DejaVu Sans Mono), Instrument Serif (draws DejaVu Serif) \
+                 not installed; install them from your distro's packages or fonts.google.com"
+            ),
+            "{}",
+            rendered(&facts)
+        );
+        facts.host.distro = Distro::NixOs;
+        assert!(rendered(&facts).contains("`programs.nova.fonts.enable = true;`"), "{}", rendered(&facts));
+        facts.fonts = Err("can't run fc-match: not found".into());
+        assert!(
+            rendered(&facts)
+                .contains("warn  fonts       can't run fc-match: not found, so the look's fonts weren't checked")
         );
     }
 

@@ -5,7 +5,8 @@
 # (blur, and Hyprland's lock restore) in ~/.config/nova: include niri.kdl
 # from niri's config; home-manager's own Hyprland config sources
 # hyprland.conf by itself, or requires hyprland.lua when it writes a Lua
-# config.
+# config. It also installs the fonts Nova's look is drawn in
+# (`programs.nova.fonts.enable`).
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
@@ -57,9 +58,13 @@ in
     # novad finds `nova-ui` on PATH.
     ++ lib.optional (cfg.ui == "gpui") cfg.uiPackage
     ++ features.packagesFor pkgs cfg.gpu on
+    ++ lib.optionals cfg.fonts.enable (import ./fonts.nix { inherit pkgs; })
     # The Nova Files app, unless the system installs it; the session bus
     # finds its D-Bus service in the profile's share/dbus-1/services.
     ++ lib.optional (novaFilesOn && !novaFilesBySystem) cfg.novaFilesPackage;
+    # The fonts the look is drawn in (fonts.nix), which fontconfig finds in
+    # the profile once home-manager's fontconfig is on.
+    fonts.fontconfig.enable = lib.mkIf cfg.fonts.enable (lib.mkDefault true);
     xdg = {
       configFile = {
         "nova/features.toml".text = features.selectionFile cfg.ui cfg.features;

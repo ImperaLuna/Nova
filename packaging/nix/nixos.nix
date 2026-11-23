@@ -2,7 +2,8 @@
 # features that are on, its systemd user unit started with
 # graphical-session.target, a system-wide features.toml in /etc/xdg/nova,
 # which novad reads when the user has none of their own, Nova's Hyprland
-# rules beside it, and Nova Files while the `nova-files` feature is on.
+# rules beside it, Nova Files while the `nova-files` feature is on, and the
+# fonts its look is drawn in (`programs.nova.fonts.enable`).
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
@@ -71,6 +72,9 @@ in
         lib.mkDefault true
       );
     };
+
+    # The fonts the look is drawn in (fonts.nix).
+    fonts.packages = lib.optionals cfg.fonts.enable (import ./fonts.nix { inherit pkgs; });
 
     environment = {
       systemPackages = [

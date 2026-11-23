@@ -487,6 +487,10 @@
                 assert pkgs.lib.all (features.isOn selection) (builtins.attrValues features.manifests);
                 assert selection.ui == "gpui";
                 assert pkgs.lib.elem config.programs.nova.uiPackage config.environment.systemPackages;
+                # The look's fonts, on by default.
+                assert pkgs.lib.all (font: pkgs.lib.elem font config.fonts.packages) (
+                  import ./packaging/nix/fonts.nix { inherit pkgs; }
+                );
                 assert pkgs.lib.all (manifest: features.modeOf selection manifest == pkgs.lib.last manifest.modes) (
                   builtins.filter (manifest: manifest ? modes) (builtins.attrValues features.manifests)
                 );
@@ -610,6 +614,34 @@
             bash src/scripts/check-file-length.sh src
             touch $out
           '';
+
+          # The fonts Nova's modules install (packaging/nix/fonts.nix) give
+          # fontconfig a face for each family the look names (nova-theme-info's
+          # FONT_* constants), so a renamed family or package can't silently
+          # fall back to DejaVu.
+          fonts =
+            let
+              families = builtins.map builtins.head (
+                builtins.filter builtins.isList (
+                  builtins.split ''pub const FONT_[A-Z]+: &str = "([^"]+)";'' (
+                    builtins.readFile ./framework/theme-info/src/lib.rs
+                  )
+                )
+              );
+              fontsConf = pkgs.makeFontsConf {
+                fontDirectories = import ./packaging/nix/fonts.nix { inherit pkgs; };
+              };
+            in
+            assert builtins.length families == 3;
+            pkgs.runCommand "nova-fonts" { nativeBuildInputs = [ pkgs.fontconfig ]; } ''
+              export FONTCONFIG_FILE=${fontsConf} HOME=$TMPDIR
+              for family in ${pkgs.lib.escapeShellArgs families}; do
+                drawn=$(fc-match --format '%{family}' "$family")
+                echo "$family -> $drawn"
+                [[ ",$drawn," == *",$family,"* ]]
+              done
+              touch $out
+            '';
 
           # The blur rules `nova setup` writes for niri, against this niri.
           niri-rules = pkgs.runCommand "nova-niri-rules" { nativeBuildInputs = [ pkgs.niri ]; } ''
