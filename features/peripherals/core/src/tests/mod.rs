@@ -1,24 +1,3 @@
-//! The device batteries against stand-ins for the hardware only: a private
-//! `dbus-daemon` per test with a fake `org.freedesktop.UPower` serving the
-//! devices in `recorded/upower*.json` (and a `/sys` built from the folders
-//! they name), fake hidraw nodes answering as `recorded/hidpp*.json`
-//! (`fake_hidraw`), and a fake `headsetcontrol` printing
-//! `recorded/headsetcontrol*.json`. Everything recorded lives in
-//! `recorded/`: a new capture is a file change there.
-//!
-//! `headsetcontrol.json` is a real capture (`headsetcontrol -o json` with an
-//! Arctis Nova 5X charging), `headsetcontrol-none.json` HeadsetControl 4.2
-//! with no headset (it exits 1), `hidpp-c547.json` a Lightspeed receiver
-//! and its G502 X PLUS answering HID++, `keychron-d030.json` a Keychron
-//! Link dongle passing on its K2 HE's battery reports and
-//! `keychron-d026.json` one with nothing behind it that sends them,
-//! `keychron-0e20.json` the K2 HE on its cable answering requests,
-//! `keychron-d026-mouse.json` the Link-KM's mouse interface answering
-//! status requests, and `keychron-d064.json` its M6 on its cable.
-//! The UPower files follow UPower's
-//! D-Bus API: the desktop they're for has no peripheral in UPower (its
-//! UPower lists only the DisplayDevice, which the fake serves too).
-
 use super::*;
 use fake_hidraw::FakeHidraw;
 use nova_carrier::log::LogLevel;
@@ -41,8 +20,6 @@ use zbus::wire::{OwnedObjectPath, OwnedVariant};
 mod hidpp;
 mod keychron;
 
-/// How long a test waits for what should come at once: a read, the
-/// settle, and a hotplug's wait.
 const WAIT: Duration = Duration::from_secs(15);
 const MOUSE: &str = "/org/freedesktop/UPower/devices/mouse_hidpp_battery_0";
 const DISPLAY_DEVICE: &str = "/org/freedesktop/UPower/devices/DisplayDevice";
@@ -51,12 +28,10 @@ fn recorded(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/recorded").join(name)
 }
 
-/// A `recorded/hidpp*.json` or `recorded/keychron*.json`.
 fn fake_hidraw_recording(name: &str) -> fake_hidraw::Recording {
     serde_json::from_str(&std::fs::read_to_string(recorded(name)).unwrap()).unwrap()
 }
 
-/// A `recorded/upower*.json`.
 #[derive(Deserialize)]
 struct Recording {
     #[serde(default)]
@@ -67,13 +42,11 @@ struct Recording {
 #[derive(Deserialize, Clone)]
 struct RecordedDevice {
     path: String,
-    /// Below `/sys`, where its power supply's `device` leads.
     #[serde(default)]
     sysfs: Option<String>,
     properties: Props,
 }
 
-/// The device properties the fake serves, named as on the bus.
 #[derive(Deserialize, Clone, Default)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 struct Props {
@@ -81,7 +54,6 @@ struct Props {
     vendor: String,
     model: String,
     serial: String,
-    /// `Type`: the kind of device.
     #[serde(rename = "Type")]
     kind: u32,
     power_supply: bool,
@@ -132,13 +104,10 @@ impl Fixture {
             usb_devices: self.dir.join("usb"),
         };
         let peripherals = Peripherals::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger));
-        // A new run first clears what clients heard from an earlier one.
         assert_eq!(self.next(), json!([]));
         peripherals
     }
 
-    /// A notification server on the test's bus, low battery alerts going
-    /// to it, and the UI hearing its pop-ups.
     fn notifications(&self, peripherals: &Peripherals) -> Arc<Notifications> {
         let sources = notifications::Sources {
             bus: Bus::Address(self.bus.address.clone()),
@@ -158,13 +127,10 @@ impl Fixture {
         server
     }
 
-    /// The next notification to pop up.
     fn popup(&self) -> Value {
         nova_hub::next_named(&self.ui, "notification_popup", WAIT)
     }
 
-    /// Serves UPower with the devices of `recorded/<name>`, their `/sys`
-    /// folders made under the test's.
     fn upower(&self, names: &[&str]) -> FakeUPower {
         let sys = self.dir.join("sys");
         let mut devices = Vec::new();
@@ -189,9 +155,6 @@ impl Fixture {
         FakeUPower::start(self.bus.connect(), devices)
     }
 
-    /// Puts a `headsetcontrol` on the PATH that prints what
-    /// `recorded/<name>` holds (as `answer` may change it) and exits
-    /// `status`, like HeadsetControl, with no PATH of its own.
     fn headsetcontrol(&self, name: &str, status: i32) {
         self.headsetcontrol_answers(&std::fs::read_to_string(recorded(name)).unwrap(), status);
     }
@@ -199,7 +162,6 @@ impl Fixture {
     fn headsetcontrol_answers(&self, answer: &str, status: i32) {
         let file = self.dir.join("headsetcontrol-answer.json");
         std::fs::write(&file, answer).unwrap();
-        // Shell builtins only: it runs without PATH.
         let body = format!(
             "while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < '{}'\nexit {status}",
             file.display()
@@ -207,12 +169,10 @@ impl Fixture {
         write_program(&self.dir.join("bin"), "headsetcontrol", &body);
     }
 
-    /// A USB device is plugged into bus 001.
     fn plug(&self, device: &str) {
         std::fs::write(self.dir.join("usb/001").join(device), "").unwrap();
     }
 
-    /// The devices of the next peripherals event.
     fn next(&self) -> Value {
         nova_hub::next_named(&self.ui, "peripherals", WAIT)["devices"].clone()
     }
@@ -222,7 +182,6 @@ fn ids(devices: &Value) -> Vec<&str> {
     devices.as_array().unwrap().iter().map(|device| device["id"].as_str().unwrap()).collect()
 }
 
-/// UPower on the test's bus, serving the devices it was given.
 struct FakeUPower {
     connection: Connection,
     listed: Arc<Mutex<Vec<OwnedObjectPath>>>,
@@ -240,7 +199,6 @@ impl FakeUPower {
         zbus::block_on(async {
             let server = fake.connection.object_server();
             server.at(UPOWER_PATH, Root { listed: Arc::clone(&fake.listed) }).await.unwrap();
-            // Served, but never listed: UPower's own summary.
             server.at(DISPLAY_DEVICE, Device(Arc::new(Mutex::new(display.properties)))).await.unwrap();
         });
         for device in devices {
@@ -257,7 +215,6 @@ impl FakeUPower {
         self.props.insert(device.path, props);
     }
 
-    /// Changes device `path`, and says so as UPower does.
     fn change(&self, path: &str, change: impl FnOnce(&mut Props)) {
         change(&mut lock(&self.props[path]));
         let changed: HashMap<String, OwnedVariant> = HashMap::new();
@@ -267,7 +224,6 @@ impl FakeUPower {
             .unwrap();
     }
 
-    /// A device comes, as UPower says it.
     fn add(&mut self, device: RecordedDevice) {
         let path = OwnedObjectPath::try_from(device.path.as_str()).unwrap();
         self.serve(device);
@@ -275,7 +231,6 @@ impl FakeUPower {
             .unwrap();
     }
 
-    /// Device `path` goes, as UPower says it.
     fn remove(&mut self, path: &str) {
         lock(&self.listed).retain(|listed| listed.as_str() != path);
         self.props.remove(path);
@@ -367,8 +322,6 @@ fn upower_lists_the_peripherals_and_follows_them() {
         "the laptop's battery, line power and the DisplayDevice are left out"
     );
 
-    // A change that changes nothing sends nothing: the next event is the
-    // charge after it.
     upower.change(MOUSE, |_| {});
     upower.change(MOUSE, |mouse| {
         mouse.percentage = 54.0;
@@ -378,7 +331,6 @@ fn upower_lists_the_peripherals_and_follows_them() {
     let mouse = &devices[2];
     assert_eq!((mouse["battery"].clone(), mouse["charging"].clone()), (json!({"percent": 54}), json!(true)));
 
-    // Not present (turned off) leaves the list; present again comes back.
     upower.change(MOUSE, |mouse| mouse.is_present = false);
     assert!(!ids(&fixture.next()).contains(&"upower/mouse_hidpp_battery_0"));
     upower.change(MOUSE, |mouse| mouse.is_present = true);
@@ -392,12 +344,10 @@ fn upower_lists_the_peripherals_and_follows_them() {
     peripherals.stop();
 }
 
-/// The desktop's own UPower: nothing but the DisplayDevice.
 #[test]
 fn upower_with_only_its_display_device_lists_nothing() {
     let fixture = Fixture::new("display-only");
     let _upower = fixture.upower(&[]);
-    // HeadsetControl's headset comes after UPower's empty list, alone.
     fixture.headsetcontrol("headsetcontrol.json", 0);
     let peripherals = fixture.start();
     assert_eq!(ids(&fixture.next()), ["headsetcontrol/1038:2253"]);
@@ -416,8 +366,6 @@ fn headsetcontrol_reads_the_headset_and_reads_again_on_hotplug() {
                 "source": "headsetcontrol"}])
     );
 
-    // Turned off: the dongle answers without a battery, and the headset
-    // leaves the list. A second headset it couldn't read is left out too.
     let capture = std::fs::read_to_string(recorded("headsetcontrol.json")).unwrap();
     let mut answer: Value = serde_json::from_str(&capture).unwrap();
     answer["devices"][0]["battery"] = json!({"status": "BATTERY_UNAVAILABLE", "level": -1});
@@ -427,20 +375,16 @@ fn headsetcontrol_reads_the_headset_and_reads_again_on_hotplug() {
     fixture.plug("007");
     assert_eq!(fixture.next(), json!([]));
 
-    // Turned on again: back.
     fixture.headsetcontrol_answers(&capture, 0);
     fixture.plug("008");
     assert_eq!(ids(&fixture.next()), ["headsetcontrol/1038:2253"]);
 
-    // Unplugged: HeadsetControl 4.2's answer with no headset, exit 1.
     fixture.headsetcontrol("headsetcontrol-none.json", 1);
     std::fs::remove_file(fixture.dir.join("usb/001/007")).unwrap();
     assert_eq!(fixture.next(), json!([]));
     peripherals.stop();
 }
 
-/// One headset both sources report is listed once, with UPower's (the
-/// kernel's) reading.
 #[test]
 fn a_headset_both_sources_report_is_listed_once() {
     let fixture = Fixture::new("dedupe");
@@ -457,10 +401,6 @@ fn a_headset_both_sources_report_is_listed_once() {
     peripherals.stop();
 }
 
-/// A headset on Bluetooth and on its dongle at once is listed once: no USB
-/// id joins the two, its kind and name do. The dongle's entry names it, so
-/// it keeps its id when the Bluetooth link drops. The merge is checked
-/// alone, as the sources' lists come in any order.
 #[test]
 fn a_headset_on_bluetooth_and_its_dongle_is_listed_once() {
     let upower: Vec<Found> = ["upower.json", "upower-bluetooth-headset.json"]
@@ -504,7 +444,6 @@ fn a_headset_on_bluetooth_and_its_dongle_is_listed_once() {
     assert!(!ids.contains(&"upower/headphones_dev_20_AF_1B_0A_FD_79"));
 }
 
-/// Only names that hold one another's words, in order, are one device's.
 #[test]
 fn names_match_by_whole_words() {
     assert!(names_match("SteelSeries Arctis Nova 5X", "arctis nova 5x"));
@@ -513,7 +452,6 @@ fn names_match_by_whole_words() {
     assert!(!names_match("", "Arctis"));
 }
 
-/// Waits for an event listing `count` devices (the sources report apart).
 fn eventually_devices(fixture: &Fixture, count: usize) -> Value {
     loop {
         let devices = fixture.next();
@@ -541,8 +479,6 @@ fn without_upower_or_headsetcontrol_nothing_is_listed() {
     peripherals.stop();
 }
 
-/// HeadsetControl runs with nothing from novad's environment (cargo sets
-/// `DBUS_SESSION_BUS_ADDRESS` for every test).
 #[test]
 fn headsetcontrol_gets_no_environment() {
     let fixture = Fixture::new("environment");
@@ -563,8 +499,6 @@ fn a_battery_running_down_alerts_once_at_each_step() {
     let peripherals = fixture.start();
     let server = fixture.notifications(&peripherals);
     let mut popups = std::collections::VecDeque::new();
-    // Changes the mouse and waits for the list to show it, keeping the
-    // pop-ups that come meanwhile: an alert comes right after its list.
     let mut read = |change: &dyn Fn(&mut Props)| {
         upower.change(MOUSE, change);
         loop {
@@ -585,14 +519,11 @@ fn a_battery_running_down_alerts_once_at_each_step() {
     };
 
     read(&discharging(20.0));
-    // Under 20% but over 10%: said already.
     read(&discharging(15.0));
     read(&discharging(10.0));
     read(&discharging(4.0));
-    // Away and back still low: nothing again.
     read(&|mouse| mouse.is_present = false);
     read(&discharging(4.0));
-    // Charging says them all again: a fresh discharge alerts at 20% again.
     read(&|mouse| mouse.state = 1);
     read(&discharging(19.0));
     read(&discharging(18.0));
@@ -614,8 +545,6 @@ fn a_battery_running_down_alerts_once_at_each_step() {
     assert_eq!(popups.next().unwrap()["body"], "19%");
 }
 
-/// What was said is gone when novad restarts, but the device's row in the
-/// list isn't: the next alert takes its place instead of adding a row.
 #[test]
 fn an_alert_after_a_restart_takes_the_devices_row() {
     let fixture = Fixture::new("alerts-restart");

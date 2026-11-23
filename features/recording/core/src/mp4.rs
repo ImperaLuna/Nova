@@ -1,43 +1,26 @@
-//! Whether a finished MP4 holds a recording: at least one frame of
-//! picture. Both recorders write the file's header first, so a recorder
-//! that stalled (wf-recorder waiting for sound that never comes) and was
-//! killed leaves a file of a few dozen bytes that no player opens, and one
-//! that finished without a frame leaves an index of nothing.
-//!
-//! It reads the box tree (ISO/IEC 14496-12) without the media data: the
-//! top-level boxes' headers, and the index (`moov`) where there is one.
-
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-/// The largest index it reads. An hour at 60 fps indexes in a few MB.
 const MOOV_MAX: u64 = 64 << 20;
 
-/// What a finished file holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Contents {
-    /// Frames, or a file cut off after some (players read most of one).
     Recorded,
-    /// Not one frame of picture.
     NoFrames,
-    /// Not an MP4 it can read: kept, as anything written is.
     Unknown,
 }
 
-/// Reads what `path` holds.
 pub(crate) fn contents(path: &Path) -> Contents {
     File::open(path).ok().map_or(Contents::Unknown, |mut file| read(&mut file).unwrap_or(Contents::Unknown))
 }
 
-/// One box: its type and where its payload lies in the file.
 struct Box {
     kind: [u8; 4],
     start: u64,
     len: u64,
 }
 
-/// The boxes one after another in `bytes`.
 fn boxes_in(bytes: &[u8]) -> Vec<Box> {
     let mut found = Vec::new();
     let mut at = 0usize;
@@ -82,8 +65,6 @@ fn read(file: &mut File) -> std::io::Result<Contents> {
             size = u64::from_be_bytes(header[8..16].try_into().unwrap_or_default());
             head = 16;
         }
-        // Size 0 runs to the end of the file, as does a box the recorder
-        // never got to close (its size still the header's).
         let rest = file_len - at;
         if size == 0 || size > rest || size < head {
             size = rest;
@@ -94,7 +75,6 @@ fn read(file: &mut File) -> std::io::Result<Contents> {
         first = false;
         match &kind {
             b"mdat" => media += size.saturating_sub(head),
-            // Fragments: each carries its own frames, and the index has none.
             b"moof" => return Ok(Contents::Recorded),
             b"moov" => moov = Some((at + head, size.saturating_sub(head))),
             _ => {}
@@ -102,14 +82,9 @@ fn read(file: &mut File) -> std::io::Result<Contents> {
         at += size;
     }
     if first {
-        // Shorter than one box header.
         return Ok(Contents::Unknown);
     }
     let Some((start, len)) = moov else {
-        // Cut off before the index: frames if anything was written after
-        // the header. Without the index it can't tell sound from picture,
-        // so sound alone is kept too: better a file too many than a
-        // recording lost.
         return Ok(if media > 0 { Contents::Recorded } else { Contents::NoFrames });
     };
     if len > MOOV_MAX {
@@ -121,7 +96,6 @@ fn read(file: &mut File) -> std::io::Result<Contents> {
     Ok(index_contents(&index))
 }
 
-/// Whether the index lists a picture track with a frame.
 fn index_contents(moov: &[u8]) -> Contents {
     let mut unreadable = false;
     for track in boxes_in(moov).iter().filter(|b| &b.kind == b"trak") {
@@ -136,7 +110,6 @@ fn index_contents(moov: &[u8]) -> Contents {
         let stsz = child(moov, &mdia, b"minf")
             .and_then(|minf| child(moov, &minf, b"stbl"))
             .and_then(|stbl| child(moov, &stbl, b"stsz"));
-        // Version and flags, the size every frame shares, then the count.
         match stsz.and_then(|stsz| payload(moov, &stsz).get(8..12).map(<[u8]>::to_vec)) {
             Some(count) if u32::from_be_bytes([count[0], count[1], count[2], count[3]]) > 0 => {
                 return Contents::Recorded;
@@ -145,8 +118,6 @@ fn index_contents(moov: &[u8]) -> Contents {
             None => unreadable = true,
         }
     }
-    // No picture track with a frame: sound alone, or nothing. A track it
-    // can't read may be one, so that file is kept.
     if unreadable { Contents::Unknown } else { Contents::NoFrames }
 }
 
@@ -156,7 +127,6 @@ fn payload<'a>(bytes: &'a [u8], of: &Box) -> &'a [u8] {
     bytes.get(start..end.min(bytes.len())).unwrap_or_default()
 }
 
-/// The first box of `kind` inside `parent`, placed in `bytes`.
 fn child(bytes: &[u8], parent: &Box, kind: &[u8; 4]) -> Option<Box> {
     boxes_in(payload(bytes, parent)).into_iter().find(|b| &b.kind == kind).map(|b| Box {
         kind: b.kind,
@@ -194,7 +164,6 @@ mod tests {
     fn a_file_cut_off_after_some_frames_is_kept() {
         let dir = nova_test_support::TempDir::new("mp4-cut");
         let whole = std::fs::read(recorded("wf-recorder-saved.mp4")).unwrap();
-        // Up to the index: what a killed recorder leaves after writing frames.
         let moov = whole.windows(4).position(|w| w == b"moov").unwrap() - 4;
         let cut = dir.join("cut.mp4");
         std::fs::write(&cut, &whole[..moov]).unwrap();
@@ -204,9 +173,6 @@ mod tests {
     #[test]
     fn frames_after_a_media_box_left_open_are_kept() {
         let dir = nova_test_support::TempDir::new("mp4-open");
-        // The stalled recorder's header, whose media box says it runs to
-        // the end of the file until the recorder finishes it, then the
-        // frames a recorder killed mid-way had written.
         let mut file = std::fs::read(recorded("wf-recorder-stalled-on-sound.mp4")).unwrap();
         let whole = std::fs::read(recorded("wf-recorder-saved.mp4")).unwrap();
         let frames = whole.windows(4).position(|w| w == b"mdat").unwrap() + 4;
@@ -218,7 +184,6 @@ mod tests {
 
     #[test]
     fn a_box_claiming_more_than_there_is_ends_the_walk() {
-        // A box of 2^64 - 1 bytes (size 1: the size follows the type).
         let mut index = vec![0, 0, 0, 1];
         index.extend_from_slice(b"trak");
         index.extend_from_slice(&u64::MAX.to_be_bytes());

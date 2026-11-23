@@ -2,8 +2,6 @@ use super::*;
 use nova_carrier::log::LogLevel;
 use nova_hub::{ClientQueue, Outgoing};
 
-/// The port filled as the app fills it, with the screenshot feature's
-/// helpers.
 struct ScreenshotFiles;
 
 impl SavedFiles for ScreenshotFiles {
@@ -30,8 +28,6 @@ use std::sync::mpsc::Receiver;
 
 const WAIT: Duration = Duration::from_secs(5);
 
-/// Recordings with a fake recorder (it writes the file it's given and
-/// finishes it on SIGINT), and a UI subscribed to the recording topic.
 struct Fixture {
     dir: nova_test_support::TempDir,
     recordings: Recordings,
@@ -40,8 +36,6 @@ struct Fixture {
 }
 
 impl Fixture {
-    /// `recorder` is the fake's name; `body` runs first, before it
-    /// starts writing.
     fn new(name: &str, recorder: &str, body: &str) -> Self {
         let dir = nova_test_support::TempDir::new(&format!("recording-{name}"));
         let bin = dir.join("bin");
@@ -81,7 +75,6 @@ impl Fixture {
         self.recordings.start("DP-1", region, audio, &self.folder())
     }
 
-    /// The next event, waiting for it.
     fn next_event(&self) -> serde_json::Value {
         nova_hub::next_event(&self.ui, WAIT)
     }
@@ -149,9 +142,6 @@ fn turning_the_feature_off_stops_the_recording_and_refuses_new_ones() {
 
 #[test]
 fn the_recording_outlives_the_thread_that_started_it() {
-    // Requests start recordings on threads of their own that end once
-    // they've answered; PR_SET_PDEATHSIG fires when the spawning thread
-    // does.
     let fixture = Fixture::new("thread", GPU_SCREEN_RECORDER, "");
     let (recordings, folder) = (&fixture.recordings, fixture.folder());
     std::thread::scope(|scope| {
@@ -222,8 +212,6 @@ fn a_region_with_sound_goes_to_gpu_screen_recorder_as_it_takes_them() {
 
 #[test]
 fn a_gpu_that_cant_encode_records_on_the_cpu() {
-    // gpu-screen-recorder 6.1 with an NVENC API older than its FFmpeg
-    // wants: without the fallback it finds no encoder and exits 52.
     let fixture = Fixture::new(
         "cpu",
         GPU_SCREEN_RECORDER,
@@ -313,8 +301,6 @@ fn a_recorder_that_stops_by_itself_still_saves_what_it_recorded() {
     assert_eq!(fixture.next_event()["event"], "recording_saved");
 }
 
-/// A fake recorder that writes what wf-recorder wrote on the test desktop
-/// (`src/recorded/<name>`) and then does `on_stop` when asked to finish.
 fn replaying(name: &str, on_stop: &str) -> String {
     let recorded = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/recorded").join(name);
     format!(
@@ -339,9 +325,6 @@ fn a_recording_with_frames_is_saved() {
 
 #[test]
 fn a_recorder_stalled_on_sound_saves_nothing_and_says_so() {
-    // wf-recorder with desktop sound from a monitor that sends nothing:
-    // it never writes a frame, ignores the stop and is killed, leaving the
-    // 48 byte header it had written (recorded on a test desktop).
     let fixture = Fixture::new("stalled", WF_RECORDER, &replaying("wf-recorder-stalled-on-sound.mp4", ""));
     fixture.start(None, RecordAudio { desktop: true, mic: false }).unwrap();
     fixture.next_event();

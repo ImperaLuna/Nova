@@ -1,18 +1,10 @@
-//! The time's characters and how each one rolls: a digit that changed rolls its
-//! old self up and out and the new one in from below, on the panel curve; one
-//! that stayed doesn't move.
-
 use nova_look::motion::Eased;
 use std::time::Instant;
 
-/// One character of the time.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Digit {
-    /// What it shows now.
     pub shown: char,
-    /// What rolls out, while it rolls.
     pub leaving: Option<char>,
-    /// 0 right after a change, 1 once the new character is in place.
     pub roll: Eased,
 }
 
@@ -21,26 +13,21 @@ impl Digit {
         Self { shown, leaving: None, roll: Eased::at(1.0, now) }
     }
 
-    /// Only digits roll: the colon stands still.
     pub fn rolls(&self) -> bool {
         self.shown.is_ascii_digit()
     }
 }
 
-/// The time's characters, each rolling on its own.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Digits {
     list: Vec<Digit>,
 }
 
 impl Digits {
-    /// Showing `text` at rest.
     pub fn new(text: &str, now: Instant) -> Self {
         Self { list: text.chars().map(|shown| Digit::still(shown, now)).collect() }
     }
 
-    /// Shows `text`: each character that differs from the one in its place
-    /// starts rolling. A text of another length takes its place at rest.
     pub fn set(&mut self, text: &str, now: Instant) {
         if text.chars().count() != self.list.len() {
             *self = Self::new(text, now);
@@ -60,7 +47,6 @@ impl Digits {
         self.list.iter()
     }
 
-    /// Whether any is still rolling.
     pub fn rolling(&self, now: Instant) -> bool {
         self.list.iter().any(|digit| !digit.roll.settled(now))
     }

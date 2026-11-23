@@ -1,12 +1,3 @@
-//! The now-playing panel's content:
-//! the app's name in the header row, which closes the panel; the cover
-//! beside the title, artist and album; the progress line to seek on with
-//! the times; the buttons; a chip per player to switch between them when
-//! there are two; and a row going to the player's window.
-//!
-//! The stage grows the pill into it and fades it in. Its size is the
-//! model's ([`NowPlaying`] asks the stage), worked out from the same text.
-
 use crate::art::Art;
 use crate::logic;
 use crate::model::{self, NAME, NowPlaying, TITLE_LINES};
@@ -32,26 +23,20 @@ use nova_stage::Stage;
 use std::cell::Cell;
 use std::rc::Rc;
 
-/// What hovering the progress line and the go-to row shows.
 const SEEK_GROUP: &str = "media-seek";
 const GO_TO_GROUP: &str = "media-go-to";
 
 pub struct MediaPanel {
     model: Entity<NowPlaying>,
-    /// Where a drag or a click put the line (0..1), until the player says
-    /// where it is, or a while passes without word: a seek that failed.
     held: Option<f32>,
     pressing: bool,
     let_go: Option<Task<()>>,
-    /// Where the progress line was laid out, for a click's fraction.
     line: Rc<Cell<Option<Bounds<Pixels>>>>,
 }
 
 impl MediaPanel {
     pub fn new(model: Entity<NowPlaying>, cx: &mut Context<Self>) -> Self {
         cx.observe(&model, |_, _, cx| cx.notify()).detach();
-        // The players' next word ends a held position; the model's own
-        // redraws (the time ticking) don't.
         let feed = model.read(cx).feed().clone();
         cx.observe(&feed, |panel, _, cx| {
             if !panel.pressing && panel.held.take().is_some() {
@@ -84,7 +69,6 @@ impl MediaPanel {
         }
     }
 
-    /// Lets go of the line: seeks there, and holds it there a while.
     fn release(&mut self, x: Pixels, cx: &mut Context<Self>) {
         if !self.pressing {
             return;
@@ -154,8 +138,6 @@ impl Render for MediaPanel {
     }
 }
 
-/// The cover beside the title (two lines at most), the artist and the
-/// album.
 fn body(player: &MediaPlayer, cx: &App) -> Div {
     let dim = Theme::of(cx).fg_dim();
     let line = |text: &str| SharedString::from(text.to_owned());
@@ -163,7 +145,6 @@ fn body(player: &MediaPlayer, cx: &App) -> Div {
         .w_full()
         .text_size(FONT_SIZE_TITLE)
         .font_weight(WEIGHT_TITLE)
-        // The title's two lines sit a little wider apart.
         .line_height(relative(LINE_HEIGHT * TITLE_LINE))
         .line_clamp(TITLE_LINES)
         .text_ellipsis()
@@ -183,10 +164,6 @@ fn body(player: &MediaPlayer, cx: &App) -> Div {
 }
 
 impl MediaPanel {
-    /// The progress line with the times under it. Clicking or dragging on
-    /// it seeks; hovered, it grows and shows its knob. A player that can't
-    /// seek, or a track of unknown length, shows the line without taking
-    /// clicks.
     fn seek_line(&self, player: &MediaPlayer, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx);
         let (dim, track, meter, fg) = (theme.fg_dim(), theme.track(), theme.meter(), theme.fg);
@@ -230,9 +207,6 @@ impl MediaPanel {
             .child(line)
             .child(knob);
         if seekable {
-            // A drag follows the pointer anywhere on the window, and ends
-            // wherever the button goes up. Listened for before any press,
-            // so a quick click's release is never missed.
             let panel = cx.weak_entity();
             area = area
                 .cursor_pointer()
@@ -260,8 +234,6 @@ impl MediaPanel {
     }
 }
 
-/// Follows a drag on the progress line anywhere on the window until the
-/// button goes up. Moves and releases without a press do nothing.
 fn follow_drag(panel: WeakEntity<MediaPanel>, window: &mut Window) {
     let released = panel.clone();
     window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
@@ -276,8 +248,6 @@ fn follow_drag(panel: WeakEntity<MediaPanel>, window: &mut Window) {
     });
 }
 
-/// A round button: the previous and next ones on a hover wash, play and
-/// pause filled with the accent.
 fn round_button(icon: Icon, size: Pixels, filled: bool, enabled: bool, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let (primary, accent, hover) = (theme.primary, theme.accent_fill(), theme.hover());
@@ -327,8 +297,6 @@ fn controls(model: &Entity<NowPlaying>, player: &MediaPlayer, cx: &App) -> Div {
         .child(button(Glyph::SKIP_NEXT, Glyph::SKIP_NEXT_FILL, MediaAction::Next, player.can_next))
 }
 
-/// One chip per player to show it instead: the chosen one solid, a dot on
-/// the ones that play.
 fn chip_row(model: &Entity<NowPlaying>, current: &MediaPlayer, chips: Vec<MediaPlayer>, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let (fg, dim, primary, on_accent, raised, selected) =
@@ -367,7 +335,6 @@ fn chip_row(model: &Entity<NowPlaying>, current: &MediaPlayer, chips: Vec<MediaP
     div().w_full().flex().flex_wrap().gap(CHIP_GAP).children(chips)
 }
 
-/// Brings the player's window forward, then closes.
 fn go_to(player: &MediaPlayer, workspace: &str, screen: DisplayId, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let (fg, dim, raised, selected) = (theme.fg, theme.fg_dim(), theme.surface_raised(), theme.selected());
@@ -405,7 +372,6 @@ fn go_to(player: &MediaPlayer, workspace: &str, screen: DisplayId, cx: &App) -> 
         )
         .children(where_)
         .child(
-            // Lit while the row is hovered: the bright arrow over the dim one.
             div().relative().flex_none().child(Icon::new(Glyph::GO_TO).size(ICON_SIZE_SMALL).color(dim)).child(
                 div()
                     .absolute()

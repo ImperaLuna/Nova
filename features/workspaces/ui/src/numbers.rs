@@ -1,10 +1,3 @@
-//! The numbers as they are drawn: which workspaces show, where each one
-//! sits, and what of it is on its way somewhere. Plain values over time,
-//! tested alone; `list.rs` draws them.
-//!
-//! Numbers are kept by workspace id, so one that stays glides to its new
-//! place when others come and go, and only a new one grows in.
-
 use nova_desktop_info::{Capability, Desktop, Workspace, WorkspaceId};
 use nova_look::motion::Eased;
 use nova_look::tokens::{
@@ -12,9 +5,6 @@ use nova_look::tokens::{
 };
 use std::time::{Duration, Instant};
 
-/// The workspaces of `output` the bar lists: those with windows, the one
-/// it shows, and a special one showing elsewhere. None when the compositor
-/// lists no workspaces (`Protocol.barWorkspaces`).
 pub fn shown(desktop: &Desktop, output: &str) -> Vec<Workspace> {
     if !desktop.capabilities.contains(&Capability::Workspaces) {
         return Vec::new();
@@ -28,20 +18,14 @@ pub fn shown(desktop: &Desktop, output: &str) -> Vec<Workspace> {
         .collect()
 }
 
-/// A number's color, by what it means; the theme gives the color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ink {
-    /// On the accent capsule.
     OnAccent,
-    /// Its window wants attention.
     Calling,
-    /// A special workspace that isn't showing anywhere.
     Dim,
     Plain,
 }
 
-/// A value that changes over `duration` from what it was to what it is,
-/// like a color animation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Fade<T> {
     from: T,
@@ -55,7 +39,6 @@ impl<T: Copy + PartialEq> Fade<T> {
         Self { from: value, to: value, progress: Eased::lasting(1.0, duration, now), duration }
     }
 
-    /// Heads for `value`, from the one it was heading for.
     pub fn set(&mut self, value: T, now: Instant) {
         if value == self.to {
             return;
@@ -67,7 +50,6 @@ impl<T: Copy + PartialEq> Fade<T> {
         self.progress = progress;
     }
 
-    /// Where it was, where it goes, and how far it has come (0..1).
     pub fn at(&self, now: Instant) -> (T, T, f32) {
         (self.from, self.to, self.progress.value(now))
     }
@@ -77,18 +59,13 @@ impl<T: Copy + PartialEq> Fade<T> {
     }
 }
 
-/// One workspace's number.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Number {
     pub workspace: Workspace,
-    /// From the list's left edge.
     pub x: Eased,
-    /// Its size, growing in from `ENTER_SCALE` when it is new.
     pub scale: Eased,
-    /// Fading in when it is new.
     pub opacity: Eased,
     pub ink: Fade<Ink>,
-    /// The "wants attention" dot's opacity.
     pub dot: Eased,
 }
 
@@ -121,8 +98,6 @@ impl Number {
     }
 }
 
-/// Whether a workspace's dot shows: one you're on needs no reminder, and a
-/// special one's windows wait there anyway.
 fn calling(workspace: &Workspace) -> bool {
     workspace.urgent && !workspace.active && !workspace.special
 }
@@ -139,24 +114,18 @@ fn ink(workspace: &Workspace, output_focused: bool) -> Ink {
     }
 }
 
-/// The distance from one number's left edge to the next one's.
 fn step() -> f32 {
     f32::from(WORKSPACE_SIZE + WORKSPACE_GAP)
 }
 
-/// Every number of one screen's list, with the capsule behind the shown
-/// one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Numbers {
     list: Vec<Number>,
     special_count: usize,
     output_focused: bool,
-    /// The capsule's place, and whether there is a shown workspace for it.
     capsule_x: Eased,
     capsule_shown: bool,
-    /// Whether the capsule is the accent (the output has the focus).
     capsule_accent: Fade<bool>,
-    /// How wide the list is: it glides as numbers come and go.
     width: Eased,
 }
 
@@ -173,8 +142,6 @@ impl Numbers {
         }
     }
 
-    /// Shows `workspaces` (from [`shown`]), keeping the numbers whose
-    /// workspace stays.
     pub fn set(&mut self, workspaces: Vec<Workspace>, output_focused: bool, now: Instant) {
         self.output_focused = output_focused;
         self.special_count = workspaces.iter().filter(|workspace| workspace.special).count();
@@ -211,7 +178,6 @@ impl Numbers {
                 if self.capsule_shown {
                     self.capsule_x.set_target(x, now);
                 } else {
-                    // It shows up in place, not sliding in from the last.
                     self.capsule_x = Eased::lasting(x, DURATION_PANEL, now);
                 }
                 self.capsule_shown = true;
@@ -220,8 +186,6 @@ impl Numbers {
         }
     }
 
-    /// The gap after the special workspaces, when there are any and
-    /// numbers after them.
     fn group_gap(&self, count: usize) -> f32 {
         if self.special_count > 0 && self.special_count < count { f32::from(WORKSPACE_GROUP_GAP) } else { 0.0 }
     }
@@ -230,7 +194,6 @@ impl Numbers {
         self.list.iter()
     }
 
-    /// The only special workspace shows a tilde, not its letter.
     pub fn lone_special(&self) -> bool {
         self.special_count == 1
     }
@@ -243,7 +206,6 @@ impl Numbers {
         self.width.value(now)
     }
 
-    /// Where the capsule is, if a workspace shows.
     pub fn capsule_x(&self, now: Instant) -> Option<f32> {
         self.capsule_shown.then(|| self.capsule_x.value(now))
     }
@@ -252,8 +214,6 @@ impl Numbers {
         self.capsule_accent.at(now)
     }
 
-    /// Whether anything is still on its way: the view asks for frames only
-    /// then.
     pub fn moving(&self, now: Instant) -> bool {
         self.list.iter().any(|number| number.moving(now))
             || !(self.capsule_x.settled(now) && self.capsule_accent.settled(now) && self.width.settled(now))

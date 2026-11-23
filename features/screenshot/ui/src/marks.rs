@@ -1,10 +1,3 @@
-//! The corner marks around a region being recorded, on its screen: just outside
-//! it, so they aren't in the recording.
-//!
-//! Its own window on each screen, on the overlay layer, taking no clicks,
-//! no keyboard and no space: one pixel big while nothing is recorded there,
-//! else from the screen's top left corner to the farthest mark.
-
 use crate::capture::{Capture, on_screen};
 use crate::pick::marks;
 use crate::tokens::{MARK_GAP, MARK_LENGTH, MARK_WIDTH};
@@ -17,15 +10,12 @@ use gpui::{
 use nova_look::{ShellWindow, Theme, set_blur_region};
 use nova_stage::Screen;
 
-/// The marks' layer surfaces, for the compositor's rules.
 const NAMESPACE: &str = "nova-recording";
-/// A window with nothing recorded on its screen.
 const RESTING: Pixels = px(1.0);
 
 pub struct MarksWindow {
     screen: Screen,
     capture: WeakEntity<Capture>,
-    /// The window's size now: what the marks need, or none while it rests.
     sized: Option<gpui::Size<Pixels>>,
     _followed: Option<Subscription>,
 }
@@ -61,7 +51,6 @@ impl MarksWindow {
         }
     }
 
-    /// The marks on this screen while a region of it is recorded.
     fn marks(&self, cx: &App) -> Option<[Bounds<Pixels>; 8]> {
         let capture = self.capture.upgrade()?;
         let recording = capture.read(cx).recording()?;
@@ -73,7 +62,6 @@ impl MarksWindow {
 impl Render for MarksWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let marks = self.marks(cx);
-        // From the corner it is anchored to, to the farthest mark.
         let sized = marks.map(|marks| {
             let right = marks.iter().map(|mark| mark.origin.x + mark.size.width).fold(px(1.0), Pixels::max);
             let bottom = marks.iter().map(|mark| mark.origin.y + mark.size.height).fold(px(1.0), Pixels::max);

@@ -1,8 +1,3 @@
-//! The recording pill (`recording.pill`, host `bar.right`), left of the
-//! right pill while a recording runs: a red dot and how long it has
-//! recorded. The pointer on it shows pause (when the recorder can) and
-//! stop; a click anywhere else on it stops too. The stage draws its glass.
-
 use crate::pick::clock;
 use crate::tokens::RECORD_DOT;
 use gpui::{
@@ -16,16 +11,13 @@ use nova_stage::Shown;
 use nova_ui_client::{Daemon, Live};
 use std::time::{Duration, Instant};
 
-/// A second, for the time on the pill.
 const SECOND: Duration = Duration::from_secs(1);
 
 pub struct RecordingPill {
     recording: Entity<Live<Option<ActiveRecording>>>,
-    /// When novad last said how long it had recorded.
     since: Instant,
     shown: Shown,
     hovered: bool,
-    /// Redraws the time each second while it runs.
     ticking: Option<Task<()>>,
     _followed: Subscription,
 }
@@ -47,7 +39,6 @@ impl RecordingPill {
         }
     }
 
-    /// Shown while something records.
     pub fn shown(&self) -> Shown {
         self.shown.clone()
     }
@@ -63,7 +54,6 @@ impl RecordingPill {
         if active.is_none() {
             self.hovered = false;
         }
-        // Each time the shown time turns a second, while it isn't paused.
         self.ticking = active.filter(|active| !active.paused).map(|active| {
             cx.spawn(async move |pill, cx| {
                 let into = Duration::from_millis(active.elapsed_ms % 1000);
@@ -125,7 +115,6 @@ impl Render for RecordingPill {
     }
 }
 
-/// A round button on the pill, washed while the pointer is on it.
 fn button(id: &'static str, glyph: Glyph, ink: Hsla, cx: &App) -> gpui::Stateful<gpui::Div> {
     let hover = Theme::of(cx).hover();
     div()

@@ -1,14 +1,8 @@
-//! The server apps see on the session bus, `org.freedesktop.Notifications`.
-
 use super::*;
 
-/// Connects to the bus, serves the server and claims its name, until `stop`
-/// or the bus goes. Sends on `ready` once apps can send notifications.
 pub(crate) async fn serve(shared: &Arc<Shared>, ready: &std::sync::mpsc::Sender<()>) -> zbus::Result<()> {
     let server = Server { shared: Arc::clone(shared) };
     let connection = shared.sources.bus.builder().method_timeout(CALL_TIMEOUT).serve_at(PATH, server).build().await?;
-    // Queued behind another server (mako, dunst, another shell's), novad
-    // takes over when it quits.
     match session_bus::claim(&connection, BUS_NAME).await? {
         RequestNameReply::InQueue => shared.logger.warn(
             LOG_SOURCE,
@@ -16,7 +10,6 @@ pub(crate) async fn serve(shared: &Arc<Shared>, ready: &std::sync::mpsc::Sender<
         ),
         _ => shared.logger.info(LOG_SOURCE, &format!("showing notifications as {BUS_NAME}")),
     }
-    // Apps that quit leave the bus; their notifications can't hear clicks.
     let rule = MatchRule::builder()
         .msg_type(zbus::message::Type::Signal)
         .sender("org.freedesktop.DBus")
@@ -31,7 +24,6 @@ pub(crate) async fn serve(shared: &Arc<Shared>, ready: &std::sync::mpsc::Sender<
             Poll::Ready(()) => Poll::Ready(None),
             Poll::Pending => Pin::new(&mut owners).poll_next(cx).map(Some),
         });
-        // Stopped, or the bus went.
         let Some(Some(message)) = next.await else { break Ok(()) };
         let changed = message.and_then(|message| message.body().deserialize::<(String, String, String)>());
         match changed {
@@ -44,7 +36,6 @@ pub(crate) async fn serve(shared: &Arc<Shared>, ready: &std::sync::mpsc::Sender<
     result
 }
 
-/// The server apps see on the bus.
 struct Server {
     shared: Arc<Shared>,
 }
@@ -78,9 +69,6 @@ impl Server {
         id: u32,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
-        // It stays listed, and its pop-up runs its time: chat apps close
-        // the last message's notification as they send the next one (a
-        // web notification's tag), which would otherwise take it away.
         let closed = {
             let mut state = lock(&self.shared.state);
             let live = find(&state, id).is_some_and(|kept| kept.live);

@@ -1,33 +1,3 @@
-//! Wallpapers (feature `wallpaper`, and `wallpaper-engine` for dynamic
-//! ones): one on every output, or one of its own on an output, set in
-//! config.toml's `[wallpaper]` or with `nova wallpaper`, which wins until
-//! that section changes. A wallpaper is an image, a video, a Wallpaper
-//! Engine project folder or a Steam Workshop ID (`source`).
-//!
-//! awww draws still images: novad runs its daemon in a namespace of Nova's
-//! own (so a copy the user runs never clashes with it), without its cache,
-//! so what it shows only ever comes from novad. A new image fades in on the
-//! outputs that change; one fade covers every output that gets the same
-//! image. An output that's plugged in (or comes back) gets its image as
-//! soon as the compositor reports it.
-//!
-//! Dynamic wallpapers are drawn by one linux-wallpaperengine (`engine`),
-//! started again whenever what it shows changes. awww shows a still of it
-//! underneath, so it fades in first and shows while the engine (re)starts:
-//! the frame the engine last drew on an output that size, kept from each
-//! run, or the project's own preview (a small thumbnail) until there's one.
-//! The engine starts after awww does, and again whenever awww starts again,
-//! so it stays above awww's surfaces.
-//!
-//! Each program is started again when it exits on its own, waiting longer
-//! each time it keeps failing, and ended when it has nothing to show, so a
-//! wallpaper tool of the user's own keeps working while nothing is set.
-//!
-//! One thread owns both programs and sends the images; everything else
-//! changes what it wants under the lock and wakes it.
-//!
-//! `folder` lists the wallpaper folder for the carousel.
-
 mod config;
 mod drawing;
 mod engine;
@@ -52,46 +22,28 @@ use std::process::Command;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-/// The feature's id in `features/`.
 use drawing::*;
 use plan::*;
 
 pub const FEATURE_ID: &str = "wallpaper";
-/// The feature that adds dynamic wallpapers.
 pub const ENGINE_FEATURE_ID: &str = "wallpaper-engine";
 const LOG_SOURCE: &str = "wallpaper";
 const DAEMON: &str = "awww-daemon";
 const CLIENT: &str = "awww";
-/// The awww namespace of Nova's daemon.
 const NAMESPACE: &str = "nova";
-/// How a new image arrives (the user's pick from the IMP-168 mockup): a
-/// one-second fade, drawn at a rate that stays smooth on high refresh
-/// screens (awww's default is 30 fps).
 const TRANSITION: &str = "fade";
 const TRANSITION_SECONDS: &str = "1";
 const TRANSITION_FPS: &str = "120";
-/// Images fill the output and are cropped to fit, never stretched.
 const RESIZE: &str = "crop";
-/// What `nova wallpaper` chose, in the state folder.
 const STATE_FILE: &str = "wallpaper.json";
-/// How long a started daemon has to start answering.
 const READY_TIMEOUT: Duration = Duration::from_secs(5);
 const READY_POLL: Duration = Duration::from_millis(50);
-/// How long `awww query` may take while the daemon starts.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(1);
-/// How long `awww img` may take: it decodes and scales the image itself.
 const IMAGE_TIMEOUT: Duration = Duration::from_secs(30);
-/// How long a started engine's frame is waited for: it writes it once it
-/// drew a few frames, which it doesn't while paused under a fullscreen
-/// window.
 const FRAME_WAIT: Duration = Duration::from_secs(30);
-/// Waits before sending an image again after `awww img` failed: doubling
-/// from the first while it keeps failing.
 const FIRST_RESEND: Duration = Duration::from_secs(1);
 const MAX_RESEND: Duration = Duration::from_secs(60);
 
-/// The wallpaper for every output and the outputs with one of their own:
-/// as the user named them ([`Source`]s), or as a program shows them (paths).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, bound(deserialize = "T: Deserialize<'de>"))]
 struct Choice<T = Source> {
@@ -112,7 +64,6 @@ impl<T: Clone> Choice<T> {
         self.path.is_none() && self.outputs.is_empty()
     }
 
-    /// The wallpaper each of `names` shows; one with none is left out.
     fn per_output(&self, names: &[String]) -> BTreeMap<String, T> {
         names
             .iter()
@@ -120,15 +71,12 @@ impl<T: Clone> Choice<T> {
             .collect()
     }
 
-    /// Every wallpaper in it.
     fn all(&self) -> impl Iterator<Item = &T> {
         self.path.iter().chain(self.outputs.values())
     }
 }
 
 impl Choice {
-    /// The choice from config.toml's `[wallpaper]`, leaving out (and logging)
-    /// settings that aren't absolute paths or Workshop IDs.
     fn from_config(config: &WallpaperConfig, logger: &Logger) -> Self {
         let resolve = |setting: String, text: &str| {
             Source::from_config(&setting, text).map_err(|e| logger.warn(LOG_SOURCE, &format!("{e}, ignoring it"))).ok()
@@ -151,9 +99,6 @@ impl Choice {
     }
 }
 
-/// The state file: `nova wallpaper`'s choice, and the `[wallpaper]` config
-/// it was made over. A config that differs since means the user edited it,
-/// which wins.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Saved {
@@ -161,27 +106,16 @@ struct Saved {
     choice: Choice,
 }
 
-/// The outputs to show wallpapers on.
 #[derive(Debug, Clone, PartialEq)]
 enum Outputs {
-    /// As the compositor last reported them.
     Known(Vec<String>),
-    /// The compositor hasn't reported them yet: nothing is shown until it
-    /// does, so every output gets its own wallpaper in one go.
     Unknown,
-    /// novad doesn't follow this compositor: images go to whatever outputs
-    /// awww sees, and only wallpapers set for an output by name can be
-    /// dynamic.
     Unfollowed,
 }
 
-/// Where the thread finds and keeps things.
 struct Places {
-    /// PATH for the programs it runs.
     path_var: String,
-    /// The home folder, where Steam libraries are looked for.
     home: Option<PathBuf>,
-    /// `<state>/wallpaper-engine`.
     engine: PathBuf,
 }
 
@@ -191,8 +125,6 @@ impl Places {
     }
 }
 
-/// What each step of the drive loop works with: where things are, the
-/// log, and whether novad is stopping (checked before each change).
 #[derive(Clone, Copy)]
 struct Drive<'a> {
     places: &'a Places,
@@ -200,7 +132,6 @@ struct Drive<'a> {
     stopped: &'a dyn Fn() -> bool,
 }
 
-/// A program the drive loop runs: its name, and where the state keeps it.
 #[derive(Clone, Copy)]
 struct Program {
     name: &'static str,
@@ -219,34 +150,21 @@ pub struct Wallpaper {
 
 struct Shared {
     state: Mutex<State>,
-    /// Wakes the thread on any change to `state`.
     wake: Condvar,
 }
 
 struct State {
-    /// Which features are ready: still images (`wallpaper`) and dynamic
-    /// wallpapers (`wallpaper-engine`).
     images_ready: bool,
     engine_ready: bool,
-    /// The last `[wallpaper]` seen, `None` before the first.
     config: Option<WallpaperConfig>,
     from_config: Choice,
-    /// `nova wallpaper`'s choice, over the config's.
     chosen: Option<Choice>,
     outputs: Outputs,
-    /// Outputs whose wallpaper is sent again even when it's the same:
-    /// unplugged since the thread last looked (awww forgot their image,
-    /// even when they're back by then) or chosen again with `nova
-    /// wallpaper` (the file may have changed). `all_stale`: every output.
     stale: BTreeSet<String>,
     all_stale: bool,
-    /// awww's daemon and linux-wallpaperengine.
     daemon: Running,
     engine: Running,
-    /// What's wanted changed since the thread last looked.
     changed: bool,
-    /// A file was written in the engine's folder (its frame, say) since
-    /// the thread last looked, and what watches it.
     frame_written: bool,
     frame_watch: Option<inotify::Stopper>,
     stopped: bool,
@@ -258,21 +176,14 @@ impl State {
     }
 }
 
-/// A program the thread keeps running.
 #[derive(Default)]
 struct Running {
-    /// Its pid, for `stop` and to end it when it isn't wanted. Forgotten
-    /// before it's reaped.
     pid: Option<u32>,
-    /// novad asked it to end, so its exit isn't a crash.
     ending: bool,
-    /// It exited without being asked, since the thread last looked.
     crashed: bool,
 }
 
 impl Running {
-    /// Asks it to end. Under the state lock: the pid is forgotten under it
-    /// before the reap, so it's still the program's (at worst a zombie).
     fn end(&mut self) {
         if let Some(pid) = self.pid {
             self.ending = true;
@@ -282,10 +193,6 @@ impl Running {
 }
 
 impl Wallpaper {
-    /// Starts its thread, which runs nothing until
-    /// [`configure`](Self::configure) says a feature is ready and a
-    /// wallpaper is set. `follows_compositor`: [`outputs`](Self::outputs)
-    /// will report the outputs.
     pub fn start(
         state_dir: &Path,
         home: Option<PathBuf>,
@@ -317,11 +224,6 @@ impl Wallpaper {
         Arc::new(Self { shared, places, state_file: state_dir.join(STATE_FILE), logger })
     }
 
-    /// Which features are ready (still images, dynamic wallpapers), and
-    /// config.toml's `[wallpaper]`. Called at start and on every reload. A
-    /// changed section drops what `nova wallpaper` chose; at start, so does
-    /// one changed while novad wasn't running. The section's `folder` doesn't
-    /// count: it only lists images to pick from.
     pub fn configure(&self, images_ready: bool, engine_ready: bool, config: &WallpaperConfig) {
         let config = &config.images();
         let mut state = lock(&self.shared.state);
@@ -342,7 +244,6 @@ impl Wallpaper {
         self.changed(state);
     }
 
-    /// The compositor's outputs, whenever they change.
     pub fn outputs(&self, names: Vec<String>) {
         let mut state = lock(&self.shared.state);
         if let Outputs::Known(before) = &state.outputs {
@@ -356,8 +257,6 @@ impl Wallpaper {
         }
     }
 
-    /// Shows `path` (an absolute path, or a Workshop ID) on every output, or
-    /// only on `output`, and remembers it (`nova wallpaper`).
     pub fn set(&self, path: &str, output: Option<&str>) -> Result<(), String> {
         self.current()?;
         let source = Source::from_request(path)?;
@@ -381,7 +280,6 @@ impl Wallpaper {
             }
             None => choice = Choice { path: Some(source), outputs: BTreeMap::new() },
         }
-        // Sent again even when it's the same: the file may have changed.
         let stale = output.map(str::to_owned);
         let saved = Saved { config: state.config.clone().unwrap_or_default(), choice };
         state_file::save(&self.state_file, &saved)
@@ -395,7 +293,6 @@ impl Wallpaper {
         Ok(())
     }
 
-    /// What shows now, or would once the programs run.
     pub fn current(&self) -> Result<Wallpapers, String> {
         let state = lock(&self.shared.state);
         match state.images_ready || state.engine_ready {
@@ -404,8 +301,6 @@ impl Wallpaper {
         }
     }
 
-    /// Ends the programs and the thread, for a novad that ends without
-    /// exiting the process (novad's `InProcess`).
     pub fn stop(&self) {
         let mut state = lock(&self.shared.state);
         state.stopped = true;
@@ -422,7 +317,6 @@ impl Wallpaper {
         self.shared.wake.notify_all();
     }
 
-    /// The choice saved over `config`, if there's one.
     fn saved_over(&self, config: &WallpaperConfig) -> Option<Choice> {
         let text = match std::fs::read_to_string(&self.state_file) {
             Ok(text) => text,
@@ -462,8 +356,6 @@ fn engine_not_ready() -> String {
     )
 }
 
-/// An error unless `name` can name an output: awww takes a comma-separated
-/// list, and one the compositor reported, when it reports them.
 fn check_output(name: &str, outputs: &Outputs) -> Result<(), String> {
     if name.is_empty() || name.contains(',') {
         return Err(format!("{name:?} isn't an output name"));
@@ -511,8 +403,6 @@ impl Shared {
             if state.stopped {
                 return;
             }
-            // Only the frame was written or waited for long enough: nothing
-            // else to work out.
             let now = Instant::now();
             let due = timers.into_iter().flatten().any(|at| at <= now);
             if !state.changed && !state.daemon.crashed && !state.engine.crashed && !due {
@@ -556,8 +446,6 @@ impl Shared {
         }
     }
 
-    /// Runs awww's daemon while it has images to show, and sends the ones
-    /// it doesn't show yet.
     fn drive_awww(self: &Arc<Self>, images: &Choice<Picture>, outputs: &Outputs, awww: &mut Awww, drive: Drive) {
         let Drive { places, logger, .. } = drive;
         let mut state = lock(&self.state);
@@ -572,8 +460,6 @@ impl Shared {
             (awww.start_at, awww.resend_at) = (None, None);
             return;
         }
-        // The outputs whose size picks their still. Only ones the compositor
-        // reported: one named in the config may not be plugged in.
         let dynamic: Vec<&String> = match outputs {
             Outputs::Known(_) => images
                 .outputs
@@ -585,18 +471,14 @@ impl Shared {
         };
         if state.daemon.pid.is_none() {
             if awww.start_at.is_some_and(|at| at > Instant::now()) {
-                // Nothing to resend to until it runs again.
                 awww.resend_at = None;
                 return;
             }
             awww.start_at = None;
-            // A new daemon shows nothing yet: it runs without its cache.
             awww.shown = Shown::default();
             awww.restarts.started();
             let mut command = Command::new(DAEMON);
             command.args(["--namespace", NAMESPACE, "--no-cache", "--quiet"]).env("PATH", &places.path_var);
-            // Spawned under the lock, so `stop` sees the pid or stops the
-            // thread before the spawn.
             if let Err(e) = self.spawn(&mut state, command, AWWW_DAEMON, logger) {
                 logger.warn(LOG_SOURCE, &format!("can't start {DAEMON}: {e}"));
                 awww.start_at = Some(Instant::now() + awww.restarts.after_exit());
@@ -608,8 +490,6 @@ impl Shared {
                 Ok(sizes) => awww.sizes = sizes,
                 Err(e) => {
                     logger.warn(LOG_SOURCE, &format!("{DAEMON} didn't start answering: {e}"));
-                    // Not asked to end: it's started again, after a wait,
-                    // once it's gone.
                     if let Some(pid) = lock(&self.state).daemon.pid {
                         child::terminate(pid);
                     }
@@ -618,7 +498,6 @@ impl Shared {
             }
         } else {
             drop(state);
-            // A mode change since doesn't tell novad.
             if !dynamic.is_empty()
                 && let Some(sizes) = query_sizes(&places.path_var)
             {
@@ -643,8 +522,6 @@ impl Shared {
         }
     }
 
-    /// Runs linux-wallpaperengine while there are dynamic wallpapers to
-    /// show, starting it again when they change or awww started again.
     fn drive_engine(
         self: &Arc<Self>,
         screens: &BTreeMap<String, PathBuf>,
@@ -667,7 +544,6 @@ impl Shared {
         }
         if state.engine.pid.is_some() {
             if engine.shown.as_ref() != Some(screens) || engine.above != awww_starts {
-                // Started again once it's gone: its exit wakes the thread.
                 state.engine.end();
             }
             return;
@@ -677,8 +553,6 @@ impl Shared {
         }
         engine.start_at = None;
         engine.restarts.started();
-        // An older run's frame isn't this one's. The engine doesn't make
-        // the folder it writes it to.
         let frame = engine::frame_file(&places.engine);
         let _ = std::fs::remove_file(&frame);
         match std::fs::create_dir_all(&places.engine) {
@@ -705,8 +579,6 @@ impl Shared {
         }
     }
 
-    /// Wakes the thread whenever a file in `folder` is written: the
-    /// engine's frame is, once, after each start.
     fn watch_frames(self: &Arc<Self>, folder: &Path) -> std::io::Result<inotify::Stopper> {
         let watcher = inotify::Inotify::new(libc::IN_CLOSE_WRITE | libc::IN_MOVED_TO)?;
         watcher.watch(folder)?;
@@ -724,8 +596,6 @@ impl Shared {
         Ok(stopper)
     }
 
-    /// Starts `command` as `program`, and notes in the state when it exits:
-    /// a crash unless it was asked to end.
     fn spawn(
         self: &Arc<Self>,
         state: &mut State,
@@ -736,7 +606,6 @@ impl Shared {
         let Program { name, running } = program;
         let shared = Arc::clone(self);
         let exit_logger = Arc::clone(logger);
-        // This thread, the spawning one, runs until `stop`.
         let pid = child::watch(&mut command, move |gone| {
             let mut state = lock(&shared.state);
             let program = running(&mut state);
@@ -752,10 +621,6 @@ impl Shared {
         Ok(())
     }
 
-    /// Waits until the daemon answers, or exits; each output's size in
-    /// pixels. Waits on (as long as it would for an answer) while it hasn't
-    /// sized each of `outputs` yet, so their first images can be stills
-    /// that fit.
     fn wait_ready(&self, path_var: &str, outputs: &[&String]) -> Result<BTreeMap<String, (u32, u32)>, String> {
         let deadline = Instant::now() + READY_TIMEOUT;
         let mut answered = None;
@@ -777,7 +642,6 @@ impl Shared {
                 return Err("it exited".into());
             }
             if Instant::now() >= deadline {
-                // It answered before: it's up, just not sized yet.
                 if let Some(found) = answered {
                     return Ok(found);
                 }

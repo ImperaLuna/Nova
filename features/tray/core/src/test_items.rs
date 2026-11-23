@@ -1,18 +1,11 @@
-//! Apps' tray items for tests, here and in novad's (behind the
-//! `test-support` feature): items the way Electron (with `Activate`) and
-//! libayatana (only a menu) put them up, served on a connection and
-//! registered with the watcher.
-
 use crate::{WATCHER_NAME, WATCHER_PATH};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use zbus::{Connection, interface};
 
-/// An app's tray item, with the two properties the tray reads.
 pub struct Item {
     pub id: String,
     pub title: String,
-    /// Counts `Activate` calls.
     pub activated: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -33,8 +26,6 @@ impl Item {
     }
 }
 
-/// Serves `item` at `path` on `connection`, owning `name` first if given,
-/// and registers `service` with the watcher.
 pub fn serve_item(
     connection: &Connection,
     name: Option<&str>,
@@ -56,7 +47,6 @@ pub(crate) async fn register(connection: &Connection, service: &str) -> zbus::Re
     connection.call_method(Some(WATCHER_NAME), WATCHER_PATH, Some(WATCHER_NAME), method, &(service,)).await
 }
 
-/// A libayatana item, like Spotify's: no `Activate`, only a menu.
 pub struct MenuOnlyItem {
     pub id: String,
     pub title: String,
@@ -77,15 +67,10 @@ impl MenuOnlyItem {
     fn secondary_activate(&self, _x: i32, _y: i32) {}
 }
 
-/// An item the way Electron puts one up for the GPUI UI's reads: pixels
-/// rather than an icon name, a status, and a DBusMenu at `/MenuBar`.
 pub struct LookItem {
     pub id: String,
-    /// `Active` or `NeedsAttention`.
     pub status: String,
-    /// One picture, as (width, height, ARGB32 bytes).
     pub pixmap: (i32, i32, Vec<u8>),
-    /// Counts `SecondaryActivate` calls.
     pub secondary: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -136,23 +121,17 @@ impl LookItem {
     pub async fn new_status(emitter: &zbus::object_server::SignalEmitter<'_>, status: &str) -> zbus::Result<()>;
 }
 
-/// One entry of a [`Menu`]: its id, properties and children.
 pub struct MenuNode(pub i32, pub Vec<(&'static str, zbus::OwnedVariant)>, pub Vec<MenuNode>);
 
-/// A DBusMenu, served as Electron's (`/MenuBar`) is.
 pub struct Menu {
     pub root: MenuNode,
     pub revision: u32,
-    /// The entries clicked, in order.
     pub clicked: Arc<std::sync::Mutex<Vec<i32>>>,
-    /// The levels told they're about to show.
     pub shown: Arc<std::sync::Mutex<Vec<i32>>>,
 }
 
-/// An entry as `GetLayout` sends it.
 pub type Layout = (i32, std::collections::HashMap<String, zbus::OwnedVariant>, Vec<zbus::OwnedVariant>);
 
-/// `node` as `GetLayout` sends it, `depth` levels deep (-1: all of them).
 fn layout(node: &MenuNode, depth: i32) -> Layout {
     let MenuNode(id, props, children) = node;
     let props = props.iter().map(|(name, value)| ((*name).to_string(), value.try_clone().unwrap())).collect();

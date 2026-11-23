@@ -1,64 +1,35 @@
-//! The launcher's providers (`launcher.providers`): each one answers a search
-//! with items and runs the one picked. A feature offers one by slotting a view
-//! into `launcher.providers` in its manifest and naming the running service
-//! that answers for that view in novad's wiring (`PROVIDERS` there, a port:
-//! the launcher never names another feature's code); the host asks the ready
-//! ones in their slot order. A provider with a trigger (like `=`) answers only queries that
-//! start with it, and then it alone (with any others sharing it) does. One
-//! with a mode of its own (files, which the Nova Files app answers) answers
-//! only searches made in that mode, which the launcher names, and never
-//! shows among the others.
-
 use super::{Launcher, TrayApps};
 use nova_compositor::Compositor;
 use nova_launcher_api::{LAUNCHER_SEARCH_MAX_CHARS, LauncherItem};
 use nova_log::Logger;
 use std::sync::Arc;
 
-/// The host providers slot into.
 pub const HOST: &str = "launcher.providers";
 const LOG_SOURCE: &str = "launcher";
 
-/// What answers a launcher search and runs what it found.
 pub trait Provider: Send + Sync {
-    /// A prefix that sends a query to this provider alone, without it.
-    /// `None` answers every query.
     fn trigger(&self) -> Option<&str> {
         None
     }
 
-    /// It answers only searches made in its own mode (`LauncherSearch`'s
-    /// `mode` naming it), given the whole query, and no others.
     fn own_mode(&self) -> bool {
         false
     }
 
-    /// What it finds for `query` (never blank, and without the trigger),
-    /// best first. The host fills in each item's `provider`.
     fn search(&self, query: &str) -> Result<Vec<LauncherItem>, String>;
 
-    /// Runs the item `id` it found. May take a while: the server calls it
-    /// off the connection's thread.
     fn run(&self, id: &str, how: &Run) -> Result<(), String>;
 }
 
-/// How and where to run an item, and what running it may use.
 pub struct Run<'a> {
-    /// The screen to open on; the focused one when unset.
     pub output: Option<&'a str>,
-    /// Shift+Enter, the item's other way to run: an app in a new window
-    /// even when one is open, a file shown in its folder.
     pub new_window: bool,
     pub compositor: Option<&'a Compositor>,
     pub tray: Option<&'a dyn TrayApps>,
     pub logger: &'a Logger,
-    /// Says the item is underway when what's left only waits on it (an app
-    /// asked to show or to start, its window still to focus), so the
-    /// launcher closes then instead of when `run` returns.
     pub underway: &'a dyn Fn(),
 }
 
-/// A provider view a ready feature slots into [`HOST`], at `order`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Slotted<'a> {
     pub order: i64,
@@ -66,15 +37,11 @@ pub struct Slotted<'a> {
     pub view: &'a str,
 }
 
-/// The ready features' providers, in their slot order.
 pub struct Host {
     providers: Vec<(String, Arc<dyn Provider>)>,
 }
 
 impl Host {
-    /// The providers the ready features slot in (`slotted`), sorted by
-    /// `order`, then feature id. `find` gives each view's provider; a view
-    /// without one (its service stopped meanwhile) is left out.
     pub fn new<'a>(
         slotted: impl IntoIterator<Item = Slotted<'a>>,
         find: impl Fn(&str) -> Option<Arc<dyn Provider>>,
@@ -89,9 +56,6 @@ impl Host {
         Self { providers }
     }
 
-    /// What the providers find for `query` in the launcher's `mode` (see
-    /// `Command::LauncherSearch`). One that fails is logged and left out, so
-    /// the others still show.
     pub fn search(&self, query: &str, mode: Option<&str>, logger: &Logger) -> Result<Vec<LauncherItem>, String> {
         if query.chars().count() > LAUNCHER_SEARCH_MAX_CHARS {
             return Err(format!("searches are at most {LAUNCHER_SEARCH_MAX_CHARS} characters"));
@@ -103,7 +67,6 @@ impl Host {
             let provider = self.provider(mode)?;
             return Ok(Self::ask(vec![(mode, provider.as_ref(), query)], logger));
         }
-        // Providers with a mode of their own answer only in it.
         let mixed = || self.providers.iter().filter(|(_, provider)| !provider.own_mode());
         let triggered: Vec<(&str, &dyn Provider, &str)> = mixed()
             .filter_map(|(view, provider)| {
@@ -122,8 +85,6 @@ impl Host {
         Ok(Self::ask(asked, logger))
     }
 
-    /// What each of `asked` (a provider's view, the provider, its query)
-    /// finds, in order.
     fn ask(asked: Vec<(&str, &dyn Provider, &str)>, logger: &Logger) -> Vec<LauncherItem> {
         let mut found = Vec::new();
         for (view, provider, query) in asked {
@@ -140,7 +101,6 @@ impl Host {
         found
     }
 
-    /// The provider `view`, or why there's none.
     pub fn provider(&self, view: &str) -> Result<Arc<dyn Provider>, String> {
         self.providers
             .iter()
@@ -150,17 +110,13 @@ impl Host {
     }
 }
 
-/// Installed apps: the launcher's own provider.
 impl Provider for Launcher {
     fn search(&self, query: &str) -> Result<Vec<LauncherItem>, String> {
         Ok(self.search_apps(query))
     }
 
-    /// Focuses a window the app already has (unless `new_window`, or it's
-    /// in the tray: its window shows), or else starts it.
     fn run(&self, id: &str, how: &Run) -> Result<(), String> {
         self.launch(id, |ids| {
-            // A new window is asked for: no open one, nor the tray's.
             let (ids, tray) = if how.new_window { (&[][..], None) } else { (ids, how.tray) };
             let start = || self.start_app(id);
             super::focus_open(id, ids, &Run { tray, ..*how }, start)
@@ -177,12 +133,10 @@ mod tests {
     use nova_test_support::TempDir;
     use std::sync::Mutex;
 
-    /// A logger writing into `dir`.
     fn logger(dir: &TempDir) -> Logger {
         Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::new(Hub::default())).unwrap()
     }
 
-    /// A provider that finds `query` back as one item and remembers runs.
     struct Echo {
         trigger: Option<&'static str>,
         own_mode: bool,
@@ -215,7 +169,6 @@ mod tests {
         }
     }
 
-    /// The ready feature `id`, filling the host with the view `id` at `order`.
     fn provider(id: &'static str, order: i64) -> Slotted<'static> {
         Slotted { order, feature: id, view: id }
     }
@@ -228,8 +181,6 @@ mod tests {
         items.iter().map(|item| (item.provider.as_str(), item.id.as_str())).collect()
     }
 
-    /// Which features are ready, and which slots are this host's, is
-    /// novad's wiring's to tell (its test covers that).
     #[test]
     fn providers_answer_in_slot_order() {
         let features = [provider("zeta", 10), provider("calc", 20), provider("alpha", 10)];

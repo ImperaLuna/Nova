@@ -1,17 +1,3 @@
-//! What the tray draws with GPUI, as its manifest's slots name the views
-//! (`features/tray/feature.toml`):
-//!
-//! - `tray.strip` (host `right-pill.tray`): the chevron and the apps'
-//!   icons in the bar's right pill ([`strip`]).
-//! - `tray.panel` (host `stage.panels`): the open tray, which the strip
-//!   draws in place, so the stage closes it as it does any panel.
-//! - `tray.menu` (host `stage.panels`): an app's menu below its icon
-//!   ([`menu`]).
-//! - `tray.card` (host `quick-settings.cards`): every app in quick
-//!   settings, with an app's menu drawn over the drawer ([`card`]).
-//!
-//! [`model`] is what they work out, without GPUI.
-
 mod card;
 mod menu;
 mod model;
@@ -38,7 +24,6 @@ pub fn register(cx: &mut App) {
     });
 }
 
-/// The open tray's panel draws nothing of its own: the strip draws it.
 struct Empty;
 
 impl gpui::Render for Empty {

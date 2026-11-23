@@ -1,11 +1,3 @@
-//! One screen's pop-up window: on the overlay layer at the top right,
-//! taking no keyboard and no space, only as big as the stack plus its
-//! shadow, with blur and clicks only on the cards. Only the one on the
-//! screen the pop-ups came out on draws at all, and it asks for frames only
-//! while a card moves. It changes size while nothing moves: it grows before
-//! new cards open and shrinks once those leaving have gone, since a resize
-//! in a motion costs that motion frames.
-
 use crate::card::{Look, card};
 use crate::popups::{Heights, Popups, Reach};
 use crate::stack::Entry;
@@ -23,32 +15,23 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-/// The pop-ups' layer surfaces, for the compositor's rules (niri blurs
-/// `^nova-`).
 const NAMESPACE: &str = "nova-notifications";
-/// A window with no pop-ups: as small as the compositor takes.
 const RESTING_HEIGHT: Pixels = px(1.0);
 
 pub struct PopupWindow {
     screen: Screen,
     popups: WeakEntity<Popups>,
     heights: Heights,
-    /// The shapes drawn this frame, and those the compositor has.
     shapes: Rc<RefCell<Vec<Shape>>>,
     sent: Rc<RefCell<Option<Vec<Shape>>>>,
-    /// The height it last asked for, and when.
     height: Pixels,
     resized: Option<Instant>,
-    /// The stack is this screen's to draw, as the pop-ups last said.
     shows: bool,
-    /// Wakes it for the draining lines' next step.
     countdown: Option<Task<()>>,
     frames: Option<FrameLog>,
     _followed: Option<Subscription>,
 }
 
-/// The window's width: the stack, its shadow's room on the left, and the
-/// bar's margin on the right.
 fn window_width() -> Pixels {
     SHADOW_ROOM + WIDTH + BAR_MARGIN
 }
@@ -69,14 +52,7 @@ impl PopupWindow {
             .then(|| FrameLog::new(format!("{}/notifications", screen.name), screen.refresh, Instant::now()));
         let opened = cx.open_window(shell.options(), move |_, cx| {
             cx.new(|cx: &mut Context<Self>| {
-                // Whether there's anything to draw is found out here, not
-                // while drawing: GPUI redraws a window whenever something
-                // its last frame read changes, so a window that read the
-                // pop-ups to learn it has none would commit a frame, on a
-                // screen that shows no card, each time they change.
                 let followed = popups.upgrade().map(|popups| cx.observe(&popups, Self::follow));
-                // Pop-ups that came while this window was opening are already
-                // waiting for it.
                 let shows = popups.upgrade().is_some_and(|popups| popups.read(cx).shows_on(screen.id));
                 Self {
                     screen,
@@ -102,8 +78,6 @@ impl PopupWindow {
         }
     }
 
-    /// The pop-ups changed: draws when the stack is this screen's, and
-    /// once more when it no longer is.
     fn follow(&mut self, popups: Entity<Popups>, cx: &mut Context<Self>) {
         let shows = popups.read(cx).shows_on(self.screen.id);
         if shows || self.shows {
@@ -112,8 +86,6 @@ impl PopupWindow {
         }
     }
 
-    /// Makes the window `height` tall. Only for a frame in which nothing
-    /// moves.
     fn fit(&mut self, height: Pixels, now: Instant, window: &mut Window) {
         let height = if height < RESTING_HEIGHT { RESTING_HEIGHT } else { height.ceil() };
         if height == self.height {
@@ -124,14 +96,11 @@ impl PopupWindow {
         window.resize(size(window_width(), height));
     }
 
-    /// The window has the height it last asked for, or the compositor has
-    /// had long enough to give it and chose another.
     fn fitted(&self, now: Instant, window: &Window) -> bool {
         window.viewport_size().height == self.height
             || self.resized.is_none_or(|at| now.saturating_duration_since(at) > GROW_WAIT)
     }
 
-    /// Nothing to draw: as small as it gets, with no wake-up left.
     fn rest(&mut self, now: Instant, window: &mut Window) -> Div {
         self.countdown = None;
         self.fit(RESTING_HEIGHT, now, window);
@@ -139,9 +108,6 @@ impl PopupWindow {
         div().child(self.regions())
     }
 
-    /// While a card's time drains and nothing moves, the next step of its
-    /// line comes [`COUNTDOWN_TICK`] after this frame, whatever drew it, so
-    /// no step lands in a motion or right behind one.
     fn keep_countdown(&mut self, stepping: bool, cx: &mut Context<Self>) {
         self.countdown = stepping.then(|| {
             cx.spawn(async move |this, cx| {
@@ -151,8 +117,6 @@ impl PopupWindow {
         });
     }
 
-    /// Hands this frame's shapes to the compositor when they changed: it
-    /// blurs behind them, and clicks land on them alone.
     fn regions(&self) -> impl IntoElement {
         let (shapes, sent) = (self.shapes.clone(), self.sent.clone());
         canvas(
@@ -170,8 +134,6 @@ impl PopupWindow {
         .size_0()
     }
 
-    /// Records a card's height as laid out; a change asks for a frame, so
-    /// the slots below it move.
     fn measure(&self, key: u64) -> impl IntoElement {
         let measured = self.heights.clone();
         canvas(
@@ -203,8 +165,6 @@ impl Render for PopupWindow {
         popups.update(cx, |popups, _| popups.step(now));
         let popups_now = popups.read(cx);
         if !popups_now.shows_on(self.screen.id) {
-            // The last card went in this frame, which read the pop-ups:
-            // one more, which reads nothing, lets go of them.
             self.shows = false;
             window.request_animation_frame();
             return self.rest(now, window);
@@ -216,12 +176,6 @@ impl Render for PopupWindow {
         let heights = self.heights.borrow().clone();
         let height_of = |entry: &Entry| heights.get(&entry.key).copied().unwrap_or(AVATAR + PAD + PAD_BOTTOM);
 
-        // The room every card takes once in place, counting those not
-        // opened yet and those leaving, so the window keeps one size
-        // through a motion. New ones are laid out unseen first, and wait
-        // for the cards on their way to arrive: then the window grows
-        // once, to their real heights, and they open in the frame after
-        // it has.
         let settled = !moving && arrivals.iter().all(|key| heights.contains_key(key));
         if settled {
             let chip_room = if waiting > 0 { ACTION_HEIGHT } else { px(0.0) };
@@ -246,7 +200,6 @@ impl Render for PopupWindow {
             looks.push(Look { entry, presence: entry.presence.value(now), height, slot_top, now, wall });
             slot_top += (height + GAP) * entry.room.value(now);
         }
-        // Those growing or leaving lie over those in place.
         looks.sort_by(|a, b| b.presence.total_cmp(&a.presence));
         let reach = Reach::new(self.popups.clone(), self.screen.name.clone());
         let drawn: Vec<AnyElement> = looks
@@ -268,7 +221,6 @@ impl Render for PopupWindow {
     }
 }
 
-/// "+N": those waiting for room, under the stack.
 fn chip(waiting: usize, top: Pixels, cx: &App) -> impl IntoElement {
     let theme = Theme::of(cx);
     div().absolute().top(top).left(SHADOW_ROOM).w(WIDTH).flex().justify_center().child(

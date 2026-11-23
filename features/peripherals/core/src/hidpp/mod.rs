@@ -1,22 +1,3 @@
-//! Logitech devices whose receiver the kernel doesn't drive, read over
-//! HID++ like Solaar does. A receiver the kernel's Logitech drivers don't
-//! know yet (Lightspeed `c547`, Bolt `c548` on many kernels) stays on
-//! `hid-generic`, so its devices' batteries never reach `/sys` or UPower.
-//! This source opens the HID++ hidraw node of such a receiver (or of a
-//! device on its own cable) and asks its devices itself.
-//!
-//! Nodes are found as [`super::hidraw`] finds them: those whose HID device
-//! is on `hid-generic` (one a Logitech driver has is UPower's to report)
-//! and whose report descriptor has HID++ reports. Each node's reader asks
-//! a receiver's paired devices (or the device itself) whether they're
-//! there, what they are and how charged, again every [`POLL`] and shortly
-//! after a device says something by itself (it connected, its battery
-//! changed).
-//!
-//! Opening a node needs read and write access: Nova's udev rule gives it
-//! to the logged-in user for Logitech's nodes. Without it, nothing is listed and
-//! the problem is logged once.
-
 mod descriptor;
 mod device;
 mod protocol;
@@ -30,30 +11,17 @@ use nova_peripherals_api::{Peripheral, PeripheralLink, PeripheralSource};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
-/// How often devices are asked again: a device turned on or off says
-/// nothing to `/dev`.
 pub const POLL: Duration = Duration::from_secs(60);
-/// How long after a device says something by itself it's asked again:
-/// one that just connected needs a moment.
 const NOTICE_SETTLE: Duration = Duration::from_secs(1);
-/// How soon a device that didn't answer is asked again, and how many reads
-/// in a row may fail before it leaves the list.
 const RETRY: Duration = Duration::from_secs(5);
 const MAX_MISSES: u32 = 3;
-/// The driver a HID device has when no other claimed it.
 const GENERIC_DRIVER: &str = "hid-generic";
-/// HID's bus numbers (`BUS_USB`, `BUS_BLUETOOTH` in linux/input.h).
 const HID_BUS_USB: u16 = 0x0003;
 const HID_BUS_BLUETOOTH: u16 = 0x0005;
-/// Logitech's USB vendor id, which its devices' product ids are under.
 const LOGITECH: u16 = 0x046D;
-/// The id a device's comes after.
 const ID_PREFIX: &str = "hidpp/";
-/// HID++ 1.0's notification that a paired device connected or went.
 const CONNECTION_NOTICE: u8 = 0x41;
 
-/// HID++, on Logitech's nodes that are on `hid-generic` (one a Logitech
-/// driver has is UPower's to report) and take HID++ reports.
 pub struct Hidpp;
 
 impl Protocol for Hidpp {
@@ -70,8 +38,6 @@ impl Protocol for Hidpp {
     }
 }
 
-/// Asks the devices on `node` until stopped or the node goes; says why it
-/// ended when that wasn't a stop.
 fn read_node(node: &Node, mut talk: Conversation, listing: &Listing) -> Option<String> {
     let ended = |failure: Failure| match failure {
         Failure::Stopped => None,
@@ -97,7 +63,6 @@ fn read_node(node: &Node, mut talk: Conversation, listing: &Listing) -> Option<S
     };
     let mut known: HashMap<u8, Info> = HashMap::new();
     let mut found: BTreeMap<u8, Found> = BTreeMap::new();
-    // Reads in a row that failed, by device.
     let mut misses: HashMap<u8, u32> = HashMap::new();
     let mut due: BTreeMap<u8, Instant> = BTreeMap::new();
     let mut next_poll = Instant::now();
@@ -119,8 +84,6 @@ fn read_node(node: &Node, mut talk: Conversation, listing: &Listing) -> Option<S
                     };
                 }
                 Err(failure @ (Failure::Stopped | Failure::Io(_))) => return ended(failure),
-                // A slow or lost answer over the air: its last reading
-                // stays while it's asked again soon, a few times.
                 Err(_) => {
                     let missed = misses.entry(*index).or_default();
                     *missed += 1;
@@ -149,8 +112,6 @@ fn read_node(node: &Node, mut talk: Conversation, listing: &Listing) -> Option<S
     }
 }
 
-/// A device said something by itself: it's asked again shortly, and read
-/// whole when it (re)connected, since another device may have its index.
 fn noticed(report: &[u8], indices: &[u8], due: &mut BTreeMap<u8, Instant>, known: &mut HashMap<u8, Info>) {
     let Some(index) = protocol::unasked(report).filter(|index| indices.contains(index)) else { return };
     if report[2] == CONNECTION_NOTICE {
@@ -160,7 +121,6 @@ fn noticed(report: &[u8], indices: &[u8], due: &mut BTreeMap<u8, Instant>, known
     due.entry(index).and_modify(|due| *due = (*due).min(at)).or_insert(at);
 }
 
-/// Device `index` on `node`, if it's there and has a battery.
 fn read_device(
     talk: &mut Conversation,
     node: &Node,
@@ -209,8 +169,6 @@ fn read_device(
         charging: charge.charging,
         source: PeripheralSource::Hidpp,
     };
-    // As the kernel's driver gives it (`df-70-97-d8`), and UPower then, so
-    // two of one model aren't taken for one.
     let serial = info.unit_id.map(|unit| unit.iter().map(|byte| format!("{byte:02x}")).collect::<Vec<_>>().join("-"));
     Ok(Some(Found { device, usb_ids, serial }))
 }

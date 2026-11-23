@@ -1,26 +1,18 @@
-//! What the slider and the Sound page work out, with no GPUI drawing in it: the
-//! device in use, the volume icon's output kind, a list row's icon and second
-//! line.
-
 use nova_look::{Glyph, OutputKind};
 use nova_sound_api::{Device, DeviceKind, Link, Sound};
 
-/// The device in use among `devices`.
 pub fn current(devices: &[Device]) -> Option<&Device> {
     devices.iter().find(|device| device.current)
 }
 
-/// The output in use, while the sound server answers.
 pub fn output(sound: Option<&Sound>) -> Option<&Device> {
     sound.filter(|sound| sound.available).and_then(|sound| current(&sound.outputs))
 }
 
-/// The input in use, while the sound server answers.
 pub fn input(sound: Option<&Sound>) -> Option<&Device> {
     sound.filter(|sound| sound.available).and_then(|sound| current(&sound.inputs))
 }
 
-/// What an output is, for the volume icon.
 pub fn output_kind(kind: DeviceKind) -> OutputKind {
     match kind {
         DeviceKind::Headphones => OutputKind::Headphones,
@@ -30,7 +22,6 @@ pub fn output_kind(kind: DeviceKind) -> OutputKind {
     }
 }
 
-/// An output's icon in a list row.
 pub fn kind_glyph(kind: DeviceKind) -> Glyph {
     match kind {
         DeviceKind::Headphones => Glyph::HEADPHONES,
@@ -40,7 +31,6 @@ pub fn kind_glyph(kind: DeviceKind) -> Glyph {
     }
 }
 
-/// How a device is connected, in words.
 pub fn link_label(link: Option<Link>) -> &'static str {
     match link {
         Some(Link::Bluetooth) => "Bluetooth",
@@ -49,7 +39,6 @@ pub fn link_label(link: Option<Link>) -> &'static str {
     }
 }
 
-/// What an output is, in words (`kindLabel`).
 fn kind_label(kind: DeviceKind) -> &'static str {
     match kind {
         DeviceKind::Headphones => "Headphones",
@@ -59,9 +48,6 @@ fn kind_label(kind: DeviceKind) -> &'static str {
     }
 }
 
-/// A list row's second line: how the device is connected, so a headset
-/// listed on both its links reads as two, else what an output is. An input
-/// says only its link.
 pub fn subtitle(device: &Device, is_input: bool) -> &'static str {
     match (link_label(device.link), is_input) {
         ("", false) => kind_label(device.kind),

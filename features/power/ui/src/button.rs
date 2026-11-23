@@ -1,7 +1,3 @@
-//! The power button on the right pill (`power.button` in `right-pill.buttons`),
-//! in the accent: opens and closes the power menu on its screen, which closes
-//! quick settings when it's open.
-
 use crate::NAME;
 use gpui::{Context, IntoElement, Render, Window};
 use nova_look::{Glyph, PillButton, Theme};

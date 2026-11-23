@@ -1,19 +1,9 @@
-//! The folder's images as the carousel draws them: each decoded off the
-//! main thread at the size it is drawn, never the file's, and cut to fill
-//! that box as awww fills a screen. A card costs a picture the size of a
-//! card, a preview one the size of the screen.
-//!
-//! [`Pictures`] keeps the few it was last asked for and lets the others go,
-//! from the GPU's atlas too, so stepping through a big folder holds only
-//! the cards around the middle.
-
 use gpui::{App, Context, DevicePixels, RenderImage, Size, Task, Window};
 use image::imageops::FilterType;
 use image::{DynamicImage, Frame, ImageReader};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// How an image was asked for: its file, and the box in pixels it fills.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Wanted {
     pub path: String,
@@ -29,23 +19,15 @@ impl Wanted {
 }
 
 enum Picture {
-    /// Decoding; dropping the task stops it.
-    Loading {
-        _decoding: Task<()>,
-    },
+    Loading { _decoding: Task<()> },
     Ready(Arc<RenderImage>),
     Failed,
 }
 
-/// Decoded pictures, kept as an entity: it notifies when one arrives, so
-/// the views drawing it observe it.
 pub struct Pictures {
-    /// How many it keeps once they are not asked for.
     keeps: usize,
     found: HashMap<Wanted, Picture>,
-    /// Least recently asked for first.
     order: Vec<Wanted>,
-    /// Let go since the last frame: still in the GPU's atlas.
     dropped: Vec<Arc<RenderImage>>,
 }
 
@@ -54,8 +36,6 @@ impl Pictures {
         Self { keeps, found: HashMap::new(), order: Vec::new(), dropped: Vec::new() }
     }
 
-    /// The picture `wanted` asks for once it is decoded; until then `None`,
-    /// and the decoding starts. The entity notifies when it is ready.
     pub fn get(&mut self, wanted: &Wanted, cx: &mut Context<Self>) -> Option<Arc<RenderImage>> {
         self.touch(wanted);
         if !self.found.contains_key(wanted) {
@@ -80,13 +60,11 @@ impl Pictures {
     }
 
     fn arrived(&mut self, wanted: &Wanted, picture: Option<Arc<RenderImage>>, cx: &mut Context<Self>) {
-        // Let go while it was decoding.
         let Some(slot) = self.found.get_mut(wanted) else { return };
         *slot = picture.map_or(Picture::Failed, Picture::Ready);
         cx.notify();
     }
 
-    /// Lets every picture go: the carousel closed.
     pub fn clear(&mut self) {
         self.order.clear();
         for (_, picture) in self.found.drain() {
@@ -96,8 +74,6 @@ impl Pictures {
         }
     }
 
-    /// Takes what was let go out of the GPU's atlas: from every window,
-    /// `window` included when it is the one being drawn.
     pub fn release(&mut self, mut window: Option<&mut Window>, cx: &mut App) {
         for picture in self.dropped.drain(..) {
             cx.drop_image(picture, window.as_deref_mut());
@@ -123,9 +99,6 @@ fn load(wanted: Wanted, cx: &mut Context<Pictures>) -> Task<()> {
     })
 }
 
-/// Reads the file and cuts it to fill the box. A folder (a Wallpaper
-/// Engine project set as the wallpaper) has no picture to read: none, and
-/// no warning, since nothing is wrong.
 fn decode(wanted: &Wanted) -> Result<Option<RenderImage>, String> {
     if std::fs::metadata(&wanted.path).is_ok_and(|metadata| metadata.is_dir()) {
         return Ok(None);
@@ -134,7 +107,6 @@ fn decode(wanted: &Wanted) -> Result<Option<RenderImage>, String> {
     let reader = reader.with_guessed_format().map_err(|error| error.to_string())?;
     let picture: DynamicImage = reader.decode().map_err(|error| error.to_string())?;
     let mut filled = picture.resize_to_fill(wanted.width, wanted.height, FilterType::Triangle).into_rgba8();
-    // GPUI draws BGRA.
     for pixel in filled.pixels_mut() {
         pixel.0.swap(0, 2);
     }

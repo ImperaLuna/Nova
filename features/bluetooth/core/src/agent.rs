@@ -1,15 +1,3 @@
-//! novad's BlueZ pairing agent (`org.bluez.Agent1`): when pairing needs the
-//! user (compare a code, type a PIN or passkey, type one shown here on the
-//! device, allow a device), BlueZ asks the agent, the question goes out as
-//! the event's `pairing`, and the user's `bluetooth_answer` comes back.
-//!
-//! It's registered with `KeyboardDisplay` (it can show codes and take typed
-//! ones) on the connection novad pairs over, so pairing Nova starts always
-//! asks Nova, and made the default agent, so a phone pairing with this
-//! computer asks Nova too. A question nobody answers within
-//! [`ANSWER_TIMEOUT`] is turned down; BlueZ's `Cancel`, a newer question, or
-//! the service stopping end it as well.
-
 use super::Shared;
 use nova_bluetooth_api::{BLUETOOTH_PIN_MAX_BYTES, PairingAnswer, PairingAsk};
 use std::sync::Arc;
@@ -18,28 +6,19 @@ use zbus::interface;
 use zbus::wire::OwnedObjectPath;
 
 pub const AGENT_PATH: &str = "/org/nova/bluetooth/agent";
-/// What the agent can do: show codes and read typed ones.
 pub const CAPABILITY: &str = "KeyboardDisplay";
-/// How long a question waits for the user. BlueZ gives up a little later.
 pub const ANSWER_TIMEOUT: Duration = if cfg!(test) { Duration::from_secs(3) } else { Duration::from_secs(60) };
-/// Digits in a passkey.
 const PASSKEY_DIGITS: usize = 6;
 
-/// How a question ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
     Answered(PairingAnswer),
-    /// Nobody answered in time.
     TimedOut,
-    /// BlueZ cancelled it, a newer question replaced it, or the service stopped.
     Cancelled,
 }
 
-/// Where a question's reply lands, for the agent call waiting on it.
 pub type Slot = nova_base::reply_slot::Slot<Reply>;
 
-/// Whether `answer` answers `ask`. Turning down works for every question
-/// that waits for one.
 pub fn fits(ask: &PairingAsk, answer: &PairingAnswer) -> Result<(), String> {
     match (ask, answer) {
         (_, PairingAnswer::Reject) => Ok(()),
@@ -64,12 +43,10 @@ fn passkey(code: &str) -> Option<u32> {
     digits.then(|| code.parse().ok()).flatten()
 }
 
-/// A passkey as BlueZ's tools show it: six digits.
 fn code(passkey: u32) -> String {
     format!("{passkey:0PASSKEY_DIGITS$}")
 }
 
-/// The agent BlueZ calls.
 pub struct Agent {
     pub shared: Arc<Shared>,
 }
@@ -84,7 +61,6 @@ pub enum AgentError {
 }
 
 impl Agent {
-    /// Asks the user `ask` about the device at `device`, and waits.
     async fn ask(&self, device: &OwnedObjectPath, ask: PairingAsk) -> Result<PairingAnswer, AgentError> {
         let Some((id, slot)) = self.shared.ask(device.as_str(), ask) else {
             return Err(AgentError::Rejected("not a device novad knows".into()));
@@ -99,7 +75,6 @@ impl Agent {
         }
     }
 
-    /// Asks for a yes.
     async fn allow(&self, device: &OwnedObjectPath, ask: PairingAsk) -> Result<(), AgentError> {
         self.ask(device, ask).await.map(|_| ())
     }
@@ -142,8 +117,6 @@ impl Agent {
         self.allow(&device, PairingAsk::Authorize).await
     }
 
-    /// An untrusted device wants a service (a phone sending a file). Devices
-    /// paired through Nova are trusted and never come here.
     async fn authorize_service(&self, device: OwnedObjectPath, _uuid: String) -> Result<(), AgentError> {
         self.allow(&device, PairingAsk::Authorize).await
     }

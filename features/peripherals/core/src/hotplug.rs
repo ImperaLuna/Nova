@@ -1,18 +1,9 @@
-//! Devices coming and going, from their device nodes: the kernel adds and
-//! removes `/dev/bus/usb/<bus>/<device>` as USB devices are plugged in and
-//! out, and `/dev/hidraw<n>` as HID devices are, so watching those folders
-//! with inotify costs nothing while nothing changes, and needs neither
-//! udev nor netlink. A USB bus that appears later (a new controller) is
-//! watched from then on.
-
 use nova_base::lock;
 use nova_inotify::{self as inotify, Inotify};
 use std::path::Path;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-/// Wakes a thread that reads devices again on a timer, and soon after they
-/// come or go, until stopped.
 #[derive(Default)]
 pub struct Waker {
     wakes: Mutex<Wakes>,
@@ -22,12 +13,10 @@ pub struct Waker {
 #[derive(Default)]
 struct Wakes {
     stopped: bool,
-    /// When a device last came or went, until they are read again.
     plugged: Option<Instant>,
 }
 
 impl Waker {
-    /// A device came or went.
     pub fn plugged(&self) {
         lock(&self.wakes).plugged = Some(Instant::now());
         self.condvar.notify_all();
@@ -38,8 +27,6 @@ impl Waker {
         self.condvar.notify_all();
     }
 
-    /// Waits until `next`, or until `settle` after a device last came or
-    /// went if that's sooner. False once stopped.
     pub fn wait(&self, next: Instant, settle: Duration) -> bool {
         let mut wakes = lock(&self.wakes);
         loop {
@@ -57,10 +44,6 @@ impl Waker {
     }
 }
 
-/// Calls `changed` on a thread of its own whenever a USB device is plugged
-/// in or out under `dir` (`/dev/bus/usb`), until the returned stopper is
-/// used, or until watching fails, which `failed` is told. Fails at once
-/// when `dir` can't be watched (it's missing in a container).
 pub fn watch(
     dir: &Path,
     changed: impl Fn() + Send + 'static,
@@ -69,10 +52,6 @@ pub fn watch(
     follow(dir, None, changed, failed)
 }
 
-/// Like [`watch`], for the entries of `dir` itself whose names start with
-/// `prefix` (`/dev`'s `hidraw` nodes), not the folders in it: they come,
-/// go, or have their access changed (udev giving the user its ACL, a
-/// moment after the node appears).
 pub fn watch_entries(
     dir: &Path,
     prefix: &'static str,
@@ -82,7 +61,6 @@ pub fn watch_entries(
     follow(dir, Some(prefix), changed, failed)
 }
 
-/// Follows `dir`'s tree, or with `prefix` only those entries of its own.
 fn follow(
     dir: &Path,
     prefix: Option<&'static str>,
@@ -105,10 +83,6 @@ fn follow(
                 Ok(None) => return,
                 Err(e) => return failed(e),
             };
-            // A new bus, or lost events: watch every bus folder again
-            // (watching one twice is harmless).
-            // A bus folder that went again in between (a dock unplugged)
-            // is no reason to stop.
             if tree
                 && (changes.overflowed || changes.found.iter().any(|change| change.is_dir))
                 && let Err(e) = watcher.watch_tree(&dir)

@@ -1,9 +1,3 @@
-//! The notifications' settings page (`notifications.page`): do not disturb, and
-//! a switch per app that has sent one (off mutes it).
-//!
-//! Quick settings draws it; the list's gear opens it and its back button
-//! goes home (`Stage::show_page`).
-
 use crate::app_icon::AppIcon;
 use crate::model::{self, Model};
 use crate::tokens::ROW_ICON;
@@ -18,7 +12,6 @@ use nova_look::tokens::{
 use nova_look::{LookStyled, PageHeader, Theme, ToggleSwitch};
 use nova_stage::Stage;
 
-/// The panel it is a page of.
 const QUICK_SETTINGS: &str = "quick-settings";
 
 pub struct Page {
@@ -81,8 +74,6 @@ impl Render for Page {
     }
 }
 
-/// A row with a name and a switch at its end, and an icon before the name
-/// when there is one; `selected` rows sit on a raised surface.
 struct SwitchRow {
     lead: Option<AnyElement>,
     title: String,

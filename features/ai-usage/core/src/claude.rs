@@ -1,14 +1,8 @@
-//! Claude's limits, from the JSON Claude Code pipes into its status line
-//! command (`rate_limits`, on Pro and Max plans). `nova claude-statusline`
-//! is that command: it reads the JSON and reports only the limits to novad.
-
 use super::round_percent;
 use jiff::Timestamp;
 use nova_ai_usage_api::{UsageLimit, UsageWindow};
 use serde_json::Value;
 
-/// The limits in a status line input, none when it has no `rate_limits`
-/// (API key sign-in, or before Claude Code's first reply).
 pub fn limits_from_statusline(input: &Value) -> Vec<UsageLimit> {
     let Some(limits) = input.get("rate_limits") else { return vec![] };
     let mut windows: Vec<UsageLimit> = [("five_hour", UsageWindow::Session), ("seven_day", UsageWindow::Weekly)]
@@ -27,7 +21,6 @@ pub fn limits_from_statusline(input: &Value) -> Vec<UsageLimit> {
     windows
 }
 
-/// Unix seconds, or an RFC 3339 string.
 fn reset_time(value: &Value) -> Option<Timestamp> {
     match value {
         Value::Number(number) => Timestamp::from_second(number.as_f64()? as i64).ok(),
@@ -41,8 +34,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// The status line input's shape, trimmed to what matters and with fixed
-    /// times.
     fn input() -> Value {
         json!({
             "session_id": "abc",

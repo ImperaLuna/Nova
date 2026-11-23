@@ -1,12 +1,5 @@
-//! The CPU's temperature and how busy the GPU is, from sysfs: hwmon for
-//! temperatures, and the DRM driver's `gpu_busy_percent` (amdgpu, and Intel
-//! Xe) for the GPU. NVIDIA's driver reports neither in sysfs, so its GPU is
-//! asked through NVML or `nvidia-smi` (see `nvidia`).
-
 use std::path::{Path, PathBuf};
 
-/// hwmon drivers that report the CPU package's temperature, best first,
-/// and the label of their package sensor (any of theirs when `None`).
 const CPU_SENSORS: [(&str, Option<&str>); 5] = [
     ("k10temp", Some("Tctl")),
     ("zenpower", Some("Tdie")),
@@ -14,15 +7,12 @@ const CPU_SENSORS: [(&str, Option<&str>); 5] = [
     ("cpu_thermal", None),
     ("acpitz", None),
 ];
-/// hwmon reports millidegrees.
 const MILLIDEGREES: f32 = 1000.0;
 
-/// Where the CPU's temperature is read each look, found once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Temperature(PathBuf);
 
 impl Temperature {
-    /// The best CPU sensor under `sys_root`'s hwmon devices, if any.
     pub fn find(sys_root: &Path) -> Option<Self> {
         let devices: Vec<PathBuf> = std::fs::read_dir(sys_root.join("class/hwmon"))
             .ok()?
@@ -37,14 +27,12 @@ impl Temperature {
         })
     }
 
-    /// Degrees Celsius now.
     pub fn read(&self) -> Option<f32> {
         let millidegrees: f32 = std::fs::read_to_string(&self.0).ok()?.trim().parse().ok()?;
         Some(millidegrees / MILLIDEGREES)
     }
 }
 
-/// The `temp<N>_input` of `device` labelled `label`, or its first one.
 fn input_for(device: &Path, label: Option<&str>) -> Option<PathBuf> {
     let mut inputs: Vec<PathBuf> = std::fs::read_dir(device)
         .ok()?
@@ -66,8 +54,6 @@ fn input_for(device: &Path, label: Option<&str>) -> Option<PathBuf> {
     labelled.or(inputs.first()).cloned()
 }
 
-/// Where the GPU's busy share is read each look, found once: the first
-/// DRM card whose driver reports one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GpuBusy(PathBuf);
 
@@ -77,7 +63,6 @@ impl GpuBusy {
             .ok()?
             .filter_map(Result::ok)
             .filter(|entry| {
-                // card0, not its connectors (card0-DP-1).
                 entry
                     .file_name()
                     .to_str()
@@ -91,7 +76,6 @@ impl GpuBusy {
         cards.into_iter().next().map(Self)
     }
 
-    /// Percent busy now.
     pub fn read(&self) -> Option<f32> {
         std::fs::read_to_string(&self.0).ok()?.trim().parse().ok()
     }
@@ -101,7 +85,6 @@ impl GpuBusy {
 mod tests {
     use super::*;
 
-    /// A sysfs tree with the files these drivers really expose.
     fn sysfs(name: &str, files: &[(&str, &str)]) -> nova_test_support::TempDir {
         let root = nova_test_support::TempDir::new(&format!("sensors-{name}"));
         for (path, text) in files {
@@ -114,8 +97,6 @@ mod tests {
 
     #[test]
     fn picks_the_cpu_package_sensor() {
-        // An AMD desktop: the NVMe drive and the GPU come first, k10temp's
-        // Tctl is the package and Tccd1 a die.
         let root = sysfs(
             "amd",
             &[
@@ -133,7 +114,6 @@ mod tests {
         let sensor = Temperature::find(&root).unwrap();
         assert_eq!(sensor.read(), Some(52.125));
 
-        // An Intel laptop: coretemp's package sensor isn't its first input.
         let root = sysfs(
             "intel",
             &[

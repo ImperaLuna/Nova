@@ -1,10 +1,3 @@
-//! `peripherals.card`: the wireless mice, keyboards, headsets and controllers
-//! connected now, each with how it connects and its battery. novad leaves out
-//! whatever isn't connected, and the card is shown only while it lists one. A
-//! device that comes fades in, and a battery that changes eases to its new
-//! level. A few rows, then it scrolls, so many devices never push the cards
-//! below off the drawer.
-
 use crate::logic::{self, Tone};
 use crate::tokens::{
     DEVICE_CHIP_GAP, DEVICE_CHIP_HEIGHT, DEVICE_CHIP_PAD, DEVICE_ICON_SIZE, DEVICE_LEVEL_WIDTH, DEVICE_LINK_ICON_SIZE,
@@ -24,7 +17,6 @@ use nova_stage::Shown;
 use nova_ui_client::Live;
 use std::time::Instant;
 
-/// A row's own motion: when its device came, and its battery's level.
 struct Row {
     id: String,
     came: Instant,
@@ -47,8 +39,6 @@ impl Card {
         card
     }
 
-    /// A new list: keeps the rows whose device stays, easing a battery that
-    /// changed, and fades in the new ones.
     fn follow(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
         let devices = self.devices(cx).to_vec();
@@ -104,8 +94,6 @@ impl Render for Card {
     }
 }
 
-/// One device: its icon and name, how it connects, its battery and the
-/// level beside it.
 fn device_row(device: &Peripheral, fill: f32, opacity: f32, cx: &gpui::App) -> AnyElement {
     let theme = Theme::of(cx);
     let low = logic::low(device.battery, device.charging);

@@ -1,15 +1,3 @@
-//! `bluetooth.pairing`: a pairing question while the Bluetooth page isn't there
-//! to ask it (a phone pairing with this computer, or a device you started
-//! pairing before closing quick settings). A card on the overlay layer under
-//! the right pill of the screen that had focus when the question came, like the
-//! notifications' pop-ups, taking no space, and the keyboard only when clicked
-//! (a PIN to type). It goes once the question is answered or over.
-//!
-//! Each screen has a window of its own, opened once when the overlay
-//! starts (opening one stalls every window's frames) and only as big as
-//! the card plus its shadow; only the one on the asking screen draws, and
-//! at rest it commits nothing.
-
 use crate::logic;
 use crate::prompt;
 use crate::tokens::{POPUP_RADIUS, POPUP_WIDTH};
@@ -29,27 +17,19 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Instant;
 
-/// The pop-ups' layer surfaces, for the compositor's rules (niri blurs
-/// `^nova-`).
 const NAMESPACE: &str = "nova-bluetooth";
-/// A window with nothing to show: as small as the compositor takes.
 const RESTING_HEIGHT: Pixels = px(1.0);
-/// The card's top: under the bar, a gap below it.
 fn top() -> Pixels {
     BAR_GAP + BAR_HEIGHT + GAP
 }
 
-/// The question and the screen it's asked on, for every screen's window.
 pub struct Pairing {
     bluetooth: Entity<Live<Bluetooth>>,
     watch: Entity<Watch>,
     desktop: Entity<Live<Desktop>>,
-    /// The screen it shows on, picked when a question comes.
     target: Option<DisplayId>,
     asking: bool,
-    /// The question the PIN field was last typed for.
     pin_for: Option<u64>,
-    /// A PIN being typed.
     pin: Entity<TextField>,
     windows: Vec<(DisplayId, WindowHandle<PairingWindow>)>,
     opening: Vec<DisplayId>,
@@ -97,7 +77,6 @@ impl Pairing {
         pairing
     }
 
-    /// The question to ask here: none while the page asks it.
     pub fn request<'a>(&self, cx: &'a App) -> Option<&'a PairingRequest> {
         if self.watch.read(cx).is_wanted() {
             return None;
@@ -105,7 +84,6 @@ impl Pairing {
         self.bluetooth.read(cx).get()?.pairing.as_ref()
     }
 
-    /// What the card calls the device: its name, else its address.
     pub fn name(&self, request: &PairingRequest, cx: &App) -> String {
         let devices = self.bluetooth.read(cx).get().map_or(&[][..], |state| state.devices.as_slice());
         logic::device_name(devices, &request.address).to_owned()
@@ -115,8 +93,6 @@ impl Pairing {
         &self.pin
     }
 
-    /// A question came: it shows on the screen with focus. One that's over
-    /// takes what was typed for it.
     fn follow(&mut self, cx: &mut Context<Self>) {
         let id = self.request(cx).map(|request| request.id);
         let asking = id.is_some();
@@ -126,7 +102,6 @@ impl Pairing {
                 self.target = self.focused_screen(cx);
             }
         }
-        // What was typed goes with its question.
         if id != self.pin_for {
             self.pin_for = id;
             if !self.pin.read(cx).text().is_empty() {
@@ -136,12 +111,10 @@ impl Pairing {
         cx.notify();
     }
 
-    /// Whether `screen`'s window has a question to show.
     pub fn shows_on(&self, screen: DisplayId) -> bool {
         self.asking && self.target == Some(screen)
     }
 
-    /// The screen with focus, or the first.
     fn focused_screen(&self, cx: &App) -> Option<DisplayId> {
         let desktop = self.desktop.read(cx).get();
         let output = desktop.and_then(|desktop| desktop.outputs.iter().find(|output| output.focused));
@@ -149,9 +122,6 @@ impl Pairing {
         screens.read(cx).for_output(output.map(|output| output.name.as_str())).map(|screen| screen.id)
     }
 
-    /// Opens a window on each screen that has none, and closes those whose
-    /// screen left. A question whose screen left moves to the one with
-    /// focus.
     fn sync_windows(&mut self, cx: &mut Context<Self>) {
         let Some(screens) = Stage::screens(cx) else { return };
         let here = screens.read(cx).list().to_vec();
@@ -174,8 +144,6 @@ impl Pairing {
             .cloned()
             .collect();
         if !new.is_empty() {
-            // Opened after this update: a new window draws at once, and its
-            // drawing may read this.
             self.opening.extend(new.iter().map(|screen| screen.id));
             let this = cx.weak_entity();
             cx.defer(move |cx| {
@@ -208,26 +176,19 @@ impl Pairing {
     }
 }
 
-/// One screen's pop-up window.
 pub struct PairingWindow {
     screen: Screen,
     pairing: WeakEntity<Pairing>,
-    /// The question is this screen's to show, as the pairing last said.
     shows: bool,
-    /// The card's height as last laid out.
     card_height: Rc<Cell<Pixels>>,
-    /// The height it last asked for.
     height: Pixels,
     keyboard: KeyboardInteractivity,
-    /// The card's shape this frame, and the one the compositor has.
     shapes: Rc<RefCell<Vec<Shape>>>,
     sent: Rc<RefCell<Option<Vec<Shape>>>>,
     frames: Option<FrameLog>,
     _followed: Option<Subscription>,
 }
 
-/// The window's width: the card, its shadow's room on the left, and the
-/// bar's margin on the right.
 fn window_width() -> Pixels {
     SHADOW_ROOM + POPUP_WIDTH + BAR_MARGIN
 }
@@ -243,9 +204,6 @@ impl PairingWindow {
             .then(|| FrameLog::new(format!("{}/bluetooth", screen.name), screen.refresh, Instant::now()));
         let opened = cx.open_window(shell.options(), move |_, cx| {
             cx.new(|cx: &mut Context<Self>| {
-                // Whether there's a question to show is found out here, not
-                // while drawing, so a window that shows none never reads
-                // the pairing and draws nothing when it changes.
                 let followed = pairing.upgrade().map(|pairing| cx.observe(&pairing, Self::follow));
                 let shows = pairing.upgrade().is_some_and(|pairing| pairing.read(cx).shows_on(screen.id));
                 Self {
@@ -271,8 +229,6 @@ impl PairingWindow {
         }
     }
 
-    /// The pairing changed: draws while the question is this screen's, and
-    /// once more when it no longer is.
     fn follow(&mut self, pairing: Entity<Pairing>, cx: &mut Context<Self>) {
         let shows = pairing.read(cx).shows_on(self.screen.id);
         if shows || self.shows {
@@ -281,7 +237,6 @@ impl PairingWindow {
         }
     }
 
-    /// Makes the window `height` tall: nothing on it moves.
     fn fit(&mut self, height: Pixels, window: &mut Window) {
         let height = if height < RESTING_HEIGHT { RESTING_HEIGHT } else { height.ceil() };
         if height != self.height {
@@ -290,7 +245,6 @@ impl PairingWindow {
         }
     }
 
-    /// The keyboard only for a question that's typed, once clicked.
     fn keyboard(&mut self, wanted: KeyboardInteractivity, window: &mut Window) {
         if wanted != self.keyboard {
             self.keyboard = wanted;
@@ -298,8 +252,6 @@ impl PairingWindow {
         }
     }
 
-    /// Hands this frame's shape to the compositor when it changed: it
-    /// blurs behind it, and clicks land on it alone.
     fn regions(&self) -> impl IntoElement {
         let (shapes, sent) = (self.shapes.clone(), self.sent.clone());
         canvas(
@@ -325,14 +277,12 @@ impl PairingWindow {
         }
     }
 
-    /// Enter answers a typed question.
     fn key_down(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         if event.keystroke.key != "enter" {
             return;
         }
         let Some(pairing) = self.pairing.upgrade() else { return };
         let Some(request) = pairing.read(cx).request(cx).cloned() else { return };
-        // Only a typed answer goes with Enter; a yes takes a click.
         if !logic::typed(&request.ask) {
             return;
         }
@@ -351,7 +301,6 @@ impl Render for PairingWindow {
             Some((pairing.name(&request, cx), request, pairing.pin().clone()))
         });
         let Some((name, request, pin)) = shown else {
-            // Nothing to show: as small as it gets, taking no keyboard.
             self.keyboard(KeyboardInteractivity::None, window);
             self.fit(RESTING_HEIGHT, window);
             return div().child(self.regions());

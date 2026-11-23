@@ -1,7 +1,3 @@
-//! `network.tile`: the network tile, once novad has sent the network's state.
-//! Lit while a link is up or coming up; a click anywhere on it opens the
-//! network page, where its switches are.
-
 use crate::{PAGE, QUICK_SETTINGS, logic};
 use gpui::{Context, Entity, IntoElement, Render, Subscription, Window};
 use nova_look::Tile;
@@ -12,7 +8,6 @@ use nova_ui_client::Live;
 pub struct NetworkTile {
     screen: Screen,
     network: Entity<Live<Network>>,
-    /// Shown once novad has sent the network's state.
     shown: Shown,
     _followed: Subscription,
 }

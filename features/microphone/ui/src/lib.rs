@@ -1,13 +1,3 @@
-//! What the microphone feature draws, with GPUI, in quick settings: the tile
-//! that mutes the mic (`quick-settings.tiles` slot `microphone.tile` of
-//! `features/microphone/feature.toml`) and the mic's slider, only while an app
-//! records from it, named after those apps (`quick-settings.sliders` slot
-//! `microphone.slider`).
-//!
-//! The feature has no work of its own in novad: both follow the sound
-//! feature's `sound` topic, the input in use and who records from it, and
-//! change it with the sound feature's commands.
-
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, AppContext, Context, Entity, IntoElement, Render, Subscription, Window};
 use nova_look::{Glyph, Icon, Slider, Theme, Tile};
@@ -15,14 +5,10 @@ use nova_sound_api::{Command, Device, Event, Kind, Sound, TOPIC};
 use nova_stage::{Part, Shown};
 use nova_ui_client::{Daemon, Live};
 
-/// The view ids the manifest's slots name.
 const TILE: &str = "microphone.tile";
 const SLIDER: &str = "microphone.slider";
-/// The slider's fill: the second accent at this opacity
-/// (`micFillOpacity`).
 const FILL_OPACITY: f32 = 0.34;
 
-/// Registers the tile and the slider with the stage.
 pub fn register(cx: &mut App) {
     nova_stage::part(TILE, cx, |_, cx| cx.new(Mic::new).into());
     nova_stage::part(SLIDER, cx, |_, cx| {
@@ -32,8 +18,6 @@ pub fn register(cx: &mut App) {
     });
 }
 
-/// The input in use, from the sound feature. A tile, or with
-/// [`Mic::showing`] a slider that shows only while an app records.
 pub struct Mic {
     sound: Entity<Live<Sound>>,
     slider: Option<Shown>,
@@ -45,7 +29,6 @@ impl Mic {
         let sound = Live::follow(TOPIC, cx, |Event::Sound(sound)| Some(sound));
         let followed = cx.observe(&sound, |mic, _, cx| {
             if let Some(shown) = mic.slider.clone() {
-                // The drawer redraws when this shows or hides the slider.
                 shown.set(!recorders(mic.sound.read(cx).get()).is_empty(), cx);
             }
             cx.notify();
@@ -53,14 +36,12 @@ impl Mic {
         Self { sound, slider: None, _followed: followed }
     }
 
-    /// The slider, its `shown` set while an app records.
     fn showing(mut self, shown: Shown) -> Self {
         self.slider = Some(shown);
         self
     }
 }
 
-/// The input in use, while the sound server answers.
 fn input(sound: Option<&Sound>) -> Option<&Device> {
     sound.filter(|sound| sound.available).and_then(|sound| sound.inputs.iter().find(|device| device.current))
 }
@@ -69,8 +50,6 @@ fn recorders(sound: Option<&Sound>) -> &[String] {
     sound.filter(|sound| sound.available).map_or(&[], |sound| sound.recorders.as_slice())
 }
 
-/// "Discord is using the mic", "Discord and OBS are using the mic", or ""
-/// when no app records.
 fn recording_text(names: &[String]) -> String {
     match names {
         [] => String::new(),
@@ -90,7 +69,6 @@ impl Render for Mic {
         let muted = device.as_ref().is_some_and(|device| device.muted);
         let glyph = if muted { Glyph::MIC_OFF } else { Glyph::MIC };
         if self.slider.is_none() {
-            // Lit while muted.
             return Tile::new("microphone", glyph, "Microphone")
                 .on(muted)
                 .available(device.is_some())

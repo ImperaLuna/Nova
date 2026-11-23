@@ -1,19 +1,3 @@
-//! The now-playing pill's content: the app's icon, the title, the artist
-//! and the equalizer. The stage draws the glass
-//! around it and opens the panel on a click.
-//!
-//! It slides out from nothing and back (its width eases with `out`), and
-//! eases to a new width when the track changes. A title too long for its
-//! room fades out at its end and scrolls through once when the track
-//! changes, and again and again while the pill is hovered.
-//!
-//! The equalizer eases between the model's steps (`equalizer`), drawn as
-//! one smooth shape, at most `EQ_FRAMES_PER_SECOND` whatever the screen's
-//! rate: each frame it draws on screen arms a timer for the next, so a
-//! pill the stage leaves out, slides away or clips asks for no more. The
-//! model's steps redraw nothing: these frames read them while it steps,
-//! and stop once it doesn't and the bars have arrived.
-
 use crate::art::Art;
 use crate::equalizer::{Levels, outline};
 use crate::logic;
@@ -42,29 +26,16 @@ use std::time::{Duration, Instant};
 
 pub struct MediaPill {
     model: Entity<NowPlaying>,
-    /// The face's width, easing when the track changes.
     width: Eased,
-    /// 1 playing, 0 paused: the icon dims, the title turns dimmer.
     lit: Eased,
-    /// The title last drawn, and when its scroll through started.
     title: String,
     scrolled_at: Option<Instant>,
-    /// Whether the title could scroll in the last frame.
     was_running: bool,
     hovered: bool,
-    /// The pointer just came onto the pill.
     wants_scroll: bool,
-    /// The redraw at the end of the rest the title is in, for the scroll
-    /// that started then.
     resting: Option<(Instant, Task<()>)>,
-    /// The equalizer's heights as drawn, easing toward the model's.
     levels: Levels,
-    /// Whether the equalizer's last paint was on screen and not clipped
-    /// away: only then does it ask for its next frame.
     eq_seen: Rc<Cell<bool>>,
-    /// The timer for the equalizer's next frame, while it moves, and when
-    /// that frame is due: one step after the one before, so the wait for
-    /// the screen's next frame doesn't add up.
     eq_frame: Option<Task<()>>,
     eq_due: Instant,
 }
@@ -90,20 +61,16 @@ impl MediaPill {
         }
     }
 
-    /// Starts a scroll through, unless it is scrolling already.
     fn scroll(&mut self, running: bool, over: Pixels, now: Instant) {
         if running && over > Pixels::ZERO && self.scrolled_at.is_none() {
             self.scrolled_at = Some(now);
         }
     }
 
-    /// How far the title is scrolled now, following the track, the hover
-    /// and whether it may scroll (out all the way, the panel closed).
     fn scrolled(&mut self, title: &str, running: bool, over: Pixels, now: Instant) -> f32 {
         if !running {
             self.scrolled_at = None;
         }
-        // A new track scrolls through once.
         if title != self.title {
             self.title = title.to_owned();
             self.scrolled_at = None;
@@ -118,7 +85,6 @@ impl MediaPill {
         match logic::marquee_offset(now.saturating_duration_since(started), over.into(), MARQUEE_SPEED, rest) {
             Some(offset) => offset,
             None => {
-                // Done, and back at its start: again while hovered.
                 self.scrolled_at = None;
                 if self.hovered {
                     self.scroll(running, over, now);
@@ -130,8 +96,6 @@ impl MediaPill {
 }
 
 impl MediaPill {
-    /// Whether the title moves this frame. Resting at an end it stands
-    /// still: one redraw is asked for when the rest ends, not every frame.
     fn title_moves(&mut self, over: Pixels, now: Instant, cx: &mut Context<Self>) -> bool {
         let Some(started) = self.scrolled_at else {
             self.resting = None;
@@ -171,7 +135,6 @@ impl Render for MediaPill {
 
         let mut measured = Measured::of(&player, window, cx);
         let (over, face_width) = (measured.over, measured.face_width);
-        // Eases to a new track's width once out; sliding, it is the width.
         if out.value(now) < 1.0 {
             self.width = Eased::lasting(face_width.into(), DURATION_RESIZE, now);
         } else {
@@ -181,7 +144,6 @@ impl Render for MediaPill {
 
         let running = out.target() == 1.0 && out.settled(now) && !open;
         measured.offset = self.scrolled(&player.title, running, over, now);
-        // Paused, the bars lie flat.
         let targets = if playing { model.bars.clone() } else { vec![EQ_LOW.into(); EQ_BARS] };
         let stepping = model.stepping();
         self.levels.ease(&targets, DURATION_EQ_RISE, DURATION_EQ_FALL, now);
@@ -206,7 +168,6 @@ impl Render for MediaPill {
             .hover(move |style| style.bg(hover))
             .on_hover(cx.listener(|pill, hovered: &bool, _, cx| {
                 pill.hovered = *hovered;
-                // Scrolls through, when it doesn't fit.
                 pill.wants_scroll = *hovered;
                 cx.notify();
             }))
@@ -216,7 +177,6 @@ impl Render for MediaPill {
 }
 
 impl MediaPill {
-    /// The face: the app's icon, the title, the artist and the equalizer.
     fn face(&self, player: &MediaPlayer, measured: &Measured, now: Instant, cx: &App) -> Div {
         let theme = Theme::of(cx);
         let (fg, dim, primary) = (theme.fg, theme.fg_dim(), theme.primary);
@@ -265,7 +225,6 @@ impl MediaPill {
                 |_, _, _| {},
                 move |bounds, _, window, _| {
                     let shows = on_screen(bounds, window);
-                    // Back in sight: one frame to start its own frames again.
                     if !seen.replace(shows) && shows {
                         window.request_animation_frame();
                     }
@@ -290,14 +249,11 @@ impl MediaPill {
 }
 
 impl MediaPill {
-    /// Asks for the equalizer's next frame one `EQ_FRAMES_PER_SECOND` step
-    /// from now, if its last paint was seen and none is asked for yet.
     fn next_eq_frame(&mut self, cx: &mut Context<Self>) {
         if self.eq_frame.is_some() || !self.eq_seen.get() {
             return;
         }
         let now = Instant::now();
-        // After a pause, or when frames came late, the next is due at once.
         self.eq_due = (self.eq_due + Duration::from_secs(1) / EQ_FRAMES_PER_SECOND).max(now);
         let wait = self.eq_due - now;
         self.eq_frame = Some(cx.spawn(async move |pill, cx| {
@@ -310,21 +266,16 @@ impl MediaPill {
     }
 }
 
-/// Whether `bounds` shows: inside the window and not clipped away by what
-/// holds it (the pill sliding out from nothing, or the stage's rows).
 fn on_screen(bounds: Bounds<Pixels>, window: &Window) -> bool {
     let screen = Bounds { origin: point(px(0.0), px(0.0)), size: window.viewport_size() };
     let shown = bounds.intersect(&window.content_mask().bounds).intersect(&screen);
     shown.size.width > Pixels::ZERO && shown.size.height > Pixels::ZERO
 }
 
-/// How wide the equalizer is: its bars and the gaps between them.
 fn bars_width() -> Pixels {
     EQ_BAR_WIDTH * EQ_BARS as f32 + EQ_GAP * (EQ_BARS - 1) as f32
 }
 
-/// Fills the equalizer's smooth outline through `bars` (heights in px),
-/// standing on the bottom of `bounds`.
 fn paint_equalizer(bars: &[f32], bounds: Bounds<Pixels>, color: Hsla, window: &mut Window) {
     let shape = outline(bars, EQ_BAR_WIDTH.into(), EQ_GAP.into(), EQ_HIGH.into(), EQ_OUTLINE_SAMPLES);
     let foot = bounds.bottom();
@@ -336,15 +287,12 @@ fn paint_equalizer(bars: &[f32], bounds: Bounds<Pixels>, color: Hsla, window: &m
     }
 }
 
-/// How wide the face's parts are.
 struct Measured {
     title: Arc<LineLayout>,
     title_width: Pixels,
-    /// How much longer than its room the title is.
     over: Pixels,
     artist: Option<Pixels>,
     face_width: Pixels,
-    /// How far the title is scrolled.
     offset: f32,
 }
 
@@ -368,8 +316,6 @@ impl Measured {
     }
 }
 
-/// The title as drawn, scrolled by `offset`: each letter faded as far as
-/// it lies in the fade at an end where more of the title lies beyond.
 fn faded_title(text: &str, line: &LineLayout, room: Pixels, over: Pixels, offset: f32) -> StyledText {
     let text = SharedString::from(text.to_owned());
     if over <= Pixels::ZERO {

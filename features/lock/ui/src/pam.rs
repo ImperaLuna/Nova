@@ -1,20 +1,3 @@
-//! The password check: PAM, through the system's own `libpam`, called from
-//! this process so the password never leaves it.
-//!
-//! [`check`] blocks while PAM works (a wrong password takes about two
-//! seconds), so it runs off the main thread. The PAM service is
-//! `pam/nova-lock`, compiled in: the login password as `pam_unix`
-//! checks it, wherever the distro keeps it. PAM reads a service from a
-//! folder on disk, so each check writes the file into a private folder of
-//! the runtime directory first and points PAM at that
-//! (`pam_start_confdir`), which works the same on every distro with
-//! nothing to install under `/etc/pam.d`.
-//!
-//! This is the one place the UI side calls C. The few functions it needs
-//! are declared here (Linux-PAM's ABI, stable since 1.4), not taken from a
-//! crate: the wrappers on crates.io either can't name a config folder or
-//! need bindgen for five functions.
-
 use crate::prompt::{Secret, Verdict, wipe};
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::fs::{DirBuilder, OpenOptions};
@@ -23,17 +6,14 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
-/// The PAM service's name, which is its file's name.
 const SERVICE: &CStr = c"nova-lock";
 const SERVICE_FILE: &str = "nova-lock";
 const SERVICE_CONFIG: &str = include_str!("../pam/nova-lock");
-/// Where the service file goes, under the runtime directory.
 const CONFIG_FOLDER: &str = "nova-ui/pam";
 const RUNTIME_DIR_VAR: &str = "XDG_RUNTIME_DIR";
 const PRIVATE_FOLDER: u32 = 0o700;
 const PRIVATE_FILE: u32 = 0o600;
 
-// Linux-PAM's return codes and message styles (`_pam_types.h`).
 const PAM_SUCCESS: c_int = 0;
 const PAM_BUF_ERR: c_int = 5;
 const PAM_AUTH_ERR: c_int = 7;
@@ -41,29 +21,24 @@ const PAM_MAXTRIES: c_int = 11;
 const PAM_CONV_ERR: c_int = 19;
 const PAM_PROMPT_ECHO_OFF: c_int = 1;
 
-/// `struct pam_message`: what a PAM module asks or says.
 #[repr(C)]
 struct Message {
     style: c_int,
     text: *const c_char,
 }
 
-/// `struct pam_response`: the answer to one message.
 #[repr(C)]
 struct Response {
     text: *mut c_char,
-    /// Unused by PAM; always 0.
     code: c_int,
 }
 
-/// `struct pam_conv`: the function PAM asks through, and what it hands it.
 #[repr(C)]
 struct Conversation {
     answer: unsafe extern "C" fn(c_int, *const *const Message, *mut *mut Response, *mut c_void) -> c_int,
     password: *mut c_void,
 }
 
-/// `pam_handle_t`, only ever behind a pointer.
 #[repr(C)]
 struct Handle {
     _opaque: [u8; 0],
@@ -82,14 +57,12 @@ unsafe extern "C" {
     fn pam_end(handle: *mut Handle, status: c_int) -> c_int;
 }
 
-// PAM frees the answers itself, with the C library's `free`.
 unsafe extern "C" {
     fn calloc(count: usize, size: usize) -> *mut c_void;
     fn strdup(text: *const c_char) -> *mut c_char;
     fn free(memory: *mut c_void);
 }
 
-/// Checks `password` as `user`'s. Blocks until PAM answers.
 pub fn check(user: &str, password: Secret) -> Verdict {
     let folder = match std::env::var_os(RUNTIME_DIR_VAR) {
         Some(runtime) => PathBuf::from(runtime).join(CONFIG_FOLDER),
@@ -118,9 +91,6 @@ pub fn check(user: &str, password: Secret) -> Verdict {
     }
 }
 
-/// Writes the service file into `folder`, both private to the user: PAM
-/// believes whatever the file says. Written again for each check, over
-/// whatever is there.
 fn write_service(folder: &Path) -> io::Result<()> {
     DirBuilder::new().recursive(true).mode(PRIVATE_FOLDER).create(folder)?;
     let new = folder.join(format!(".{SERVICE_FILE}.{}", std::process::id()));
@@ -130,7 +100,6 @@ fn write_service(folder: &Path) -> io::Result<()> {
     std::fs::rename(&new, folder.join(SERVICE_FILE))
 }
 
-/// One PAM transaction: start, authenticate, end. Returns PAM's code.
 fn authenticate(user: &CStr, password: &CStr, config_folder: &CStr) -> c_int {
     let conversation = Conversation { answer, password: password.as_ptr().cast_mut().cast() };
     let mut handle: *mut Handle = std::ptr::null_mut();
@@ -158,13 +127,6 @@ fn authenticate(user: &CStr, password: &CStr, config_folder: &CStr) -> c_int {
     }
 }
 
-/// PAM's conversation function: answers each hidden prompt (the password
-/// prompt) with the password, and nothing else. PAM frees the answers.
-///
-/// # Safety
-/// Called by PAM with `count` messages behind `messages`, a place for the
-/// answers in `responses`, and the `password` pointer [`authenticate`] gave
-/// it: a NUL-terminated string that outlives the transaction.
 unsafe extern "C" fn answer(
     count: c_int,
     messages: *const *const Message,
@@ -203,11 +165,6 @@ unsafe extern "C" fn answer(
     PAM_SUCCESS
 }
 
-/// Frees the first `filled` answers' texts and the answers themselves.
-///
-/// # Safety
-/// `answers` came from `calloc` with room for at least `filled` responses,
-/// each text null or from `strdup`.
 unsafe fn free_answers(answers: *mut Response, filled: usize) {
     for index in 0..filled {
         // SAFETY: as the function's contract says: each text is null or a
@@ -235,7 +192,6 @@ mod tests {
     #[test]
     fn the_service_file_is_written_private_and_whole() {
         let folder = std::env::temp_dir().join(format!("nova-lock-pam-{}", std::process::id())).join("pam");
-        // A stale file, as a second check finds.
         write_service(&folder).unwrap();
         std::fs::write(folder.join(SERVICE_FILE), "auth sufficient pam_permit.so\n").unwrap();
         write_service(&folder).unwrap();

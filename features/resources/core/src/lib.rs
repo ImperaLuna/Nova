@@ -1,18 +1,3 @@
-//! What the machine is busy with (feature `resources`, its messages in
-//! `nova-resources-api`): CPU, memory,
-//! GPU, the CPU's temperature and the apps using the most memory, for the quick
-//! settings sidebar's resources card and page.
-//!
-//! One thread samples. CPU and memory go into a short history every
-//! [`RESOURCE_HISTORY_INTERVAL_SECS`], always, so the page's graph has the
-//! last minutes as soon as it opens (two small reads from `/proc`). The
-//! rest (every process, sensors, NVML or `nvidia-smi`) is read only while some
-//! connection watches (`watch_resources`), every [`LIVE_INTERVAL`], and
-//! each look is published then. A connection that closes stops watching.
-//!
-//! novad runs it as a module (its wiring adapts [`Resources`] to novad's
-//! `Module` trait) and routes the feature's commands to it.
-
 mod apps;
 mod nvidia;
 mod nvidia_smi;
@@ -35,27 +20,17 @@ use usage::{CpuTimes, ProcessTicks};
 pub const FEATURE_ID: &str = "resources";
 const LOG_SOURCE: &str = "resources";
 
-/// How often a watched look is taken and published.
 pub const LIVE_INTERVAL: Duration = Duration::from_secs(2);
-/// The first look after watching starts, soon enough to show at once but
-/// far enough from the baseline for CPU shares to mean something.
 const FIRST_LOOK: Duration = Duration::from_millis(250);
 const HISTORY_INTERVAL: Duration = Duration::from_secs(RESOURCE_HISTORY_INTERVAL_SECS);
-/// How far back the history goes.
 const HISTORY_SPAN: Duration = Duration::from_secs(3 * 60);
-/// How many apps a look lists (and Nova, wherever it ranks): enough to
-/// scroll through, few enough to send every two seconds.
 const TOP_APPS: usize = 25;
 
-/// Where readings come from: the real `/proc` and `/sys`, or recorded
-/// copies in tests.
 #[derive(Clone)]
 pub struct Sources {
     pub proc_root: PathBuf,
     pub sys_root: PathBuf,
-    /// Where NVIDIA's NVML library is looked for.
     pub nvml: Vec<PathBuf>,
-    /// Searched for `nvidia-smi` where NVML doesn't load.
     pub path_var: String,
 }
 
@@ -70,15 +45,11 @@ impl Sources {
     }
 }
 
-/// Where an NVIDIA GPU's use comes from, when the driver's sysfs doesn't say.
 enum NvidiaSource {
-    /// NVML loads from these paths (`nvidia::Library::open`), loaded only
-    /// while watched.
     Nvml(Vec<PathBuf>),
     Smi(PathBuf),
 }
 
-/// That source while resources are watched.
 enum NvidiaReader {
     Nvml(nvidia::Nvml),
     Smi(nvidia_smi::NvidiaSmi),
@@ -94,10 +65,8 @@ impl NvidiaReader {
 }
 
 pub struct Resources {
-    /// Where `end_app` finds processes.
     proc_root: PathBuf,
     state: Mutex<State>,
-    /// Wakes the sampler when watching starts or stops, or it should stop.
     wake: Condvar,
     hub: Arc<Hub>,
 }
@@ -120,13 +89,11 @@ impl Resources {
         resources
     }
 
-    /// Ends the sampler; nothing is published after this returns.
     pub fn stop(&self) {
         lock(&self.state).stopped = true;
         self.wake.notify_all();
     }
 
-    /// Starts or stops `client` watching.
     pub fn watch(&self, client: ClientId, watching: bool) {
         let mut state = lock(&self.state);
         let changed = match watching {
@@ -139,14 +106,12 @@ impl Resources {
         }
     }
 
-    /// Asks every process of the app `key` (an `AppUsage::key`) to close.
     pub fn end_app(&self, key: &str) -> Result<(), String> {
         apps::end(&usage::processes(&self.proc_root), key, Me::current()).map(|_| ())
     }
 
     fn run(&self, mut sampler: Sampler) {
         let mut next_history = Instant::now();
-        // When the next watched look is due, while anyone watches.
         let mut next_look: Option<Instant> = None;
         let mut state = lock(&self.state);
         loop {
@@ -172,8 +137,6 @@ impl Resources {
             }
             if let Some(due) = next_look.filter(|due| now >= *due) {
                 let reading = sampler.look();
-                // Published under the state lock: a `stop` or the last
-                // watcher leaving can't be overtaken by this look.
                 self.hub.publish(&Event::Resources(reading));
                 next_look = Some(due.max(now) + LIVE_INTERVAL);
             }
@@ -184,7 +147,6 @@ impl Resources {
     }
 }
 
-/// The sources and what each needs from the last look.
 struct Sampler {
     sources: Sources,
     temperature: Option<Temperature>,
@@ -192,11 +154,9 @@ struct Sampler {
     nvidia_source: Option<NvidiaSource>,
     logger: Arc<Logger>,
     history: VecDeque<ResourceSample>,
-    /// CPU times at the last history sample, and at the last watched look.
     history_cpu: Option<CpuTimes>,
     look_cpu: Option<CpuTimes>,
     process_ticks: ProcessTicks,
-    /// Started while watched, when the GPU is NVIDIA's.
     nvidia: Option<NvidiaReader>,
 }
 
@@ -238,7 +198,6 @@ impl Sampler {
         (HISTORY_SPAN.as_secs() / HISTORY_INTERVAL.as_secs()) as usize
     }
 
-    /// Adds CPU and memory now to the history.
     fn record_history(&mut self) {
         let cpu_now = CpuTimes::read(&self.sources.proc_root);
         let cpu = match (cpu_now, self.history_cpu) {
@@ -247,7 +206,6 @@ impl Sampler {
         };
         let had_baseline = self.history_cpu.is_some();
         self.history_cpu = cpu_now;
-        // The first sample only sets the baseline.
         if !had_baseline {
             return;
         }
@@ -283,7 +241,6 @@ impl Sampler {
         self.nvidia = None;
     }
 
-    /// Everything now, compared with the last look.
     fn look(&mut self) -> Reading {
         let cpu_now = CpuTimes::read(&self.sources.proc_root);
         let total_ticks = match (cpu_now, self.look_cpu) {
@@ -308,8 +265,6 @@ impl Sampler {
         }
     }
 
-    /// The apps using the most memory, with their CPU use since the last
-    /// look, `total_ticks` being all CPUs' time over it.
     fn top_apps(&mut self, total_ticks: u64) -> Vec<AppUsage> {
         let processes = usage::processes(&self.sources.proc_root);
         let used = self.process_ticks.since_last(&processes);
@@ -342,7 +297,6 @@ mod tests {
         let mut sampler = Sampler::new(Sources::system(""), &logger("look"));
         sampler.record_history();
         sampler.begin_watching();
-        // Some CPU time to count.
         let busy_until = Instant::now() + Duration::from_millis(50);
         while Instant::now() < busy_until {
             std::hint::black_box(0);

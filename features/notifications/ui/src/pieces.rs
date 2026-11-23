@@ -1,7 +1,3 @@
-//! Pieces the pop-ups, the list and the settings page share: who a
-//! notification is from, how full a low battery alert's device is, and a
-//! meter. The round buttons and the on/off switch are `nova_look`'s.
-
 use crate::app_icon::AppIcon;
 use crate::logic::battery_fill;
 use crate::tokens::{DEVICE_GLYPH, DEVICE_RADIUS};
@@ -14,7 +10,6 @@ use nova_notifications_api::Notification;
 use nova_peripherals_api::{Battery, PeripheralKind};
 use std::path::PathBuf;
 
-/// The glyph of a device's kind.
 fn device_glyph(kind: PeripheralKind) -> Glyph {
     match kind {
         PeripheralKind::Mouse | PeripheralKind::Touchpad => Glyph::MOUSE,
@@ -25,9 +20,6 @@ fn device_glyph(kind: PeripheralKind) -> Glyph {
     }
 }
 
-/// Who a notification is from, `size` square: for Nova's low battery
-/// alerts, the device's glyph; else the picture it came with (a sender's
-/// photo), round; or else the app's icon, which falls back to its letter.
 pub fn who(notification: &Notification, size: Pixels, cx: &App) -> AnyElement {
     let theme = Theme::of(cx);
     if let Some(device) = notification.device {
@@ -58,9 +50,6 @@ pub fn who(notification: &Notification, size: Pixels, cx: &App) -> AnyElement {
     }
 }
 
-/// How full a low battery alert's device is, at the end of its title line:
-/// its battery and its percent, or the level novad words it as (its body)
-/// when it gives none.
 pub fn battery_amount(notification: &Notification, battery: Battery, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let words = match battery {
@@ -75,7 +64,6 @@ pub fn battery_amount(notification: &Notification, battery: Battery, cx: &App) -
         .child(div().text_size(FONT_SIZE_SMALL).font_weight(WEIGHT_TITLE).text_color(theme.error).child(words))
 }
 
-/// A bar `share` (0 to 1) of the way along a track.
 pub fn meter(share: f32, height: Pixels, cx: &App) -> Div {
     let theme = Theme::of(cx);
     div()

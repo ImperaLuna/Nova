@@ -1,7 +1,3 @@
-//! The resources page's graph: CPU (a line over a filled area, in the accent)
-//! and memory (a line, in the second accent) over the history novad keeps,
-//! newest at the right, with quiet lines at a quarter, half and three quarters.
-
 use crate::tokens::{GRAPH_AREA_OPACITY, GRAPH_HEIGHT};
 use gpui::{App, Bounds, IntoElement, Pixels, RenderOnce, Styled, Window, canvas, fill, point, size};
 use nova_look::Theme;
@@ -12,7 +8,6 @@ use nova_resources_api::ResourceSample;
 #[derive(IntoElement)]
 pub struct Graph {
     history: Vec<ResourceSample>,
-    /// How many samples fill the width.
     span: usize,
 }
 

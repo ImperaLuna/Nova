@@ -1,42 +1,20 @@
-//! The kernel's radio switches (rfkill) for Bluetooth: whether a software
-//! block (`rfkill block`, a desktop's airplane mode) or a hardware switch
-//! keeps the adapter off, and lifting the software block.
-//!
-//! The state is read from `/sys/class/rfkill/rfkill*/{type,soft,hard}`,
-//! only the switches of the adapter in use when the kernel says which they
-//! are (`/sys/class/bluetooth/hci0/rfkill*`): another adapter's block
-//! doesn't keep this one off. It's read again whenever BlueZ says something
-//! changed: blocking or unblocking powers the adapter off or back, which
-//! BlueZ reports. The block is lifted by writing rfkill events to
-//! `/dev/rfkill`, which systemd's `uaccess` rule lets the seat's user open.
-
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
-/// `RFKILL_TYPE_BLUETOOTH` in `linux/rfkill.h`.
 const TYPE_BLUETOOTH: u8 = 2;
-/// `RFKILL_OP_CHANGE`: sets the switch `idx`.
 const OP_CHANGE: u8 = 2;
-/// `RFKILL_OP_CHANGE_ALL`: sets every switch of the type.
 const OP_CHANGE_ALL: u8 = 3;
-/// How a switch's directory is named: this, then its index.
 const SWITCH_PREFIX: &str = "rfkill";
-/// What `type` holds for a Bluetooth switch.
 const TYPE_NAME: &str = "bluetooth";
 
-/// Where the switches are: the machine's, or stand-ins in tests.
 #[derive(Clone)]
 pub struct Rfkill {
-    /// `/sys/class/rfkill`.
     pub class: PathBuf,
-    /// `/dev/rfkill`.
     pub device: PathBuf,
-    /// `/sys/class/bluetooth`: each adapter's own switches.
     pub adapters: PathBuf,
 }
 
-/// What keeps Bluetooth off.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Blocked {
     pub soft: bool,
@@ -52,18 +30,12 @@ impl Rfkill {
         }
     }
 
-    /// The indexes of the switches of `adapter` (`hci0`), or None when the
-    /// kernel doesn't say which they are.
     fn own(&self, adapter: Option<&str>) -> Option<Vec<u32>> {
         let entries = std::fs::read_dir(self.adapters.join(adapter?)).ok()?;
         let own: Vec<u32> = entries.flatten().filter_map(|entry| index(&entry.file_name().to_string_lossy())).collect();
         (!own.is_empty()).then_some(own)
     }
 
-    /// Whether a switch of `adapter` (`hci0`) is blocked; every Bluetooth
-    /// switch counts when the kernel doesn't say which are its own. No
-    /// switches (no adapter, or no rfkill in the kernel) means nothing
-    /// blocks it.
     pub fn blocked(&self, adapter: Option<&str>) -> Blocked {
         let own = self.own(adapter);
         let mut blocked = Blocked::default();
@@ -83,11 +55,7 @@ impl Rfkill {
         blocked
     }
 
-    /// Lifts the software block on the switches of `adapter` (`hci0`), or on
-    /// every Bluetooth switch when the kernel doesn't say which are its own.
-    /// A hardware switch stays as it is.
     pub fn unblock(&self, adapter: Option<&str>) -> Result<(), String> {
-        // struct rfkill_event: idx (u32), type, op, soft, hard (u8 each).
         let event = |idx: u32, op: u8| {
             let [a, b, c, d] = idx.to_ne_bytes();
             [a, b, c, d, TYPE_BLUETOOTH, op, 0, 0]
@@ -100,7 +68,6 @@ impl Rfkill {
             .write(true)
             .open(&self.device)
             .map_err(|e| format!("can't unblock Bluetooth through {}: {e}", self.device.display()))?;
-        // One event per write: the kernel reads one at a time.
         for event in events.chunks(8) {
             device
                 .write_all(event)
@@ -110,7 +77,6 @@ impl Rfkill {
     }
 }
 
-/// The index in a switch's name (`rfkill3`).
 fn index(name: &str) -> Option<u32> {
     name.strip_prefix(SWITCH_PREFIX)?.parse().ok()
 }

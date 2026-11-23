@@ -1,23 +1,12 @@
-//! What to show, worked out from the choice: awww's pictures and the
-//! engine's projects.
-
 use super::*;
 
-/// What awww shows on an output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Picture {
     Image(PathBuf),
-    /// A dynamic wallpaper's still: its project's frame kept for the
-    /// output's size, else its preview, else none. awww runs under it
-    /// even with none, so the outputs' sizes are known to cut its frame.
-    Dynamic {
-        project: PathBuf,
-        preview: Option<PathBuf>,
-    },
+    Dynamic { project: PathBuf, preview: Option<PathBuf> },
 }
 
 impl Picture {
-    /// The image for an output `size` pixels big, when that's known.
     pub(crate) fn image(&self, size: Option<(u32, u32)>, folder: &Path) -> Option<PathBuf> {
         match self {
             Self::Image(path) => Some(path.clone()),
@@ -28,19 +17,12 @@ impl Picture {
     }
 }
 
-/// What to show, worked out from the choice.
 #[derive(Default)]
 pub(crate) struct Plan {
-    /// awww's pictures: still images, and dynamic wallpapers' stills.
     pub(crate) images: Choice<Picture>,
-    /// linux-wallpaperengine's project for each output.
     pub(crate) screens: BTreeMap<String, PathBuf>,
 }
 
-/// The engine's project for each dynamic wallpaper in `kinds`, making the
-/// ones for videos, and forgetting the videos' and stills' files no
-/// wallpaper uses any more. Checks `stopped` before each change to the
-/// state folder.
 pub(crate) fn projects<'c>(
     kinds: &BTreeMap<&'c Source, Option<Kind>>,
     places: &Places,
@@ -71,8 +53,6 @@ pub(crate) fn projects<'c>(
     {
         logger.warn(LOG_SOURCE, &e);
     }
-    // Kept while a wallpaper can't be looked up (a library not mounted yet,
-    // say): it may be one of them.
     let dynamic = kinds.values().filter(|kind| kind.as_ref().is_none_or(Kind::is_dynamic)).count();
     if used.len() == dynamic
         && !stopped()
@@ -84,9 +64,6 @@ pub(crate) fn projects<'c>(
 }
 
 impl Plan {
-    /// Looks up what each wallpaper in `choice` is (logging why one can't be
-    /// shown), and makes the projects for videos. Checks `stopped` before
-    /// each change to the state folder.
     pub(crate) fn new(
         choice: &Choice,
         outputs: &Outputs,

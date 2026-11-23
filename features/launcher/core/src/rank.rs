@@ -1,30 +1,16 @@
-//! Ranking apps for a launcher search. A match in the name counts most (its
-//! start, then a word's start, then anywhere, then its letters in order),
-//! then the generic name, keywords and program, then the comment. Apps the
-//! user opens often climb a little; ties go to the shorter name.
-
 use nova_apps::desktop_entry::Entry;
 use nova_launcher_api::TextRun;
 
-/// What a match in the name is worth, by where it starts.
 const NAME_START: u32 = 1000;
 const NAME_WORD: u32 = 800;
 const NAME_ANYWHERE: u32 = 600;
-/// The query's letters in order, gaps allowed (`ffx` in Firefox).
 const NAME_LETTERS: u32 = 300;
-/// A generic name's, keyword's or the program's start or word start, and
-/// anywhere in them.
 const DETAIL_WORD: u32 = 250;
 const DETAIL_ANYWHERE: u32 = 200;
 const COMMENT: u32 = 100;
-/// Each launch adds this much, up to the most: enough to reorder close
-/// matches, never to beat a better kind of match.
 const PER_LAUNCH: u32 = 10;
 const MOST_FOR_LAUNCHES: u32 = 150;
 
-/// How well `query` (lower case, trimmed, not empty) matches `entry`, and
-/// which characters of its name it matched; `None` when it doesn't.
-/// Several words must each match somewhere, and the weakest decides.
 pub fn score(entry: &Entry, query: &str, launches: u32) -> Option<(u32, Vec<TextRun>)> {
     let name = entry.name.to_lowercase();
     let program = entry.exec.first().map(|program| program.rsplit('/').next().unwrap_or(program).to_lowercase());
@@ -57,7 +43,6 @@ pub fn score(entry: &Entry, query: &str, launches: u32) -> Option<(u32, Vec<Text
         .then(|| (weakest + (launches * PER_LAUNCH).min(MOST_FOR_LAUNCHES), runs(&entry.name, &marked)))
 }
 
-/// A match in the (lower case) name: its score and the characters it covers.
 fn name_match(name: &str, word: &str) -> Option<(u32, Vec<usize>)> {
     let chars: Vec<char> = name.chars().collect();
     let wanted: Vec<char> = word.chars().collect();
@@ -98,11 +83,8 @@ fn word_starts_at(chars: &[char], at: usize) -> bool {
     at == 0 || !chars[at - 1].is_alphanumeric()
 }
 
-/// `name` cut into runs, `matched` where `marked` (one per character) says.
 fn runs(name: &str, marked: &[bool]) -> Vec<TextRun> {
     let mut runs: Vec<TextRun> = Vec::new();
-    // Lower-casing can change how many characters there are (rare: İ); then
-    // nothing is marked rather than the wrong letters.
     let fits = marked.len() == name.chars().count();
     for (index, c) in name.chars().enumerate() {
         let matched = fits && marked[index];
@@ -177,7 +159,6 @@ mod tests {
         assert_eq!(rank(&[files], "nautilus"), ["Nautilus"]);
         let commented = Entry { comment: Some("Chat with your friends".into()), ..app("Signal") };
         assert_eq!(score(&commented, "friends", 0).unwrap().0, COMMENT);
-        // The program, for apps whose name says something else.
         let code = Entry { exec: vec!["/usr/bin/codium".into(), "--new".into()], ..app("VSCodium") };
         assert_eq!(score(&code, "codium", 0).unwrap().0, NAME_ANYWHERE);
         assert_eq!(score(&Entry { name: "Editor".into(), ..code }, "codium", 0).unwrap().0, DETAIL_WORD);
@@ -194,7 +175,6 @@ mod tests {
     fn launches_reorder_close_matches_only() {
         let (often, rarely) = (app("Foot"), app("Fooview"));
         assert!(score(&often, "foo", 3).unwrap().0 > score(&rarely, "foo", 0).unwrap().0);
-        // Opened a thousand times, a letters-only match still trails a start.
         assert!(
             score(&app("Gnome Office Online"), "goo", 1000).unwrap().0 < score(&app("Google"), "goo", 0).unwrap().0
         );

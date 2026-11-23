@@ -1,7 +1,3 @@
-//! The tray against a real bus: a private `dbus-daemon` per test, with apps
-//! that put up items the way Electron (an object path on its own
-//! connection) and libayatana (a bus name of its own) do.
-
 use super::*;
 use crate::test_items::{Item, LookItem, Menu, MenuNode, MenuOnlyItem, register, serve_item};
 use nova_hub::{ClientQueue, Outgoing};
@@ -12,9 +8,6 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 
-/// How long a test waits for something the bus should do at once. Longer
-/// than reading an item may take (three calls, each up to its timeout), so
-/// a busy test machine doesn't fail it.
 const WAIT: Duration = Duration::from_secs(4 * CALL_TIMEOUT.as_secs());
 
 struct Fixture {
@@ -40,7 +33,6 @@ impl Fixture {
         Self { dir, bus, hub, logger, ui, _ui_stream: ui_stream }
     }
 
-    /// A tray naming apps from `apps`, or none.
     fn tray(&self, apps: Option<Arc<AppIndex>>) -> Arc<Tray> {
         let sources = Sources {
             bus: Bus::Address(self.bus.address.clone()),
@@ -57,12 +49,10 @@ impl Fixture {
         self.bus.connect()
     }
 
-    /// The next tray event's items.
     fn next_items(&self) -> Value {
         nova_hub::next_named(&self.ui, "tray", WAIT)["items"].clone()
     }
 
-    /// Makes our process look, to the tray, like it runs in `unit`.
     fn run_in_unit(&self, unit: &str) {
         let process = self.dir.join("proc").join(std::process::id().to_string());
         std::fs::create_dir_all(&process).unwrap();
@@ -70,20 +60,16 @@ impl Fixture {
     }
 }
 
-/// Puts up an item at `path` on a new connection, owning `name` first if
-/// given, and registers `service` with the watcher.
 fn put_up(fixture: &Fixture, name: Option<&str>, path: &str, service: &str, id: &str) -> Connection {
     put_up_item(fixture, name, path, service, item(id, Arc::default()))
 }
 
-/// Like `put_up`, with `item`.
 fn put_up_item(fixture: &Fixture, name: Option<&str>, path: &str, service: &str, item: Item) -> Connection {
     let connection = fixture.connect();
     serve_item(&connection, name, path, service, item);
     connection
 }
 
-/// The item `id`, counting its `Activate` calls in `activated`.
 fn item(id: &str, activated: Arc<std::sync::atomic::AtomicUsize>) -> Item {
     Item { id: id.into(), title: format!("{id} title"), activated }
 }
@@ -110,7 +96,6 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
         .unwrap();
     let apps = AppIndex::of(Some(&fixture.dir.join("share")), &fixture.logger);
     wait_until(WAIT, "the index to find discord.desktop", || apps.find_app(&["discord".into()]).is_some());
-    // Electron's own id doesn't name the app; the unit it runs in does.
     fixture.run_in_unit("app-discord-375306.scope");
     let tray = fixture.tray(Some(Arc::clone(&apps)));
 
@@ -127,7 +112,6 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
     let host = fixture.connect();
     assert_eq!(watcher_property::<Vec<String>>(&host, "RegisteredStatusNotifierItems"), std::slice::from_ref(&address));
 
-    // The launcher reopens an app that only sits in the tray through its item.
     assert_eq!(tray.activate_app("discord.desktop"), Ok(true));
     assert_eq!(activated.load(Ordering::SeqCst), 1);
     assert_eq!(tray.activate_app("steam.desktop"), Ok(false));
@@ -156,7 +140,6 @@ fn a_host_is_always_there_and_bad_registrations_are_refused() {
     let fixture = Fixture::new("refused");
     let _tray = fixture.tray(None);
     let app = fixture.connect();
-    // Chromium checks this once, before any UI may have started.
     assert!(watcher_property::<bool>(&app, "IsStatusNotifierHostRegistered"));
     for service in ["not a name", "org.nobody.Owns.This", "/bad//path", &"a".repeat(MAX_SERVICE_LEN + 1)] {
         assert!(zbus::block_on(register(&app, service)).is_err(), "{service} is refused");
@@ -175,14 +158,12 @@ fn nothing_takes_the_name_and_a_queued_tray_takes_over_when_the_first_stops() {
     drop(other);
     let second = fixture.tray(None);
     first.stop();
-    // Until the bus has given the name to the second tray.
     let app = eventually(WAIT, "the second tray to take over", || put_up_retrying(&fixture));
     assert_eq!(fixture.next_items()[0]["id"], "late");
     drop(app);
     second.stop();
 }
 
-/// Puts up an item if the watcher it reaches is one that's running.
 fn put_up_retrying(fixture: &Fixture) -> Option<Connection> {
     let connection = fixture.connect();
     zbus::block_on(async {
@@ -213,7 +194,6 @@ fn hidden_apps_are_remembered_across_restarts() {
     assert_eq!(event(&fixture)["hidden"], json!(["steam"]));
     tray.stop();
 
-    // A new tray (novad restarted) still hides it, with the app gone meanwhile.
     let tray = fixture.tray(None);
     tray.hide("steam", false).unwrap();
     assert!(event(&fixture).get("hidden").is_none());
@@ -249,7 +229,6 @@ fn an_item_with_only_a_menu_is_never_activated() {
 
 #[test]
 fn introspection_says_which_methods_an_interface_has() {
-    // As libayatana's item answers (GDBus).
     let ayatana = r#"<node>
   <interface name="org.freedesktop.DBus.Properties"><method name="Get"></method></interface>
   <interface name="org.kde.StatusNotifierItem">
@@ -296,7 +275,6 @@ fn an_app_registers_only_items_on_its_own_connection() {
     let other = fixture.connect();
     let other_name = other.unique_name().unwrap().to_string();
     let app = fixture.connect();
-    // Names the watcher (novad) and another app own, as a name or a unique name.
     for service in [format!("{WATCHER_NAME}/Bogus0"), format!("{other_name}/StatusNotifierItem"), other_name.clone()] {
         assert!(zbus::block_on(register(&app, &service)).is_err(), "{service} is refused");
     }
@@ -308,17 +286,14 @@ fn an_item_that_cant_tell_its_id_is_dropped() {
     let fixture = Fixture::new("no-id");
     let _tray = fixture.tray(None);
     let app = fixture.connect();
-    // The app serves objects, but nothing at this path.
     let other = Item { id: "other".into(), title: String::new(), activated: Arc::default() };
     zbus::block_on(app.object_server().at("/Other", other)).unwrap();
     zbus::block_on(register(&app, "/Nothing")).unwrap();
     wait_until(WAIT, "the item without an id to be dropped", || {
         watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").is_empty()
     });
-    // A real item still shows.
     let real = put_up(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", "steam");
     let items = loop {
-        // Past the empty list the drop may publish.
         let items = fixture.next_items();
         if items != json!([]) {
             break items;
@@ -340,15 +315,12 @@ fn one_app_cant_fill_the_tray() {
         serve_item(&app, None, &format!("/Item{n}"), &format!("/Item{n}"), item);
     }
     assert!(zbus::block_on(register(&app, "/OneMore")).is_err(), "past the cap is refused");
-    // Another app still gets in.
     let _other = put_up(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", "steam");
     wait_until(WAIT, "the other app's item to be registered", || {
         watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").len() > MAX_ITEMS_PER_APP
     });
 }
 
-/// A menu entry with a label and the properties `more` adds, as Electron
-/// sends them.
 fn entry(id: i32, label: &str, more: Vec<(&'static str, zbus::OwnedVariant)>, children: Vec<MenuNode>) -> MenuNode {
     let mut props = vec![
         ("label", OwnedVariant::from(zbus::Str::from(label.to_owned()))),
@@ -363,8 +335,6 @@ fn separator(id: i32) -> MenuNode {
     MenuNode(id, vec![("type", OwnedVariant::from(zbus::Str::from("separator")))], vec![])
 }
 
-/// A menu with Discord's tray entries, in the properties Electron's
-/// DBusMenu uses: a checkbox, separators, a submenu, a hidden entry.
 fn discord_menu() -> MenuNode {
     let checkmark =
         || vec![("toggle-type", OwnedVariant::from(zbus::Str::from("checkmark"))), ("toggle-state", 1i32.into())];
@@ -399,7 +369,6 @@ fn an_item_s_picture_status_and_menu_are_read_for_the_gpui_ui() {
     let app = fixture.connect();
     let menu = Menu { root: discord_menu(), revision: 4, clicked: Arc::clone(&clicked), shown: Arc::clone(&shown) };
     zbus::block_on(app.object_server().at("/MenuBar", menu)).unwrap();
-    // 1×1 opaque blue, ARGB.
     let item = LookItem {
         id: "chrome_status_icon_1".into(),
         status: "Active".into(),
@@ -415,7 +384,6 @@ fn an_item_s_picture_status_and_menu_are_read_for_the_gpui_ui() {
     assert_eq!(items[0]["has_menu"], true);
     assert!(items[0].get("attention").is_none());
 
-    // A new message: Electron sets the status and says so.
     zbus::block_on(async {
         let iface = app.object_server().interface::<_, LookItem>("/StatusNotifierItem").await.unwrap();
         iface.get_mut().await.status = "NeedsAttention".into();
@@ -440,7 +408,6 @@ fn an_item_s_picture_status_and_menu_are_read_for_the_gpui_ui() {
 
     tray.run_menu_entry(&address, 3, 4).unwrap();
     assert_eq!(*clicked.lock().unwrap(), [3]);
-    // The app rebuilds its menu: a click read from the old one is refused.
     zbus::block_on(async {
         let iface = app.object_server().interface::<_, Menu>("/MenuBar").await.unwrap();
         iface.get_mut().await.revision = 5;
