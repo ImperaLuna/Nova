@@ -12,6 +12,7 @@
 //! token's property there, and a test reads that file and holds the two
 //! equal, so the shells can't drift apart. Change a value in both.
 
+use crate::Family;
 use gpui::{FontWeight, Pixels, px};
 use std::time::Duration;
 
@@ -278,10 +279,11 @@ pub const ICON_GRID: f32 = 24.0;
 pub const EASING: [f32; 4] = [0.2, 0.8, 0.2, 1.0];
 
 // Type: the families, and the weights of running text, of labels and
-// names, of titles and picked options, and of a badge's count.
-pub const FONT_SANS: &str = "Inter";
-pub const FONT_MONO: &str = "JetBrains Mono";
-pub const FONT_DISPLAY: &str = "Instrument Serif";
+// names, of titles and picked options, and of a badge's count. A family
+// draws with the face this system matches it to, as Qt's does ([`Family`]).
+pub const FONT_SANS: Family = Family::named("Inter");
+pub const FONT_MONO: Family = Family::named("JetBrains Mono");
+pub const FONT_DISPLAY: Family = Family::named("Instrument Serif");
 /// A line's height as a share of its text size: Inter's own spacing, which
 /// is how Qt lays text out (GPUI's default is 1.618). `body_text` sets it,
 /// so nothing else does.

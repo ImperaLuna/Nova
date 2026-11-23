@@ -3035,6 +3035,7 @@ dependencies = [
  "serde",
  "toml 0.8.23",
  "unicode-segmentation",
+ "yeslogic-fontconfig-sys",
 ]
 
 [[package]]
