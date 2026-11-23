@@ -82,7 +82,7 @@ fn turned_since(since: Instant, now: Instant) -> f32 {
 /// The points along a circle round `center` from `start` to `end` (radians,
 /// clockwise from three o'clock as the screen's y runs down), close enough
 /// that the lines between them read as the arc.
-fn arc(center: Point<Pixels>, radius: Pixels, start: f32, end: f32) -> Vec<Point<Pixels>> {
+pub(crate) fn arc(center: Point<Pixels>, radius: Pixels, start: f32, end: f32) -> Vec<Point<Pixels>> {
     // A point every few degrees: smooth at icon sizes.
     const STEPS_PER_TURN: f32 = 96.0;
     let steps = ((end - start).abs() / TAU * STEPS_PER_TURN).ceil().max(1.0) as usize;

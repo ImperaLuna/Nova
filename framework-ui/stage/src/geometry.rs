@@ -1,7 +1,7 @@
 //! Where things are on the stage: a panel's open box from its pill, the box
 //! between the two while it grows, how tall the stage must be, the same for
-//! a drawer against the right edge and its window, and whether a point is
-//! on something drawn. Plain numbers, in screen coordinates, tested alone.
+//! a drawer against the right edge and its window, where a tab against the
+//! right edge is, and whether a point is on something drawn. Plain numbers, in screen coordinates, tested alone.
 
 use gpui::{Bounds, Pixels, Point, Size, point, px, size};
 use nova_look::Shape;
@@ -110,6 +110,19 @@ pub fn past_edge(open: Bounds<Pixels>, radius: Pixels) -> Bounds<Pixels> {
 /// shell.
 pub fn edge_origin(screen_width: Pixels) -> Bounds<Pixels> {
     Bounds { origin: point(screen_width - BAR_MARGIN, BAR_GAP), size: size(px(0.0), BAR_HEIGHT) }
+}
+
+/// Where a tab against the right edge is once open: `size` big, halfway
+/// down the screen. Its content fills this.
+pub fn tab_box(size: Size<Pixels>, screen: Size<Pixels>) -> Bounds<Pixels> {
+    Bounds { origin: point(screen.width - size.width, (screen.height - size.height) / 2.0), size }
+}
+
+/// What a tab against the right edge grows out of: a nub `nub` tall at
+/// the edge, halfway down, nothing wide on screen (the `radius` its glass
+/// reaches past the edge is all there is of it).
+pub fn tab_nub(nub: Pixels, radius: Pixels, screen: Size<Pixels>) -> Bounds<Pixels> {
+    Bounds { origin: point(screen.width, (screen.height - nub) / 2.0), size: size(radius, nub) }
 }
 
 /// The size of the window a drawer `width` wide is drawn in: the drawer and
@@ -239,6 +252,17 @@ mod tests {
         assert_eq!(open, rect(1552.0, 0.0, 368.0, 1080.0));
         assert_eq!(past_edge(open, px(24.0)), rect(1552.0, 0.0, 392.0, 1080.0), "its right corners off screen");
         assert_eq!(edge_origin(px(1920.0)), rect(1912.0, 4.0, 0.0, 36.0));
+    }
+
+    #[test]
+    fn a_tab_sits_halfway_down_the_right_edge_and_grows_out_of_a_nub_there() {
+        let screen = size(px(1920.0), px(1080.0));
+        let open = tab_box(size(px(220.0), px(300.0)), screen);
+        assert_eq!(open, rect(1700.0, 390.0, 220.0, 300.0));
+        let nub = tab_nub(px(40.0), px(27.0), screen);
+        assert_eq!(nub, rect(1920.0, 520.0, 27.0, 40.0), "only past the edge");
+        let glass = past_edge(open, px(27.0));
+        assert_eq!(between(nub, glass, 0.5), rect(1810.0, 455.0, 137.0, 170.0), "it grows from the edge out");
     }
 
     #[test]

@@ -1,0 +1,35 @@
+# nova-power-ui
+#
+# What the power menu draws with GPUI: its button on the right pill
+# (`power.button`) and the menu it opens, a tab against the right screen
+# edge with lock, log out, suspend, restart and shut down
+# (`power.menu`).
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-look
+# - nova-power-api
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-power-ui"
+description = "The power menu for the GPUI program: the right pill's power button and the tab with lock, log out, suspend, restart and shut down"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-look.workspace = true
+nova-power-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

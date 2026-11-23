@@ -228,6 +228,9 @@ pub enum Placement {
     /// A drawer against the screen's right edge, top to bottom (quick
     /// settings).
     RightEdge,
+    /// A tab against the screen's right edge, halfway down, curving into
+    /// the edge above and below (the power menu).
+    RightTab,
     /// Over the whole screen, with no glass: the view draws all there is,
     /// and the stage only fades it in and out (the wallpaper carousel).
     WholeScreen,
@@ -311,7 +314,12 @@ impl Panel {
     /// click anywhere lands on its view, which closes it with
     /// [`crate::Stage::close`] where it wants to.
     ///
-    /// Everything else is the same for all three: the flags,
+    /// A tab against the right edge is `size` big and sits halfway down
+    /// the screen, its right corners past the edge and its top and bottom
+    /// curving into it ([`nova_look::Fillet`]). It grows out of a nub at
+    /// the edge, never out of a pill.
+    ///
+    /// Everything else is the same for all four: the flags,
     /// [`crate::Stage::toggle`] and [`crate::Stage::resize`]. Only
     /// [`Panel::top`] is for the top strip alone.
     pub fn placement(mut self, placement: Placement) -> Self {

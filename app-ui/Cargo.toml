@@ -37,6 +37,7 @@
 # - nova-network-ui
 # - nova-notifications-ui
 # - nova-peripherals-ui
+# - nova-power-ui
 # - nova-quick-settings-ui
 # - nova-resources-ui
 # - nova-screenshot-ui
@@ -78,6 +79,7 @@ nova-microphone-ui.workspace = true
 nova-network-ui.workspace = true
 nova-notifications-ui.workspace = true
 nova-peripherals-ui.workspace = true
+nova-power-ui.workspace = true
 nova-quick-settings-ui.workspace = true
 nova-resources-ui.workspace = true
 nova-screenshot-ui.workspace = true
@@ -154,6 +156,7 @@ nova-microphone-ui = { path = "../features/microphone/ui" }
 nova-network-ui = { path = "../features/network/ui" }
 nova-notifications-ui = { path = "../features/notifications/ui" }
 nova-peripherals-ui = { path = "../features/peripherals/ui" }
+nova-power-ui = { path = "../features/power/ui" }
 nova-quick-settings-ui = { path = "../features/quick-settings/ui" }
 nova-resources-ui = { path = "../features/resources/ui" }
 nova-screenshot-ui = { path = "../features/screenshot/ui" }
@@ -179,6 +182,7 @@ nova-network-api = { path = "../features/network/api" }
 nova-nova-files-api = { path = "../features/nova-files/api" }
 nova-notifications-api = { path = "../features/notifications/api" }
 nova-peripherals-api = { path = "../features/peripherals/api" }
+nova-power-api = { path = "../features/power/api" }
 nova-recording-api = { path = "../features/recording/api" }
 nova-resources-api = { path = "../features/resources/api" }
 nova-screenshot-api = { path = "../features/screenshot/api" }
