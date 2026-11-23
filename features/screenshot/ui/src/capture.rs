@@ -515,10 +515,10 @@ impl Capture {
                 windows.set_screen(screen, cx);
             }
         }
-        if self.card.as_ref().is_some_and(|card| !here.iter().any(|screen| screen.id == card.screen)) {
-            if let Some(thumb) = self.card.take().and_then(|card| card.thumb) {
-                drop_images([thumb], cx);
-            }
+        if self.card.as_ref().is_some_and(|card| !here.iter().any(|screen| screen.id == card.screen))
+            && let Some(thumb) = self.card.take().and_then(|card| card.thumb)
+        {
+            drop_images([thumb], cx);
         }
         let new: Vec<Screen> = here
             .iter()
