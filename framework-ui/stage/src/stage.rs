@@ -37,6 +37,9 @@ pub(crate) struct Panels {
     known: HashMap<DisplayId, Vec<PanelRules>>,
     /// The size a feature last asked a panel to be ([`Stage::resize`]).
     sizes: HashMap<(DisplayId, SharedString), Size<Pixels>>,
+    /// The outputs whose shown workspace has a fullscreen window
+    /// ([`Stage::set_fullscreen`]).
+    fullscreen: Vec<SharedString>,
 }
 
 impl Panels {
@@ -66,6 +69,11 @@ impl Panels {
 
     pub fn size(&self, name: &SharedString, screen: DisplayId) -> Option<Size<Pixels>> {
         self.sizes.get(&(screen, name.clone())).copied()
+    }
+
+    /// Whether the output called `output` shows a fullscreen window.
+    pub fn fullscreen(&self, output: &str) -> bool {
+        self.fullscreen.iter().any(|each| each.as_ref() == output)
     }
 }
 
@@ -151,11 +159,22 @@ impl Stage {
         });
     }
 
+    /// The outputs whose shown workspace has a window over the whole
+    /// screen, by the names novad gives them: the bar steps aside there
+    /// (`crate::aside`). Every other output's bar comes back.
+    pub fn set_fullscreen(outputs: Vec<SharedString>, cx: &mut App) {
+        change(cx, |panels| {
+            let changed = panels.fullscreen != outputs;
+            panels.fullscreen = outputs;
+            changed
+        });
+    }
+
     /// Calls `changed` each time a panel opens or closes, on any screen
-    /// (and when one is resized): for what follows a panel it doesn't draw,
-    /// like pop-ups that wait while quick settings shows their list. It
-    /// asks [`Stage::is_open`] what is open now. `None` before
-    /// [`Stage::start`].
+    /// (and when one is resized, or a bar steps aside): for what follows a
+    /// panel it doesn't draw, like pop-ups that wait while quick settings
+    /// shows their list. It asks [`Stage::is_open`] what is open now.
+    /// `None` before [`Stage::start`].
     pub fn observe_open(cx: &mut App, mut changed: impl FnMut(&mut App) + 'static) -> Option<Subscription> {
         let panels = cx.try_global::<StageState>().map(|state| state.panels.clone())?;
         Some(cx.observe(&panels, move |_, cx| changed(cx)))

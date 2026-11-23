@@ -2961,6 +2961,7 @@ dependencies = [
  "gpui_platform",
  "nova-bar-api",
  "nova-daemon-info",
+ "nova-desktop-info",
  "nova-look",
  "nova-notifications-ui",
  "nova-stage",

@@ -22,6 +22,7 @@
 # Allowed workspace crates:
 # - nova-bar-api
 # - nova-daemon-info
+# - nova-desktop-info
 # - nova-look
 # - nova-notifications-ui
 # - nova-stage
@@ -42,6 +43,7 @@ gpui.workspace = true
 gpui_platform.workspace = true
 nova-bar-api.workspace = true
 nova-daemon-info.workspace = true
+nova-desktop-info.workspace = true
 nova-look.workspace = true
 nova-notifications-ui.workspace = true
 nova-stage.workspace = true
