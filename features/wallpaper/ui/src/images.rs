@@ -113,7 +113,8 @@ fn load(wanted: Wanted, cx: &mut Context<Pictures>) -> Task<()> {
     };
     cx.spawn(async move |pictures, cx| {
         let picture = match decoding.await {
-            Ok(picture) => Some(Arc::new(picture)),
+            Ok(Some(picture)) => Some(Arc::new(picture)),
+            Ok(None) => None,
             Err(problem) => {
                 eprintln!("WARN nova-ui: can't show {}: {problem}", wanted.path);
                 None
@@ -123,8 +124,13 @@ fn load(wanted: Wanted, cx: &mut Context<Pictures>) -> Task<()> {
     })
 }
 
-/// Reads the file and cuts it to fill the box.
-fn decode(wanted: &Wanted) -> Result<RenderImage, String> {
+/// Reads the file and cuts it to fill the box. A folder (a Wallpaper
+/// Engine project set as the wallpaper) has no picture to read: none, and
+/// no warning, since nothing is wrong.
+fn decode(wanted: &Wanted) -> Result<Option<RenderImage>, String> {
+    if std::fs::metadata(&wanted.path).is_ok_and(|metadata| metadata.is_dir()) {
+        return Ok(None);
+    }
     let reader = ImageReader::open(&wanted.path).map_err(|error| error.to_string())?;
     let reader = reader.with_guessed_format().map_err(|error| error.to_string())?;
     let picture: DynamicImage = reader.decode().map_err(|error| error.to_string())?;
@@ -133,5 +139,5 @@ fn decode(wanted: &Wanted) -> Result<RenderImage, String> {
     for pixel in filled.pixels_mut() {
         pixel.0.swap(0, 2);
     }
-    Ok(RenderImage::new(vec![Frame::new(filled)]))
+    Ok(Some(RenderImage::new(vec![Frame::new(filled)])))
 }
