@@ -3025,6 +3025,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-screenshot-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-screenshot-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "image",
+ "nova-desktop-info",
+ "nova-look",
+ "nova-screenshot-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-stage"
 version = "0.1.0"
 dependencies = [
@@ -3060,6 +3081,7 @@ dependencies = [
  "nova-launcher-ui",
  "nova-look",
  "nova-notifications-ui",
+ "nova-screenshot-ui",
  "nova-stage",
  "nova-theme-info",
  "nova-ui-client",
