@@ -11,8 +11,9 @@ Usage: nova-ui [--replay <folder>]... [--demo] [--demo-toggles <times>] [--frame
                           <topic>` prints them) in place of the real one
   --demo                  put three test pills on the stage, two of which
                           grow into panels (`demo` and `demo-right`)
-  --demo-toggles <times>  with --demo: open and close the `demo` panel
-                          <times> times, screen after screen, then quit
+  --demo-toggles <times>  with --demo: toggle the `demo` panel <times> times
+                          (two for one open and close), screen after
+                          screen, then quit
   --frames                log each motion's frames and how many came late,
                           and the frames each stage draws at rest";
 

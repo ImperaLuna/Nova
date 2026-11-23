@@ -251,6 +251,7 @@ impl Render for StageView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
         self.give_way(now);
+        self.lower_once_closed(window, cx, now);
         let moving = self.moving(now);
         if moving {
             window.request_animation_frame();

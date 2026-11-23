@@ -263,7 +263,10 @@ impl StageView {
         let now = Instant::now();
         let id = self.screen.id;
         let panels = self.panels.read(cx);
-        let held = Held { keyboard: panels.open.needs_keyboard(id), overlay: panels.open.any_open(id) };
+        // Raised while a panel is open, and until the last one has closed
+        // all the way (`lower_once_closed`).
+        let overlay = panels.open.any_open(id) || self.held.overlay;
+        let held = Held { keyboard: panels.open.needs_keyboard(id), overlay };
         let catching = panels.open.catches_clicks();
         let targets: Vec<(bool, Option<Size<Pixels>>)> = self
             .panel_items()
@@ -285,10 +288,10 @@ impl StageView {
             let keyboard = if held.keyboard { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
             window.set_keyboard_interactivity(keyboard);
         }
-        if held.overlay != self.held.overlay {
+        if held.overlay && !self.held.overlay {
             // Over a fullscreen window while a panel is open: compositors
             // draw a focused fullscreen window over the top layer.
-            window.set_layer(if held.overlay { Layer::Overlay } else { Layer::Top });
+            window.set_layer(Layer::Overlay);
         }
         self.held = held;
         if let Some(focus) = focus {
@@ -306,6 +309,17 @@ impl StageView {
         }
         self.fit(window, cx, false);
         cx.notify();
+    }
+
+    /// Back under fullscreen windows once no panel is drawn any more: a
+    /// panel that is closing is still over the window it opened over.
+    pub fn lower_once_closed(&mut self, window: &mut Window, cx: &App, now: Instant) {
+        let drawn =
+            self.panels.read(cx).open.any_open(self.screen.id) || self.panel_items().any(|panel| !panel.closed(now));
+        if self.held.overlay && !drawn {
+            window.set_layer(Layer::Top);
+            self.held.overlay = false;
+        }
     }
 
     /// Opens the click catcher once nothing on this stage moves any more.

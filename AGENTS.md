@@ -291,7 +291,7 @@ nova_stage::overlay("sound.capsule", cx, |cx| Box::new(cx.new(Capsule::new)));
 
 `nova-ui --demo` puts three test pills and two test panels on the stage
 with no feature ported (`app-ui/src/demo.rs`, a short worked example of
-all of the above but parts); `--demo-toggles <n>` opens and closes one
+all of the above but parts); `--demo-toggles <n>` toggles one
 `n` times and quits.
 
 ### Moving a feature out of novad
