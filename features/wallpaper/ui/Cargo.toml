@@ -1,0 +1,39 @@
+# nova-wallpaper-ui
+#
+# What the wallpaper feature draws, with GPUI: the carousel over the whole
+# screen that picks an image from the wallpaper folder, for every screen or
+# one, and its preview on the other screens.
+#
+# Allowed outside crates:
+# - gpui
+# - image (decodes the folder's images at the size of a card or a screen,
+#   off the main thread; GPUI already builds it with these formats)
+#
+# Allowed workspace crates:
+# - nova-desktop-info
+# - nova-look
+# - nova-stage
+# - nova-ui-client
+# - nova-wallpaper-api
+
+[package]
+name = "nova-wallpaper-ui"
+description = "The wallpaper carousel's UI for the GPUI program: the deck of the folder's images, the screen picker and the previews"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+image.workspace = true
+nova-desktop-info.workspace = true
+nova-look.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+nova-wallpaper-api.workspace = true
+
+[lints]
+workspace = true
