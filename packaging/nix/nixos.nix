@@ -81,10 +81,10 @@ in
         cfg.package
       ]
       # novad finds `nova-ui` on PATH.
-      ++ lib.optional (cfg.ui == "gpui") cfg.uiPackage
+      ++ [ cfg.uiPackage ]
       ++ features.packagesFor pkgs cfg.gpu on;
       etc = {
-        "xdg/nova/features.toml".text = features.selectionFile cfg.ui cfg.features;
+        "xdg/nova/features.toml".text = features.selectionFile cfg.features;
         # Nova's Hyprland rules, which a system module can't load into the
         # user's Hyprland config: `require("/etc/xdg/nova/hyprland.lua")`
         # in hyprland.lua (`nova doctor` says so while they're missing).
@@ -108,7 +108,10 @@ in
           && !(config.services.pipewire.enable && config.services.pipewire.pulse.enable)
           && !config.services.pulseaudio.enable
         )
-        "programs.nova: the sound feature reads volume and devices from a PulseAudio socket, and none is set up. Set services.pipewire.enable and services.pipewire.pulse.enable, or turn the feature off (programs.nova.features.sound.enable = false).";
+        "programs.nova: the sound feature reads volume and devices from a PulseAudio socket, and none is set up. Set services.pipewire.enable and services.pipewire.pulse.enable, or turn the feature off (programs.nova.features.sound.enable = false)."
+      ++
+        lib.optional (cfg.ui == "quickshell")
+          "programs.nova.ui = \"quickshell\": Nova no longer has the Quickshell UI, so it runs nova-ui. Remove the option.";
 
     systemd.packages = [ cfg.package ];
     # NixOS ignores [Install] in packaged units; this is the unit's WantedBy=.

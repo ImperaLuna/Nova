@@ -18,7 +18,7 @@ use crate::{
 use nova_apps::AppIndex;
 use nova_carrier::Topic;
 use nova_compositor::Compositor;
-use nova_daemon_info::{FeatureState, UiProgram};
+use nova_daemon_info::FeatureState;
 use nova_hub::{ClientId, Hub};
 use nova_icons::Icons;
 use nova_log::Logger;
@@ -47,10 +47,6 @@ pub struct Context {
     pub compositor: Option<Arc<Compositor>>,
     /// The installed apps, known while a module that names them runs.
     pub apps: Arc<AppIndex>,
-    /// The UI program novad runs (or would run, without its UI), fixed for
-    /// its life. Some features do work for the GPUI UI that Quickshell's
-    /// shell does itself (the sound feature's Bluetooth follow).
-    pub ui: UiProgram,
 }
 
 /// novad, as the app its modules run in.

@@ -27,20 +27,14 @@ struct TestDaemon {
     daemon: Arc<Daemon>,
 }
 
-/// How a test's novad runs `program` as its UI, with `quickshell` as its
-/// Quickshell. Tests get no Wayland session, so the supervisor never takes
-/// the compositor for gone.
-fn ui_settings(program: Program, quickshell: PathBuf) -> UiSettings {
+/// How a test's novad runs `program` as its UI. Tests get no Wayland
+/// session, so the supervisor never takes the compositor for gone.
+fn ui_settings(program: PathBuf) -> UiSettings {
     UiSettings {
-        program,
-        quickshell,
-        ui_dir: PathBuf::from("ui"),
+        program: Some(program),
         socket: PathBuf::from("unused.sock"),
         path_var: std::env::var("PATH").unwrap_or_default(),
         wayland_socket: None,
-        egl_vendor: None,
-        render_loop: None,
-        icon_theme: "hicolor".into(),
     }
 }
 
@@ -137,8 +131,7 @@ impl TestDaemon {
         };
         let compositor = compositor(&dir)
             .map(|backend| nova_compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
-        let in_use = |picked| ui.as_ref().map_or(picked, |ui: &UiSettings| ui.program.kind());
-        let settings = Settings::load(&sources, &hub, &logger, compositor.clone(), in_use);
+        let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
         let wanted = features::needs_ui(&sources.manifests, &settings.features);
         let ui = ui.map(|ui_settings| Supervisor::start(ui_settings, wanted, Arc::clone(&logger)));
         let daemon = Arc::new(Daemon {

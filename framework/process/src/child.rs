@@ -262,6 +262,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_command_that_hangs_is_killed() {
+        let mut command = Command::new("sleep");
+        command.arg("30");
+        let started = Instant::now();
+        let error = stdout_within(command, Duration::from_millis(200)).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_command_that_closes_its_output_but_hangs_is_killed() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "exec >&-; sleep 30"]);
+        let started = Instant::now();
+        let error = stdout_within(command, Duration::from_millis(200)).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_quick_command_gives_its_output() {
+        let mut command = Command::new("echo");
+        command.arg("hello");
+        assert_eq!(stdout_within(command, Duration::from_secs(5)).unwrap(), b"hello\n");
+    }
+
+    #[test]
     fn waiting_gives_up_at_the_deadline_and_leaves_the_child_running() {
         let mut child = Command::new("sleep").arg("30").spawn().unwrap();
         assert!(wait_within(&mut child, Duration::from_millis(50)).unwrap().is_none());

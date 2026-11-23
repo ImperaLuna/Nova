@@ -11,7 +11,6 @@ use nova_cli::client::{Client, RESTART_COMMAND, Unreachable};
 use nova_daemon_info::{FeatureState, FeatureStatus};
 use nova_desktop_info::HYPRLAND_LOCK_RESTORE;
 use nova_features::Gpu;
-use nova_quickshell::Range;
 use nova_tray_api::TrayItem;
 use novad::checks;
 use std::fmt;
@@ -19,8 +18,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-/// Qt's render loop variable, and the value that keeps the UI's memory down
-/// on NVIDIA's driver.
 const SETUP_COMMAND: &str = "nova setup";
 /// Where Nova's NixOS module puts its Hyprland rules (`packaging/nix/nixos.nix`).
 const NIXOS_HYPRLAND_RULES: &str = "/etc/xdg/nova/hyprland.lua";
@@ -77,7 +74,8 @@ pub enum Daemon {
 pub struct Facts {
     pub host: Host,
     pub compositor: Option<&'static str>,
-    pub quickshell: Result<String, String>,
+    /// Where `nova-ui` is on the session's `PATH`.
+    pub ui: Option<PathBuf>,
     pub daemon: Daemon,
     /// config.toml's theme problems, or why it doesn't parse.
     pub config: Result<Vec<String>, String>,
@@ -98,11 +96,10 @@ impl Facts {
     pub fn gather(socket: &Path) -> Self {
         let path_var = checks::session_path();
         let config_dir = nova_paths::config_dir();
-        let quickshell = checks::default_quickshell(&path_var);
         Self {
             host: Host::detect(Path::new("/")),
             compositor: checks::compositor(|name| std::env::var_os(name)),
-            quickshell: checks::read_quickshell_version(&quickshell, &path_var),
+            ui: nova_paths::find_program(checks::GPUI_UI, &path_var),
             daemon: reach(socket),
             config: checks::read_config(&config_dir.join("config.toml"), &checks::default_themes_dir()),
             features: features(&nova_features::default_dir(), &nova_paths::config_files("features.toml"), &path_var),
@@ -113,7 +110,7 @@ impl Facts {
     }
 }
 
-/// Asks fontconfig, as both UIs do, which families it draws for the look's
+/// Asks fontconfig, as the UI does, which families it draws for the look's
 /// fonts ([`nova_theme_info::FONTS`]).
 fn match_fonts(path_var: &str) -> Result<Vec<(&'static str, String)>, String> {
     nova_theme_info::FONTS
@@ -161,7 +158,7 @@ pub fn lines(facts: &Facts) -> Vec<Line> {
     let mut lines = vec![
         system(&facts.host),
         compositor(facts.compositor),
-        quickshell(&facts.quickshell, &Range::supported()),
+        ui(facts.ui.as_deref()),
         daemon(&facts.daemon),
         config(&facts.config),
         fonts(&facts.fonts, &facts.host.distro),
@@ -227,13 +224,11 @@ fn compositor(name: Option<&str>) -> Line {
     }
 }
 
-fn quickshell(version: &Result<String, String>, range: &Range) -> Line {
-    match version {
-        Err(problem) => Line::new(Level::Fail, "quickshell", format!("{problem}; install it with `{SETUP_COMMAND}`")),
-        Ok(version) => match range.problem(version) {
-            Some(problem) => Line::new(Level::Fail, "quickshell", problem),
-            None => Line::new(Level::Ok, "quickshell", format!("{version} (tested: {range})")),
-        },
+/// novad runs `nova-ui` from `PATH`: without it, Nova has no UI.
+fn ui(program: Option<&Path>) -> Line {
+    match program {
+        Some(program) => Line::new(Level::Ok, "ui", program.display().to_string()),
+        None => Line::new(Level::Fail, "ui", format!("{} isn't on PATH, so Nova has no UI", checks::GPUI_UI)),
     }
 }
 
@@ -442,7 +437,7 @@ mod tests {
         Facts {
             host: host(Distro::Arch, vec![Gpu::Amd], false),
             compositor: Some("niri"),
-            quickshell: Ok("0.3.2".into()),
+            ui: Some(PathBuf::from("/usr/bin/nova-ui")),
             daemon: Daemon::Running { version: env!("CARGO_PKG_VERSION").into(), tray: vec![] },
             config: Ok(vec![]),
             features: Ok(vec![
@@ -517,13 +512,13 @@ mod tests {
 
     #[test]
     fn a_healthy_machine_is_all_ok() {
-        let (range, version) = (Range::supported(), env!("CARGO_PKG_VERSION"));
+        let version = env!("CARGO_PKG_VERSION");
         assert_eq!(
             rendered(&healthy()),
             format!(
                 "ok    system      Arch, AMD\n\
                  ok    compositor  niri\n\
-                 ok    quickshell  0.3.2 (tested: {range})\n\
+                 ok    ui          /usr/bin/nova-ui\n\
                  ok    novad       running {version}\n\
                  ok    config      config.toml reads fine\n\
                  ok    fonts       Inter, JetBrains Mono, Instrument Serif\n\
@@ -558,14 +553,9 @@ mod tests {
     }
 
     #[test]
-    fn quickshell_outside_the_range_or_missing_fails() {
-        let range = Range::supported();
-        assert_eq!(quickshell(&Ok("0.2.0".into()), &range).level, Level::Fail);
-        assert_eq!(quickshell(&Ok("0.4.0".into()), &range).level, Level::Fail);
-        assert_eq!(quickshell(&Ok("0.3.9".into()), &range).level, Level::Ok);
-        let missing = quickshell(&Err("couldn't run quickshell --version: not found".into()), &range);
-        assert_eq!(missing.level, Level::Fail);
-        assert!(missing.detail.contains("nova setup"), "{missing}");
+    fn a_missing_nova_ui_fails() {
+        let missing = rendered(&Facts { ui: None, ..healthy() });
+        assert!(missing.contains("FAIL  ui          nova-ui isn't on PATH, so Nova has no UI"), "{missing}");
     }
 
     #[test]

@@ -335,14 +335,15 @@ pub fn load_all(root: &Path) -> Result<Vec<Manifest>, Error> {
 }
 
 /// The user's choices from `features.toml`: `enabled = [...]`, `disabled =
-/// [...]`, a mode for a feature that has modes under `[modes]`, and the
-/// program that draws them all (`ui = "gpui"`; Quickshell unless set).
+/// [...]`, and a mode for a feature that has modes under `[modes]`. `ui`
+/// is from when two programs could draw the UI: `nova-ui` is the only one
+/// now, so it only warns when it names another.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
-    /// The UI program's name ([`UiProgram::name`]). Kept as written, so a
-    /// name this novad doesn't know is a warning ([`Selection::unknown_ui`])
-    /// rather than a file that doesn't load.
+    /// The UI program's name ([`UiProgram::name`]). Kept as written, so any
+    /// other name is a warning ([`Selection::ui_problem`]) rather than a
+    /// file that doesn't load. Files from older Nix modules say `gpui`.
     #[serde(default)]
     pub ui: Option<String>,
     #[serde(default)]
@@ -359,14 +360,18 @@ impl Selection {
         toml::from_str(text)
     }
 
-    /// The program that draws the UI: the one `ui` names, else Quickshell.
-    pub fn ui_program(&self) -> UiProgram {
-        self.ui.as_deref().and_then(UiProgram::named).unwrap_or_default()
-    }
-
-    /// `ui`, when it names no program, for `nova doctor` and the log.
-    pub fn unknown_ui(&self) -> Option<&str> {
-        self.ui.as_deref().filter(|name| UiProgram::named(name).is_none())
+    /// What is wrong with `ui`, when it picks anything but `nova-ui`, for
+    /// the log. `nova-ui` runs either way.
+    pub fn ui_problem(&self) -> Option<String> {
+        let name = self.ui.as_deref()?;
+        match UiProgram::named(name) {
+            Some(UiProgram::Gpui) => None,
+            Some(UiProgram::Quickshell) => Some(
+                "features.toml picks the Quickshell UI, which Nova no longer has, so nova-ui runs: remove `ui` there"
+                    .into(),
+            ),
+            None => Some(format!("features.toml picks a \"{name}\" UI, which Nova doesn't have, so nova-ui runs")),
+        }
     }
 
     pub fn is_on(&self, manifest: &Manifest) -> bool {
@@ -423,16 +428,14 @@ mod tests {
     "#;
 
     #[test]
-    fn the_ui_is_quickshell_unless_a_known_program_is_picked() {
-        let ui = |text: &str| {
-            let selection = Selection::parse(text).unwrap();
-            (selection.ui_program(), selection.unknown_ui().map(str::to_owned))
-        };
-        assert_eq!(ui(""), (UiProgram::Quickshell, None));
-        assert_eq!(ui("ui = \"quickshell\""), (UiProgram::Quickshell, None));
-        assert_eq!(ui("ui = \"gpui\"\ndisabled = [\"bar\"]"), (UiProgram::Gpui, None));
+    fn a_ui_other_than_nova_ui_only_warns() {
+        let problem = |text: &str| Selection::parse(text).unwrap().ui_problem();
+        assert_eq!(problem(""), None);
+        // What older Nix modules wrote.
+        assert_eq!(problem("ui = \"gpui\"\ndisabled = [\"bar\"]"), None);
+        assert!(problem("ui = \"quickshell\"").is_some_and(|problem| problem.contains("no longer")));
         // A name from a newer Nova (or a typo) still loads the file.
-        assert_eq!(ui("ui = \"GPUI\""), (UiProgram::Quickshell, Some("GPUI".into())));
+        assert!(problem("ui = \"GPUI\"").is_some_and(|problem| problem.contains("\"GPUI\"")));
     }
 
     #[test]

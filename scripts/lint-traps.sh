@@ -27,7 +27,7 @@ report() {
 }
 
 # Every text file there, since some scripts have no .sh (scripts/desktop).
-mapfile -t pipefail_scripts < <(grep -rlIE 'set -[a-z]*o pipefail' scripts e2e packaging 2>/dev/null || true)
+mapfile -t pipefail_scripts < <(grep -rlIE 'set -[a-z]*o pipefail' scripts packaging 2>/dev/null || true)
 if ((${#pipefail_scripts[@]})); then
   report "grep -q reading a pipe under pipefail" "use grep ... >/dev/null" \
     "$(grep -HnE '\|[[:space:]]*grep([[:space:]]+-[a-zA-Z-]+)*[[:space:]]+(-[a-zA-Z]*q[a-zA-Z]*|--quiet)([[:space:]]|$)' "${pipefail_scripts[@]}" || true)"

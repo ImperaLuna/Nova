@@ -61,19 +61,11 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - Memory target: 250 MB Pss per monitor, a goal rather than a hard limit.
   Unload what isn't visible (Loader `active`), set `sourceSize` on images,
   don't make per-screen copies of what one screen needs.
-- `packaging/quickshell.toml` is the tested Quickshell range (no pin, no
-  fork); raise `max` only after testing the newer release (the "Newest
-  Quickshell" workflow, `just newest-quickshell`). Check Quickshell
-  APIs in `docs/quickshell` (`just docs`), not from memory.
-
-- The UI is moving from Quickshell to GPUI (IMP-368). Until the switch
-  both are on main: the QML shell under `ui/`, which stays the default and
-  must keep working, and `nova-ui`, the GPUI program (`app-ui/`), which
-  shows only what has been ported. `ui = "gpui"` in `features.toml` (Nix:
-  `programs.nova.ui`) makes novad run `nova-ui` after a restart; an unknown
-  name or a missing `nova-ui` runs Quickshell with a warning. The GPUI side
-  has no UI test suite: a change to it is shown with screenshots or a
-  recording.
+- The UI is `nova-ui`, the GPUI program (`app-ui/`). novad runs it from
+  `PATH` (or `nova daemon --gpui-ui <path>`) and restarts it with a backoff
+  when it exits or is missing. The QML under `ui/` no longer runs and is
+  being removed (IMP-416): change nothing there. The UI side has no UI test
+  suite: a change to it is shown with screenshots or a recording.
 - A feature's ui reads novad through `nova-ui-client`
   (`framework-ui/client`, whose `lib.rs` shows each call), with its api
   crate's types: `Live::follow` for a topic's latest state as an entity its
@@ -647,9 +639,9 @@ same lints and limits, so both repos read the same.
 
 - Event-driven, no polling loops: novad pushes changes, and QML binds to them.
 - Measure, don't guess: a change that could affect memory or frame time
-  states its before/after Pss (from `just e2e`) in the PR, and one that
-  could affect animation smoothness its dropped frames from `just frames`
-  on real hardware.
+  states its before/after Pss (`nova status`) in the PR, and one that
+  could affect animation smoothness its late frames from `nova-ui
+  --frames` on real hardware.
 - Animations and shaders run only while visible: `running` checks the
   item's own `visible` and `opacity`, not just the state that started it.
 
@@ -658,7 +650,7 @@ same lints and limits, so both repos read the same.
 Mostly component tests (one component through its real interface, with its
 real internals) and integration tests (several together, like the CLI
 against a running novad). Unit tests only for small, tricky pure logic;
-e2e is the final check. Fake only the compositor, hardware and network,
+seeing it run is the final check. Fake only the compositor, hardware and network,
 with recorded real data, not hand-written mocks. QML tests can't load
 Quickshell's own types; e2e covers those.
 
@@ -674,8 +666,8 @@ that needs a bus starts its own (`session_bus::TestBus`).
 ## Commands
 
 Run `just` inside `nix develop` to list the recipes. CI runs the flake checks
-on every push: what `just check` runs plus the headless e2e, so locally
-`just check` and `just e2e` cover it. Before opening a PR, also run
+on every push: what `just check` runs, so locally `just check` covers it.
+Before opening a PR, also run
 `just test-sandbox`: it runs the Rust tests in CI's Nix sandbox, where a test
 that needs the network, setuid bits or a host tool fails although
 `cargo test` passes (cloud sessions can't fetch its GitHub inputs, so there CI
@@ -691,7 +683,7 @@ cores and a few GB of disk. Without a compositor `nova-ui` starts and prints
 its start line but opens no window; anything on screen is shown on the
 desktop, off the maintainer's screen like any other test run. To run it
 under a checkout's novad, pass `nova daemon --gpui-ui <path to nova-ui>`
-with `ui = "gpui"` in the features.toml it reads. By hand, as a second
+(`just run` does when `just ui-build` made one). By hand, as a second
 client of a running novad, set `NOVA_SOCKET` to novad's socket. `nova-ui
 --demo` shows test pills and panels on the stage with no feature ported, and
 `--frames` logs the frames it draws. `nova-ui
@@ -721,8 +713,8 @@ Everything a session makes for Nova on the desktop stays inside `~/Projects/Nova
 never create a folder elsewhere in `~`, such as `~/Projects/nova-imp121`, even
 when a prompt names one. Scratch output (measurements, logs, screenshots,
 scripts, audit data) goes in the git-ignored `~/Projects/Nova/.scratch/<ticket>/`
-(for example `.scratch/imp-121/`), in a cloud session's scratchpad, or in a
-worktree's ignored `e2e/out/`; never in the repo root. Anything the maintainer
+(for example `.scratch/imp-121/`) or in a cloud session's scratchpad; never in
+the repo root. Anything the maintainer
 should keep goes in the PR or an artifact, and the session deletes its
 `.scratch/<ticket>/` when its work is done. Worktrees on the desktop go in
 `~/Projects/Nova/.claude/worktrees/<branch>`. A daily timer removes worktrees whose
@@ -737,10 +729,10 @@ applies `~/nix-config` once the CI runners are idle, rolling back on failure. Ne
 `nova.service` or the live novad unless asked.
 
 Test runs on the desktop stay off the maintainer's screen. Frame captures and
-screenshots run headless (`just e2e`, or `e2e/run.sh`'s sway with grim on its
-output); never open a nested compositor window, which lands on the maintainer's workspace (on
-Hyprland it takes the screen). `just run` and `just frames` swap the real bar,
-so run them only when asked.
+screenshots run headless (a sway with `WLR_BACKENDS=headless` and grim on
+its output); never open a nested compositor window, which lands on the maintainer's workspace (on
+Hyprland it takes the screen). `just run` swaps the real bar, so run it only
+when asked.
 
 ## Review guidelines
 

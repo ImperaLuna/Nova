@@ -6,7 +6,7 @@ review_model := "gpt-6.1-sol"
 default:
     @just --list
 
-# Everything CI runs, except e2e
+# Everything CI runs
 check: fmt-check layout test-layout lint lint-nix lint-traps file-length deny test lint-qml test-qml test-install test-stack shaders-check
 
 # What scripts/stack.sh restack runs on each branch of a stack before pushing it:
@@ -123,28 +123,12 @@ shaders-check:
 test-qml:
     cd ui && QT_QPA_PLATFORM=offscreen qmltestrunner -input tests
 
-# Headless sway + Nova's daemon + UI: QML errors, connection, Pss budget, screenshot
-e2e: build
-    e2e/run.sh target/debug/nova
-
-# Nova's build and qmllint on the newest stable Quickshell release
-newest-quickshell:
-    scripts/newest-quickshell.sh
-
 build:
     cargo build --workspace
 
 # Swap your running bar for this checkout's Nova; Ctrl+C puts it back
 run: build
     scripts/run.sh target/debug/nova
-
-# Open and close a panel on this desktop and report the vblanks it misses (swaps the bar like `just run`)
-frames times="20" panel="ai-usage": build
-    scripts/frames.sh target/debug/nova {{times}} {{panel}}
-
-# Clone the source of the dev shell's Quickshell (same version) into docs/ for reading its API
-docs:
-    test -d docs/quickshell || git clone --depth 1 --branch "v$(quickshell --version | cut -d' ' -f2)" https://github.com/quickshell-mirror/quickshell docs/quickshell
 
 # Needs the Codex CLI and `codex login`; not part of the dev shell or CI.
 # Codex reviews this branch against `base` (sends the diff to OpenAI). Fetches

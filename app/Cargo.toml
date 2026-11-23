@@ -57,7 +57,6 @@
 # - nova-power
 # - nova-power-api
 # - nova-process
-# - nova-quickshell
 # - nova-recording
 # - nova-recording-api
 # - nova-resources
@@ -94,7 +93,6 @@ nova-host-info.workspace = true
 nova-daemon-info.workspace = true
 nova-features.workspace = true
 nova-paths.workspace = true
-nova-quickshell.workspace = true
 nova-base.workspace = true
 nova-inotify.workspace = true
 nova-process.workspace = true

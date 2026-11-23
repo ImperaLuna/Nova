@@ -85,12 +85,10 @@ in
   usesGpuScreenRecorder =
     gpu: ids: lib.any (id: lib.elem "gpu-screen-recorder" (nixNames manifests.${id} gpu)) ids;
 
-  # A features.toml for `switches` (programs.nova.features) and the UI
-  # program `ui` (programs.nova.ui): which features differ from their
-  # default, the mode of each that's on and has modes, and the UI program
-  # when it isn't Quickshell.
+  # A features.toml for `switches` (programs.nova.features): which features
+  # differ from their default, and the mode of each that's on and has modes.
   selectionFile =
-    ui: switches:
+    switches:
     let
       on = lib.attrNames (lib.filterAttrs (_: feature: feature.enable) switches);
       enabled = lib.attrNames (lib.filterAttrs (id: m: !isDefault m && lib.elem id on) manifests);
@@ -106,9 +104,6 @@ in
       enabled = ${builtins.toJSON enabled}
       disabled = ${builtins.toJSON disabled}
     ''
-    # Only when it isn't the default, so the file stays one an older Nova
-    # reads.
-    + lib.optionalString (ui != "quickshell") "ui = ${builtins.toJSON ui}\n"
     + ''
 
       [modes]

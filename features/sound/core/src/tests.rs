@@ -69,14 +69,9 @@ impl Fixture {
         FakePulse::start(&self.socket(), recorded(NULL_DEVICES))
     }
 
-    /// The service, following Bluetooth as it does for the GPUI UI.
     fn sound(&self) -> Arc<Sound> {
-        self.sound_following(true)
-    }
-
-    fn sound_following(&self, bluetooth: bool) -> Arc<Sound> {
         let sources = Sources { socket: Some(self.socket()) };
-        Sound::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger), bluetooth)
+        Sound::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
     /// The next sound event.
@@ -470,19 +465,6 @@ fn a_bluetooth_headset_there_from_the_start_is_left_as_the_server_chose() {
     let before = in_use(&server.listing());
     fixture.next();
     server.say_changed(1);
-    nova_test_support::settle(QUIET);
-    assert_eq!(in_use(&server.listing()), before);
-}
-
-#[test]
-fn without_the_follow_a_bluetooth_headset_is_left_alone() {
-    let fixture = Fixture::new("bluetooth-off");
-    let server = fixture.server();
-    let _sound = fixture.sound_following(false);
-    fixture.next();
-    let before = in_use(&server.listing());
-    server.change(add_headset);
-    fixture.next();
     nova_test_support::settle(QUIET);
     assert_eq!(in_use(&server.listing()), before);
 }

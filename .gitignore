@@ -1,8 +1,6 @@
 /target
 /app-ui/target
 /result*
-/e2e/out
-/docs/quickshell
 .direnv/
 .qmlls.ini
 __pycache__/

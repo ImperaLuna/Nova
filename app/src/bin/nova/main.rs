@@ -62,7 +62,7 @@ enum NovaCommand {
     /// Shows its plan and asks before changing anything. Run it again after
     /// turning a feature on. On NixOS, use the flake instead.
     Setup(setup::SetupArgs),
-    /// Check the compositor, Quickshell, novad, packages and config, and report what's wrong.
+    /// Check the compositor, the UI, novad, packages and config, and report what's wrong.
     ///
     /// Exits non-zero when a check fails; warnings alone don't.
     Doctor,

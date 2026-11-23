@@ -14,13 +14,6 @@
     # Builds the Rust dependencies as their own derivation, so a change to
     # Nova's code reuses them instead of compiling every crate again.
     crane.url = "github:ipetkov/crane";
-    # The newest stable Quickshell release, for the "Newest Quickshell"
-    # workflow, which overrides this with the newest tag it finds; the tag
-    # here is only a default. Not the Quickshell Nova ships: that is nixpkgs'.
-    quickshell-newest = {
-      url = "git+https://github.com/quickshell-mirror/quickshell?ref=refs/tags/v0.3.2&shallow=1";
-      flake = false;
-    };
     # The standalone Nova Files app, which the `nova-files` feature installs.
     # Its own nixpkgs, not Nova's: following Nova's would change its store
     # paths and miss its binary cache, so every user would build GPUI.
@@ -33,7 +26,6 @@
       nixpkgs,
       advisory-db,
       crane,
-      quickshell-newest,
       nova-files,
     }:
     let
@@ -122,41 +114,6 @@
           ];
         };
 
-      # The Quickshell releases Nova is tested with. flake.lock pins one exact
-      # nixpkgs Quickshell; the quickshell-version check keeps it in this range.
-      quickshellRange = builtins.fromTOML (builtins.readFile ./packaging/quickshell.toml);
-      # Whether Quickshell `version` is in that range. An `x` in max matches
-      # any number there (see the range file).
-      inQuickshellRange =
-        version:
-        let
-          inherit (quickshellRange) min max;
-          comparableMax = builtins.replaceStrings [ "x" ] [ "999999" ] max;
-        in
-        nixpkgs.lib.versionAtLeast version min && nixpkgs.lib.versionAtLeast comparableMax version;
-
-      # pkgs with Quickshell swapped for the quickshell-newest release, built
-      # with nixpkgs' recipe. The same release as nixpkgs' keeps nixpkgs'
-      # build, so the newest-Quickshell checks reuse CI's cached ones.
-      withNewestQuickshell =
-        pkgs:
-        pkgs.extend (
-          _: prev: {
-            quickshell =
-              let
-                cmake = builtins.readFile "${quickshell-newest}/CMakeLists.txt";
-                version = builtins.head (builtins.match ".*project\\(quickshell VERSION \"([^\"]+)\".*" cmake);
-              in
-              if version == prev.quickshell.version then
-                prev.quickshell
-              else
-                prev.quickshell.overrideAttrs {
-                  inherit version;
-                  src = quickshell-newest;
-                };
-          }
-        );
-
       inherit ((builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package) version;
 
       # The Rust workspace on pkgs, built with crane: cargoArtifacts holds the
@@ -177,19 +134,6 @@
           cargoArtifacts = craneLib.buildDepsOnly common;
         };
 
-      # What the headless e2e reads from the checkout: its script, the UI it
-      # runs and the feature manifests.
-      e2eSrc =
-        lib:
-        lib.fileset.toSource {
-          root = ./.;
-          fileset = lib.fileset.unions [
-            ./e2e/run.sh
-            (daemonFeatures lib)
-            ./ui
-          ];
-        };
-
       # share/nova under `prefix`: what nova finds next to its binary
       # (nova-paths). Copied in after the Rust build, so UI edits don't
       # recompile nova.
@@ -206,18 +150,13 @@
       '';
 
       # The nova binary (CLI and daemon), feature manifests, the QML UI and
-      # the systemd unit, on pkgs' Quickshell.
+      # the systemd unit.
       novaFor =
         pkgs:
         let
-          nova-quickshell = pkgs.callPackage ./packaging/nix/nova-quickshell.nix { };
           inherit (rustFor pkgs) craneLib common cargoArtifacts;
         in
         rec {
-          inherit nova-quickshell;
-          # Compiled in, so `nova` finds its UI with or without systemd. The
-          # tests check builds with it too, so it reuses this build's crates.
-          novaEnv.NOVA_QUICKSHELL_LAUNCHER = pkgs.lib.getExe nova-quickshell;
           # From the Rust sources alone, so a UI edit doesn't recompile it. The
           # `tests` check runs `cargo test`, so the checks that need this
           # build don't wait for it.
@@ -226,7 +165,6 @@
             // {
               pname = "nova-bin";
               inherit cargoArtifacts;
-              env = novaEnv;
               doCheck = false;
             }
           );
@@ -268,9 +206,7 @@
 
       # The release archive install.sh fetches on other distros:
       # nova-<cpu>-linux.tar.gz with bin/nova (static, musl) and share/nova,
-      # laid out like the prefix it unpacks into. Built without
-      # NOVA_QUICKSHELL_LAUNCHER: there novad runs the distro's Quickshell from PATH.
-      # Tests ran in the regular build; this one skips them.
+      # laid out like the prefix it unpacks into. Tests ran in the regular build; this one skips them.
       distFor =
         pkgs:
         let
@@ -326,33 +262,14 @@
       packages = forAllSystems (pkgs: {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
-        inherit (novaFor pkgs) nova nova-quickshell;
-        # The GPUI program novad runs when features.toml says `ui = "gpui"`.
+        inherit (novaFor pkgs) nova;
+        # The UI: the GPUI program novad runs.
         inherit (uiFor pkgs) nova-ui;
         # What the `nova-files` feature installs.
         nova-files = nova-files.packages.${pkgs.stdenv.hostPlatform.system}.default;
         # .github/workflows/release.yml attaches this to a GitHub release.
         dist = distFor pkgs;
       });
-
-      # Nova on the newest stable Quickshell release instead of nixpkgs': its
-      # build and qmllint, for .github/workflows/newest-quickshell.yml.
-      # Not checks, so `nix flake check` doesn't build a second Quickshell.
-      legacyPackages = forAllSystems (
-        pkgs:
-        let
-          newest = withNewestQuickshell pkgs;
-          inherit (novaFor newest) nova;
-        in
-        {
-          newest-quickshell = {
-            inherit (newest) quickshell;
-            inherit nova;
-            qmllint = qmllintFor newest;
-            inRange = inQuickshellRange newest.quickshell.version;
-          };
-        }
-      );
 
       checks = forAllSystems (
         pkgs:
@@ -392,7 +309,6 @@
               common
               // {
                 inherit cargoArtifacts;
-                env = (novaFor pkgs).novaEnv;
                 # setpriv, for the launcher test's app that dies with its parent;
                 # dbus-daemon, for the tray's and notifications' private test buses.
                 nativeBuildInputs = [
@@ -461,7 +377,8 @@
                       services.xserver = { inherit videoDrivers; };
                       programs.nova = {
                         enable = true;
-                        # The GPUI program as the UI, which installs it.
+                        # What RyzenShine's nix-config still sets: it
+                        # must keep evaluating.
                         ui = "gpui";
                         # Every feature on, each with modes in its last mode
                         # (none defaults to it).
@@ -485,7 +402,8 @@
                   selection = builtins.fromTOML config.environment.etc."xdg/nova/features.toml".text;
                 in
                 assert pkgs.lib.all (features.isOn selection) (builtins.attrValues features.manifests);
-                assert selection.ui == "gpui";
+                assert !(selection ? ui);
+                assert !(pkgs.lib.any (pkgs.lib.hasInfix "quickshell") config.warnings);
                 assert pkgs.lib.elem config.programs.nova.uiPackage config.environment.systemPackages;
                 # The look's fonts, on by default.
                 assert pkgs.lib.all (font: pkgs.lib.elem font config.fonts.packages) (
@@ -584,7 +502,6 @@
                 root = ./.;
                 fileset = pkgs.lib.fileset.unions [
                   ./scripts
-                  ./e2e
                   ./packaging
                   ./app/src
                   ./framework
@@ -690,60 +607,6 @@
                 touch $out
               '';
 
-          # The headless e2e (e2e/run.sh: sway, two monitors, QML errors,
-          # Pss) against this build. The run itself never fails, so its logs
-          # and screenshot are there to look at when the check does:
-          # .#checks.<system>.e2e-headless.run
-          e2e-headless =
-            let
-              run =
-                pkgs.runCommand "nova-e2e-headless-run"
-                  {
-                    nativeBuildInputs = [
-                      pkgs.sway
-                      pkgs.grim
-                      pkgs.awww # so the wallpaper feature, and its carousel, loads
-                      pkgs.jq
-                      pkgs.dbus
-                      (import ./e2e/player.nix { inherit pkgs; })
-                      self.packages.${pkgs.stdenv.hostPlatform.system}.nova-quickshell
-                    ];
-                    FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
-                  }
-                  ''
-                    cp -r ${e2eSrc pkgs.lib}/. . && chmod -R u+w .
-                    patchShebangs e2e
-                    export HOME=$TMPDIR
-                    e2e/run.sh ${
-                      self.packages.${pkgs.stdenv.hostPlatform.system}.nova
-                    }/bin/nova >e2e.log 2>&1 || touch failed
-                    mkdir -p $out
-                    cp -r e2e/out/. e2e.log $out/
-                    if [[ -e failed ]]; then touch $out/failed; fi
-                  '';
-            in
-            pkgs.runCommand "nova-e2e-headless" { passthru = { inherit run; }; } ''
-              cat ${run}/e2e.log
-              [[ ! -e ${run}/failed ]]
-              touch $out
-            '';
-
-          quickshell-version =
-            let
-              inherit (pkgs.quickshell) version;
-              inherit (quickshellRange) min max;
-            in
-            pkgs.runCommand "nova-quickshell-version" { } (
-              if inQuickshellRange version then
-                "touch $out"
-              else
-                ''
-                  echo "nixpkgs' Quickshell ${version} is outside the range Nova is tested with (${min} to ${max})." >&2
-                  echo "Test Nova on it, then update packaging/quickshell.toml." >&2
-                  exit 1
-                ''
-            );
-
           qml-tests =
             pkgs.runCommand "nova-qml-tests"
               {
@@ -777,15 +640,9 @@
             pkgs.rustfmt
             pkgs.rust-analyzer
             pkgs.quickshell
-            # So dev runs show the UI as NovaUI too; the daemon finds it on PATH.
-            self.packages.${pkgs.stdenv.hostPlatform.system}.nova-quickshell
             pkgs.qt6.qtdeclarative # qmllint, qmlls, qmlformat, qmltestrunner
             pkgs.qt6.qtshadertools # qsb, for scripts/shaders.sh
-            pkgs.sway # headless compositor for e2e
-            pkgs.grim
-            pkgs.awww # e2e: the wallpaper feature (and its carousel) needs it
             pkgs.dbus # dbus-daemon, for the tray's and notifications' tests
-            (import ./e2e/player.nix { inherit pkgs; }) # nova-test-player, for e2e
             pkgs.cargo-insta # `cargo insta review` for snapshot tests
             pkgs.cargo-deny
             pkgs.nixfmt

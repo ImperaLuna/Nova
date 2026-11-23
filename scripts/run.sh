@@ -163,7 +163,10 @@ done
 for pid in "${!matched[@]}"; do kill -KILL "$pid" 2>/dev/null || true; done
 
 echo "run: starting this checkout's Nova (logs below, Ctrl+C to stop)"
+# This checkout's nova-ui when `just ui-build` made one, else nova-ui on PATH.
+ui=()
+[[ -x app-ui/target/debug/nova-ui ]] && ui=(--gpui-ui app-ui/target/debug/nova-ui)
 # argv[0] Nova, as the systemd unit and `nova` start it.
-(exec -a Nova "$nova" daemon --ui ui --features-dir features --log-dir "$log_dir" 9>&-) &
+(exec -a Nova "$nova" daemon "${ui[@]}" --features-dir features --log-dir "$log_dir" 9>&-) &
 dev_pid=$!
 wait "$dev_pid" || true

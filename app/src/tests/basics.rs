@@ -202,67 +202,51 @@ fn status_reports_the_daemon_ui_and_features() {
 #[test]
 fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     let scripts = nova_test_support::TempDir::new("ui");
-    let fake_ui = write_program(&scripts, "quickshell", "echo '  WARN qml: about to fail'\nexit 3");
+    let script = "echo \"novad is at $NOVA_SOCKET\"\necho '  WARN about to fail'\nexit 3";
+    let fake_ui = write_program(&scripts, "nova-ui", script);
 
-    let settings = ui_settings(Program::Quickshell, fake_ui);
-    let novad = TestDaemon::start("crash", Some(settings));
+    let novad = TestDaemon::start("crash", Some(ui_settings(fake_ui)));
     let mut client = novad.connect();
     let status = wait_for_status(&mut client, |status| status.ui.restarts >= 1);
+    assert_eq!((status.ui.program, status.quickshell), (UiProgram::Gpui, None));
 
     let crash_log = PathBuf::from(&status.ui.last_crash.unwrap().log);
     let crash_entries = read_entries(&crash_log);
-    let ui_line = crash_entries.iter().find(|entry| entry.source == UI_LOG_SOURCE).unwrap();
-    assert_eq!((ui_line.level, ui_line.message.as_str()), (LogLevel::Warn, "qml: about to fail"));
+    let ui_lines: Vec<_> = crash_entries.iter().filter(|entry| entry.source == UI_LOG_SOURCE).collect();
+    assert_eq!(ui_lines[0].message, "novad is at unused.sock");
+    assert_eq!((ui_lines[1].level, ui_lines[1].message.as_str()), (LogLevel::Warn, "about to fail"));
     assert!(crash_entries.iter().any(|entry| entry.message.contains("exit code 3")));
     let full_log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
     assert!(full_log.iter().any(|entry| entry.message.contains("failed to load")));
 }
 
-/// The GPUI program gets what Quickshell gets: the socket, its lines in the
-/// log, a crash snapshot and a restart.
+/// A missing `nova-ui` is no reason to run anything else: an error in the
+/// log, once, and another try after each backoff.
 #[test]
-fn the_gpui_program_is_supervised_like_quickshell() {
-    let scripts = nova_test_support::TempDir::new("gpui-ui");
-    let fake_ui = write_program(&scripts, "nova-ui", "echo \"novad is at $NOVA_SOCKET\"\nexit 3");
-
-    let settings = ui_settings(Program::Gpui(fake_ui), PathBuf::from("no-quickshell"));
-    let novad = TestDaemon::start("gpui-crash", Some(settings));
-    let mut client = novad.connect();
-    let status = wait_for_status(&mut client, |status| status.ui.restarts >= 1);
-    assert_eq!(status.ui.program, UiProgram::Gpui);
-    assert_eq!(status.quickshell, None);
-
-    let crash_entries = read_entries(&PathBuf::from(&status.ui.last_crash.unwrap().log));
-    let ui_line = crash_entries.iter().find(|entry| entry.source == UI_LOG_SOURCE).unwrap();
-    assert_eq!(ui_line.message, "novad is at unused.sock");
-    assert!(crash_entries.iter().any(|entry| entry.message.contains("exit code 3")));
-}
-
-#[test]
-fn a_quickshell_outside_the_tested_range_is_warned_about() {
-    let scripts = nova_test_support::TempDir::new("old-quickshell");
-    let fake_ui = scripts.join("quickshell");
-    let script = "case \"$1\" in --version) echo 'Quickshell 0.1.0 (revision test)' ;; *) exec sleep 60 ;; esac";
-    write_program(&scripts, "quickshell", script);
-
-    let settings = ui_settings(Program::Quickshell, fake_ui);
-    let novad = TestDaemon::start("quickshell-range", Some(settings));
-    let status = wait_for_status(&mut novad.connect(), |status| status.ui.pid.is_some());
-    assert_eq!(status.quickshell.as_deref(), Some("0.1.0"));
-    let log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
-    let warning = log.iter().find(|entry| entry.level == LogLevel::Warn && entry.message.contains("0.1.0"));
-    assert!(warning.is_some_and(|entry| entry.message.contains("older than Nova is tested with")), "{log:?}");
+fn a_missing_ui_is_an_error_and_tried_again() {
+    let scripts = nova_test_support::TempDir::new("no-ui");
+    let novad = TestDaemon::start("no-ui", Some(ui_settings(scripts.join("nova-ui"))));
+    let log = || read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
+    let failed = |entry: &LogEntry| entry.level == LogLevel::Error && entry.message.contains("didn't start");
+    nova_test_support::eventually(Duration::from_secs(10), "the error", || log().iter().any(failed).then_some(()));
+    // Past the first backoff (1 s): tried again, and not logged again.
+    nova_test_support::settle(Duration::from_millis(1500));
+    let status = wait_for_status(&mut novad.connect(), |status| status.ui.state == UiState::Restarting);
+    assert_eq!((status.ui.pid, status.ui.restarts, status.ui.last_crash), (None, 0, None), "it never ran");
+    let errors: Vec<LogEntry> = log().into_iter().filter(failed).collect();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].message.contains("nova-ui"), "{errors:?}");
     novad.daemon.ui.as_ref().unwrap().stop();
 }
 
-/// With every feature off, novad runs without Quickshell; turning on one
+/// With every feature off, novad runs without its UI; turning on one
 /// that draws (the bar) starts it, and turning it off again stops it without
 /// counting a crash.
 #[test]
 fn the_ui_runs_only_while_a_feature_with_a_ui_is_on() {
     let scripts = nova_test_support::TempDir::new("ui-on-demand");
-    let fake_ui = write_program(&scripts, "quickshell", "exec sleep 60");
-    let settings = ui_settings(Program::Quickshell, fake_ui);
+    let fake_ui = write_program(&scripts, "nova-ui", "exec sleep 60");
+    let settings = ui_settings(fake_ui);
     let ids: Vec<String> = nova_features::load_all(&repo_features()).unwrap().into_iter().map(|m| m.id).collect();
     let selection = |on: &[&str]| {
         let off: Vec<String> = ids.iter().filter(|id| !on.contains(&id.as_str())).map(|id| format!("{id:?}")).collect();

@@ -1,5 +1,5 @@
 # Nova's daemon (`nova daemon`) as a systemd user service. The daemon runs
-# the Quickshell UI as its child and restarts it when it crashes; systemd
+# the UI (`nova-ui`) as its child and restarts it when it crashes; systemd
 # restarts the daemon.
 #
 # Placeholders are filled at install time (the Nix package, `nova setup`):
