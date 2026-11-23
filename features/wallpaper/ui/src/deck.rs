@@ -242,6 +242,18 @@ impl Deck {
         true
     }
 
+    /// `done` were set: the screens they name show them now.
+    pub fn shown_now(&mut self, done: &[Request]) {
+        for request in done {
+            match &request.output {
+                Some(name) => {
+                    self.showing.insert(name.clone(), request.path.clone());
+                }
+                None => self.showing.values_mut().for_each(|path| path.clone_from(&request.path)),
+            }
+        }
+    }
+
     /// The screens other than the ones the deck picks for that pick the
     /// image `path`: their names show on its card.
     pub fn marks(&self, path: &str) -> Vec<&str> {
@@ -357,6 +369,18 @@ mod tests {
         assert!(!deck.choose_for(Some("DP-1".into())));
         assert_eq!(next_screen(Some("DP-2"), &names(&["DP-1", "DP-2"]), 1), None);
         assert_eq!(next_screen(None, &names(&["DP-1", "DP-2"]), -1).as_deref(), Some("DP-2"));
+    }
+
+    #[test]
+    fn what_was_set_before_a_refusal_shows_now() {
+        let mut deck = deck(&["DP-1", "DP-2"], &["/w/a", "/w/b"], everywhere("/w/a"));
+        deck.choose_for(Some("DP-1".into()));
+        deck.step(1);
+        deck.shown_now(&[Request { path: "/w/b".into(), output: Some("DP-1".into()) }]);
+        assert_eq!(deck.showing, by_screen(&[("DP-1", "/w/b"), ("DP-2", "/w/a")]));
+        assert!(requests(&deck.kept(), &deck.showing).is_empty());
+        deck.shown_now(&[Request { path: "/w/a".into(), output: None }]);
+        assert_eq!(deck.showing, by_screen(&[("DP-1", "/w/a"), ("DP-2", "/w/a")]));
     }
 
     #[test]

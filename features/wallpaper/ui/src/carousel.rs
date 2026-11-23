@@ -149,10 +149,12 @@ impl Carousel {
         // Kept as it closes, so a picked deck doesn't come back as it
         // fades; gone once it has.
         self.publish(cx);
+        let opening = self.openings;
         cx.spawn(async move |carousel, cx| {
             cx.background_executor().timer(DURATION_PANEL + DURATION_FADE).await;
             let _ = carousel.update(cx, |carousel, cx| {
-                if !carousel.was_open {
+                // Not opened (and closed again) since.
+                if !carousel.was_open && carousel.openings == opening {
                     carousel.faded(cx);
                 }
             });
@@ -262,28 +264,33 @@ impl Carousel {
         self.handing_over = true;
         self.deck_shown.set_target(0.0, Instant::now());
         let opening = self.openings;
-        let calls: Vec<_> = asked.into_iter().map(|Request { path, output }| (path, output)).collect();
         self.asking = Some(cx.spawn(async move |carousel, cx| {
+            let mut done = Vec::new();
             let mut failed = None;
-            for (path, output) in calls {
-                let answer = cx.update(|cx| Daemon::call::<()>(Command::SetWallpaper { path, output }, cx));
+            for request in asked {
+                let command = Command::SetWallpaper { path: request.path.clone(), output: request.output.clone() };
+                let answer = cx.update(|cx| Daemon::call::<()>(command, cx));
                 if let Err(refusal) = answer.await {
                     failed = Some(said(refusal));
                     break;
                 }
+                done.push(request);
             }
-            let _ = carousel.update(cx, |carousel, cx| carousel.applied(opening, failed, cx));
+            let _ = carousel.update(cx, |carousel, cx| carousel.applied(opening, &done, failed, cx));
         }));
         cx.notify();
     }
 
     /// novad's answer to the picks: closes once awww has faded them in.
-    fn applied(&mut self, opening: u64, failed: Option<String>, cx: &mut Context<Self>) {
-        // Put back with Esc since.
+    /// When one was refused, the ones `done` before it stay shown.
+    fn applied(&mut self, opening: u64, done: &[Request], failed: Option<String>, cx: &mut Context<Self>) {
+        // Opened again since. A pick already sent can't be taken back by
+        // Esc: the screens set keep it.
         if !self.handing_over || opening != self.openings {
             return;
         }
         if let Some(problem) = failed {
+            self.deck.shown_now(done);
             self.handing_over = false;
             self.deck_shown.set_target(1.0, Instant::now());
             self.problem = problem;
@@ -352,9 +359,10 @@ impl Carousel {
 
     /// The wheel: one card a notch, down or right for the next.
     pub(crate) fn scrolled(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) {
+        // Sideways only when it is all sideways, as the wheel counts it.
         let sideways = match event.delta {
-            ScrollDelta::Lines(lines) => lines.x.abs() > lines.y.abs(),
-            ScrollDelta::Pixels(pixels) => pixels.x.abs() > pixels.y.abs(),
+            ScrollDelta::Lines(lines) => lines.y == 0.0,
+            ScrollDelta::Pixels(pixels) => pixels.y == gpui::px(0.0),
         };
         let notches = i64::from(self.wheel.notches(event));
         self.step(if sideways { notches } else { -notches }, cx);

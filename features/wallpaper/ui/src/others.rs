@@ -76,6 +76,11 @@ impl Previewed {
         if !(open || ours || self.from.is_none()) {
             return;
         }
+        // Opened on another screen while the last one still fades: its
+        // windows were for the other screens of that one.
+        if !ours {
+            self.close_windows(cx);
+        }
         self.from = Some(here.to_owned());
         self.paths = paths;
         self.choosing_for = choosing_for;
@@ -96,10 +101,14 @@ impl Previewed {
         self.paths.clear();
         self.choosing_for = None;
         self.shown = false;
+        self.close_windows(cx);
+        cx.notify();
+    }
+
+    fn close_windows(&mut self, cx: &mut App) {
         for window in self.windows.drain(..) {
             let _ = window.update(cx, |_, window, _| window.remove_window());
         }
-        cx.notify();
     }
 
     /// Opens a window on every other screen, once the carousel's opening
