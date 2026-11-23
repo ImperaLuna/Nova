@@ -63,9 +63,9 @@ pub fn overlaps(one: Bounds<Pixels>, other: Bounds<Pixels>) -> bool {
     one.left() < other.right() && other.left() < one.right() && one.top() < other.bottom() && other.top() < one.bottom()
 }
 
-/// How tall the stage's window is: down to the lowest any of its panels
-/// reaches once open (`reaches`), and at least the bar's row, plus the room
-/// a shadow needs. In whole pixels, since that is what a surface has.
+/// How tall the stage's window is: down to the lowest any of the panels
+/// drawn on it reaches once open (`reaches`), and at least the bar's row,
+/// plus the room a shadow needs. In whole pixels, since that is what a surface has.
 pub fn stage_height(reaches: impl IntoIterator<Item = Pixels>) -> Pixels {
     let lowest = reaches.into_iter().fold(BAR_GAP + BAR_HEIGHT, Pixels::max);
     (lowest + SHADOW_ROOM).ceil()

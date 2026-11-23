@@ -250,7 +250,7 @@ impl StageView {
             }
         });
         self.follow_panels(window, cx);
-        // A stage that lost its tallest panel gets shorter again.
+        // A stage that lost the panel it was sized for gets shorter again.
         self.fit(window, cx, true);
         self.keep_bar_room(cx);
         cx.notify();
@@ -311,15 +311,20 @@ impl StageView {
         cx.notify();
     }
 
-    /// Back under fullscreen windows once no panel is drawn any more: a
-    /// panel that is closing is still over the window it opened over.
-    pub fn lower_once_closed(&mut self, window: &mut Window, cx: &App, now: Instant) {
+    /// Once no panel is drawn any more: back under fullscreen windows (a
+    /// panel that is closing is still over the window it opened over), and
+    /// as short as the bar again.
+    pub fn rest_once_closed(&mut self, window: &mut Window, cx: &mut App, now: Instant) {
         let drawn =
             self.panels.read(cx).open.any_open(self.screen.id) || self.panel_items().any(|panel| !panel.closed(now));
-        if self.held.overlay && !drawn {
+        if drawn {
+            return;
+        }
+        if self.held.overlay {
             window.set_layer(Layer::Top);
             self.held.overlay = false;
         }
+        self.fit(window, cx, true);
     }
 
     /// Opens the click catcher once nothing on this stage moves any more.
@@ -352,12 +357,16 @@ impl StageView {
         false
     }
 
-    /// Makes the window as tall as its tallest panel reaches. It grows at
-    /// once, before the panel does; it shrinks only when `may_shrink`, when
-    /// the panels changed, so a resize never costs a second configure.
+    /// Makes the window as tall as the tallest panel drawn on it reaches,
+    /// and as short as the bar with none: a compositor's work behind the
+    /// stage grows with the surface. It grows at once, before the panel
+    /// does; it shrinks only when `may_shrink`, once nothing is drawn or
+    /// the panels changed, so one panel taking over from another costs no
+    /// resize in between.
     fn fit(&mut self, window: &mut Window, cx: &mut App, may_shrink: bool) {
         let now = Instant::now();
-        let wanted = stage_height(self.panel_items().map(|panel| panel.reach(now)));
+        let drawn = self.panel_items().filter(|panel| !panel.closed(now));
+        let wanted = stage_height(drawn.map(|panel| panel.reach(now)));
         let height = self.height.get();
         if wanted == height || (wanted < height && !may_shrink) {
             return;
