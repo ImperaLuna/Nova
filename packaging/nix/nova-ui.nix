@@ -31,8 +31,8 @@ let
   # the same pins and hashes as Nova Files' nix/build.nix. After changing a git dependency, set its hash to
   # `pkgs.lib.fakeHash` and copy the real one from the build error.
   outputHashes = {
-    "git+https://github.com/ImperaLuna/zed?rev=ae115b815469bf084010b993f2204a030405e24e#ae115b815469bf084010b993f2204a030405e24e" =
-      "sha256-75k017ixcjBjXZFD0//aSTwnSdnhcsES9gNiL6lr/PI=";
+    "git+https://github.com/ImperaLuna/zed?rev=6a0d68164c87d1b3e6e70f9e967835109f42505b#6a0d68164c87d1b3e6e70f9e967835109f42505b" =
+      "sha256-8NcRPEYJhf8iLhYNr9bnIbGGTr28Oj8BtkcMGVJ6awM=";
     "git+https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d80dc0009b2ef6767635140cacf90a007" =
       "sha256-OqPeK1cr3OSZgIl+F3GMuXWz31PxFoOO0u4INN9GmgM=";
     "git+https://github.com/zed-industries/font-kit?rev=94b0f28166665e8fd2f53ff6d268a14955c82269#94b0f28166665e8fd2f53ff6d268a14955c82269" =
