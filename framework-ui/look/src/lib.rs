@@ -27,8 +27,9 @@
 //!   the compositor blurs behind and takes clicks on.
 //! - [`motion`]: the panel curve and the spring. [`Wheel`]: a mouse
 //!   wheel's notches.
-//! - [`ShellWindow`]: the options every shell window opens with. No other
-//!   crate builds `WindowOptions`.
+//! - [`ShellWindow`]: the options every shell window opens with, and
+//!   [`lock_surface`] for the lock screen's. No other crate builds
+//!   `WindowOptions`.
 //!
 //! `examples/sample.rs` draws a pill and a panel with all of it, to look at
 //! and to screenshot.
@@ -69,4 +70,4 @@ pub use theme::{Theme, mix};
 pub use tile::Tile;
 pub use volume_icon::{OutputKind, VolumeGlyph};
 pub use wheel::Wheel;
-pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, NAMESPACE_PREFIX, ShellWindow};
+pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, NAMESPACE_PREFIX, ShellWindow, lock_surface};

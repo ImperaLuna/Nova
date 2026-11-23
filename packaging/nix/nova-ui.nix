@@ -31,8 +31,8 @@ let
   # the same pins and hashes as Nova Files' nix/build.nix. After changing a git dependency, set its hash to
   # `pkgs.lib.fakeHash` and copy the real one from the build error.
   outputHashes = {
-    "git+https://github.com/ImperaLuna/zed?rev=610fab89331e30736906b44f33bffe0cedcae37e#610fab89331e30736906b44f33bffe0cedcae37e" =
-      "sha256-h4lUbxRrberwrhPj5z8mdQ9LO5Tk3R4ByvWCOLz2zGM=";
+    "git+https://github.com/ImperaLuna/zed?rev=0127398408581fe5ccca103a376dee8ce5f2b776#0127398408581fe5ccca103a376dee8ce5f2b776" =
+      "sha256-fD/nIGk8dRJ6lbAWC3A2YT3iJL666MSNFSi0bP97b10=";
     "git+https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d80dc0009b2ef6767635140cacf90a007" =
       "sha256-OqPeK1cr3OSZgIl+F3GMuXWz31PxFoOO0u4INN9GmgM=";
     "git+https://github.com/zed-industries/font-kit?rev=94b0f28166665e8fd2f53ff6d268a14955c82269#94b0f28166665e8fd2f53ff6d268a14955c82269" =
@@ -57,6 +57,8 @@ let
     libxkbcommon
     wayland
     zstd
+    # The lock screen checks the password through libpam (features/lock/ui).
+    linux-pam
   ];
 
   common = {
