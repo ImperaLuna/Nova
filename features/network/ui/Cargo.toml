@@ -1,0 +1,36 @@
+# nova-network-ui
+#
+# What the network feature draws with GPUI: the network tile in quick
+# settings (`network.tile`) and the network page it opens
+# (`network.page`), with the traffic on the link in use, which link to
+# prefer, the Wired row, Wi-Fi's switch, the networks in reach and their
+# passwords.
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-look
+# - nova-network-api
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-network-ui"
+description = "The network feature's UI for the GPUI program: quick settings' network tile and page, with traffic, Wired, Wi-Fi and its networks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-look.workspace = true
+nova-network-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

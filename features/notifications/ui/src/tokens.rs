@@ -64,22 +64,9 @@ pub const PEEK_INSET: Pixels = px(10.0);
 pub const MENU_WIDTH: Pixels = px(170.0);
 pub const EMPTY_ICON: Pixels = px(28.0);
 
-/// The settings page's on/off switches (their rows are `LIST_ROW_HEIGHT`).
-pub const SWITCH_WIDTH: Pixels = px(40.0);
-pub const SWITCH_HEIGHT: Pixels = px(24.0);
-pub const SWITCH_KNOB: Pixels = px(18.0);
 /// The ⋯ menu's inner padding and its items' height.
 pub const MENU_PAD: Pixels = px(4.0);
 pub const MENU_ITEM_HEIGHT: Pixels = px(30.0);
-
-/// A low battery alert's battery, as the Devices card draws it.
-pub const BATTERY_WIDTH: Pixels = px(22.0);
-pub const BATTERY_HEIGHT: Pixels = px(11.0);
-pub const BATTERY_RADIUS: Pixels = px(3.0);
-pub const BATTERY_INSET: Pixels = px(2.0);
-pub const BATTERY_NUB_WIDTH: Pixels = px(2.0);
-pub const BATTERY_NUB_HEIGHT: Pixels = px(4.0);
-pub const BATTERY_RIM: Pixels = px(1.25);
 
 /// An app with no icon: its letter on a swatch, this round and this big for
 /// the launcher's row icon, scaled for other sizes.
@@ -152,18 +139,8 @@ mod tests {
             ("notificationPeekInset", pixels(PEEK_INSET)),
             ("notificationMenuWidth", pixels(MENU_WIDTH)),
             ("notificationEmptyIcon", pixels(EMPTY_ICON)),
-            ("switchWidth", pixels(SWITCH_WIDTH)),
-            ("switchHeight", pixels(SWITCH_HEIGHT)),
-            ("switchKnob", pixels(SWITCH_KNOB)),
             ("segmentPad", pixels(MENU_PAD)),
             ("segmentHeight", pixels(MENU_ITEM_HEIGHT)),
-            ("deviceBatteryWidth", pixels(BATTERY_WIDTH)),
-            ("deviceBatteryHeight", pixels(BATTERY_HEIGHT)),
-            ("deviceBatteryRadius", pixels(BATTERY_RADIUS)),
-            ("deviceBatteryInset", pixels(BATTERY_INSET)),
-            ("deviceBatteryNubWidth", pixels(BATTERY_NUB_WIDTH)),
-            ("deviceBatteryNubHeight", pixels(BATTERY_NUB_HEIGHT)),
-            ("deviceBatteryRim", pixels(BATTERY_RIM)),
             ("letterTileRadius", pixels(LETTER_TILE_RADIUS)),
             ("launcherRowIcon", pixels(LETTER_TILE_FOR)),
             ("letterScale", f64::from(LETTER_SCALE)),

@@ -1,0 +1,38 @@
+# nova-bluetooth-ui
+#
+# What the Bluetooth feature draws with GPUI: the Bluetooth tile in quick
+# settings (`bluetooth.tile`), the Bluetooth page it opens
+# (`bluetooth.page`) with the radio's switch, the devices connected, known
+# and nearby, pairing and each device's battery, and the pop-up that asks
+# a pairing question while the page isn't open (`bluetooth.pairing`).
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-bluetooth-api
+# - nova-desktop-info
+# - nova-look
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-bluetooth-ui"
+description = "The Bluetooth feature's UI for the GPUI program: quick settings' Bluetooth tile and page, and the pairing pop-up"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-bluetooth-api.workspace = true
+nova-desktop-info.workspace = true
+nova-look.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true
