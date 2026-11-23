@@ -1,0 +1,38 @@
+# nova-volume-osd-ui
+#
+# What the volume-osd feature draws with GPUI: the volume capsule, an
+# overlay with a window of its own on each screen, its glass and liquid in
+# one shader.
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-desktop-info
+# - nova-look
+# - nova-sound-api
+# - nova-stage
+# - nova-ui-client
+# - nova-volume-osd-api
+
+[package]
+name = "nova-volume-osd-ui"
+description = "The volume capsule for the GPUI program: a glass capsule with liquid that slides in when the volume changes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-desktop-info.workspace = true
+nova-look.workspace = true
+nova-sound-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+nova-volume-osd-api.workspace = true
+
+[lints]
+workspace = true

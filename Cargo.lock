@@ -1460,6 +1460,7 @@ dependencies = [
  "nova-log",
  "nova-sound-api",
  "nova-test-support",
+ "nova-volume-osd-api",
  "pulseaudio",
  "serde_json",
 ]

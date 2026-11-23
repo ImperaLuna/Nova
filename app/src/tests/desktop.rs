@@ -189,6 +189,23 @@ fn volume_keys_reach_the_ui_once_it_listens() {
     assert!(cli.request(5, "volume", Some(json!({"key": "louder"})))["error"].is_string());
 }
 
+/// For the GPUI UI novad changes the volume itself, through the sound
+/// feature (here with no sound server to change it on), and the UI only
+/// shows the capsule.
+#[test]
+fn for_the_gpui_ui_novad_changes_the_volume_itself() {
+    let scripts = nova_test_support::TempDir::new("gpui-volume");
+    let fake_ui = write_program(&scripts, "nova-ui", "exec sleep 60");
+    let settings = super::ui_settings(Program::Gpui(fake_ui), PathBuf::from("no-quickshell"));
+    let novad = TestDaemon::start("gpui-volume", Some(settings));
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["volume"]})));
+    let mut cli = novad.connect();
+    let reply = cli.request(2, "volume", Some(json!({"key": "up"})));
+    assert_eq!(reply["error"], "there is no sound server", "{reply}");
+    assert_eq!(ui.next_event("volume"), json!({"key": "up"}));
+}
+
 #[test]
 fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
     let novad = TestDaemon::start("lock", None);
@@ -212,8 +229,10 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
     let mut restarted = novad.connect();
     restarted.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
     assert_eq!(restarted.next_event("lock"), json!({"locked": true}));
-    // The screens stayed covered, so locking again answers at once.
+    // The screens stayed covered, so locking again answers at once. The UI
+    // hears it all the same: one about to let go of the lock keeps it.
     assert_eq!(novad.connect().request(1, "lock", None)["result"], Value::Null);
+    assert_eq!(restarted.next_event("lock"), json!({"locked": true}));
 
     assert_eq!(restarted.request(2, "report_unlocked", None)["result"], Value::Null);
     assert_eq!(restarted.next_event("lock"), json!({"locked": false}));

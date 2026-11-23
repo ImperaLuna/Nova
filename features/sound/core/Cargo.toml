@@ -6,6 +6,7 @@
 # - nova-hub
 # - nova-log
 # - nova-sound-api
+# - nova-volume-osd-api
 
 [package]
 name = "nova-sound"
@@ -18,6 +19,7 @@ publish.workspace = true
 
 [dependencies]
 nova-sound-api.workspace = true
+nova-volume-osd-api.workspace = true
 nova-base.workspace = true
 nova-hub.workspace = true
 nova-log.workspace = true

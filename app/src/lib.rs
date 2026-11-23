@@ -408,8 +408,11 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     };
     // Before the modules: the wallpaper follows its outputs.
     let compositor = follow_compositor(&hub, &logger);
-    let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
-    let program = ui_program(settings.ui_program(), &args, &path_var, &logger);
+    let mut program = Program::Quickshell;
+    let settings = Settings::load(&sources, &hub, &logger, compositor.clone(), |picked| {
+        program = ui_program(picked, &args, &path_var, &logger);
+        program.kind()
+    });
     let ui_settings = ui_settings(program, &args, &socket, &path_var, &sources.icons);
     if args.autostart {
         nova_launcher::autostart::start(

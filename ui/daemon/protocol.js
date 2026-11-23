@@ -102,6 +102,7 @@ var CMD_USE_SOUND_INPUT = "use_sound_input";
 var CMD_SECONDARY_ACTIVATE_TRAY_ITEM = "secondary_activate_tray_item";
 var CMD_TRAY_MENU = "tray_menu";
 var CMD_RUN_TRAY_MENU_ENTRY = "run_tray_menu_entry";
+var CMD_SET_SOUND_LEVEL = "set_sound_level";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
