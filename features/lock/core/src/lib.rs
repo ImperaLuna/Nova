@@ -76,10 +76,14 @@ impl SessionLock {
         // The state and its event change together, so a subscriber's
         // snapshot never misses a lock.
         let mut state = lock(&self.state);
+        // Said even when the screens are covered: a UI that is about to
+        // let go of the lock (the right password, its prompt fading) keeps
+        // it then.
+        let listening = hub.publish(&Event::Lock { locked: true });
         if state.locked && state.secured {
             return Ok(());
         }
-        if hub.publish(&Event::Lock { locked: true }) == 0 {
+        if listening == 0 {
             return Err("the UI isn't connected to novad, so nothing can lock the screen".into());
         }
         if !state.locked {

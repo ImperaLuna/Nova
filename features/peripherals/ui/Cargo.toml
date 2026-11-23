@@ -1,0 +1,34 @@
+# nova-peripherals-ui
+#
+# What the peripherals feature draws with GPUI in quick settings: the
+# Devices card (`peripherals.card`), each wireless device that is connected
+# now with how it connects and its battery.
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-look
+# - nova-peripherals-api
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-peripherals-ui"
+description = "The peripherals feature's UI for the GPUI program: quick settings' Devices card with each device's battery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-look.workspace = true
+nova-peripherals-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

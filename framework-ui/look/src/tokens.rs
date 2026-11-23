@@ -170,6 +170,9 @@ tokens! {
     PILL_BUTTON_GAP: px = 2.0, "pillButtonGap";
     /// A list row with a second line under its name (`crate::ListRow`).
     LIST_ROW_HEIGHT: px = 46.0, "powerRowHeight";
+    /// The padding inside a menu and a card that holds a list (a tray
+    /// app's menu, the Devices and Tray cards).
+    MENU_PAD: px = 6.0, "menuPad";
 
     // Quick settings' controls, which other features fill it with.
     /// Its header's logo, and how tall every page's top row is

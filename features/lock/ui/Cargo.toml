@@ -1,0 +1,40 @@
+# nova-lock-ui
+#
+# What the lock feature draws with GPUI (`lock.screen`): the lock screen, a
+# session lock surface on every screen with the password prompt on the one
+# in use. It checks the password itself, through the system's PAM library
+# (`libpam`, linked by `src/pam.rs`), so the password never leaves this
+# process.
+#
+# Allowed outside crates:
+# - futures
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-desktop-info
+# - nova-lock-api
+# - nova-look
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-lock-ui"
+description = "The lock feature's UI for the GPUI program: the lock screen on every screen and its password check"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+futures.workspace = true
+gpui.workspace = true
+nova-desktop-info.workspace = true
+nova-lock-api.workspace = true
+nova-look.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true
