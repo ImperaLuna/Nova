@@ -4,7 +4,7 @@
 use super::*;
 use crate::fake_pulse::{FakePulse, recorded, recording};
 use crate::server::Listing;
-use nova_sound_api::Kind;
+use nova_sound_api::{Kind, VOLUME_MAX};
 use nova_volume_osd_api::VolumeKey;
 use pulseaudio::protocol::{ChannelVolume, SinkInputInfo, Volume};
 
@@ -263,6 +263,19 @@ fn a_volume_set_by_hand_unmutes_and_comes_back_as_an_event() {
     fixture.until(|sound| close(&sound["outputs"][0]["volume"], 1.0));
     sound.change(&Command::SetSoundMuted { of: Kind::Output, id: 53, muted: true }).unwrap();
     assert_eq!(fixture.next()["outputs"][0]["muted"], true);
+}
+
+#[test]
+fn the_capsules_volume_leaves_mute_as_it_is() {
+    let fixture = Fixture::new("level");
+    let _server = fixture.server();
+    let sound = fixture.sound();
+    assert_eq!(fixture.next()["inputs"][0]["muted"], true);
+    sound.change(&Command::SetSoundLevel { of: Kind::Input, id: 60, volume: 0.25 }).unwrap();
+    let set = fixture.until(|sound| close(&sound["inputs"][0]["volume"], 0.25));
+    assert_eq!(set["inputs"][0]["muted"], true);
+    let refused = sound.change(&Command::SetSoundLevel { of: Kind::Output, id: 53, volume: 1.5 });
+    assert_eq!(refused, Err(format!("a volume is 0 to {VOLUME_MAX}, not 1.5")));
 }
 
 #[test]

@@ -17,12 +17,8 @@ use pulseaudio::protocol::{
 /// The requests that do `command`, in order, or why it can't be done.
 pub fn requests(listing: &Listing, command: &Command) -> Result<Vec<Request>, String> {
     match *command {
-        Command::SetSoundVolume { of, id, volume } => {
-            if !(0.0..=VOLUME_MAX).contains(&volume) {
-                return Err(format!("a volume is 0 to {VOLUME_MAX}, not {volume}"));
-            }
-            set_volume(listing, of, id, volume)
-        }
+        Command::SetSoundVolume { of, id, volume } => set_volume(listing, of, id, volume, true),
+        Command::SetSoundLevel { of, id, volume } => set_volume(listing, of, id, volume, false),
         Command::SetSoundMuted { of: Kind::Output, id, muted } => {
             Ok(vec![Request::SetSinkMute(device_mute(output(listing, id)?.index, muted))])
         }
@@ -116,22 +112,25 @@ pub fn arrived_bluetooth(before: Option<&Listing>, now: &Listing) -> Vec<Request
     outputs.into_iter().chain(inputs).collect()
 }
 
-/// Moved by hand, so unmuted as well: moving a slider means wanting to
-/// hear it.
-fn set_volume(listing: &Listing, of: Kind, id: u32, volume: f32) -> Result<Vec<Request>, String> {
+/// Sets a volume, and with `unmutes` unmutes as well: moving a slider
+/// means wanting to hear it. The volume capsule leaves mute alone.
+fn set_volume(listing: &Listing, of: Kind, id: u32, volume: f32, unmutes: bool) -> Result<Vec<Request>, String> {
+    if !(0.0..=VOLUME_MAX).contains(&volume) {
+        return Err(format!("a volume is 0 to {VOLUME_MAX}, not {volume}"));
+    }
     let mut requests = Vec::new();
     match of {
         Kind::Output => {
             let sink = output(listing, id)?;
             requests.push(Request::SetSinkVolume(device_volume(sink.index, at_level(&sink.cvolume, volume))));
-            if sink.muted {
+            if unmutes && sink.muted {
                 requests.push(Request::SetSinkMute(device_mute(sink.index, false)));
             }
         }
         Kind::Input => {
             let source = input(listing, id)?;
             requests.push(Request::SetSourceVolume(device_volume(source.index, at_level(&source.cvolume, volume))));
-            if source.muted {
+            if unmutes && source.muted {
                 requests.push(Request::SetSourceMute(device_mute(source.index, false)));
             }
         }
@@ -142,7 +141,7 @@ fn set_volume(listing: &Listing, of: Kind, id: u32, volume: f32) -> Result<Vec<R
                     let volume = at_level(&stream.cvolume, volume);
                     requests.push(Request::SetSinkInputVolume(SetStreamVolumeParams { index: stream.index, volume }));
                 }
-                if stream.muted {
+                if unmutes && stream.muted {
                     requests.push(Request::SetSinkInputMute(SetStreamMuteParams { index: stream.index, mute: false }));
                 }
             }

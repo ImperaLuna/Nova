@@ -188,6 +188,7 @@ fn sound_request() -> impl Strategy<Value = nova_carrier::Request<nova_sound_api
     let kind = || prop_oneof![Just(Kind::Output), Just(Kind::Input), Just(Kind::App)];
     let command = prop_oneof![
         (kind(), any::<u32>(), 0.0f32..=1.0).prop_map(|(of, id, volume)| Command::SetSoundVolume { of, id, volume }),
+        (kind(), any::<u32>(), 0.0f32..=1.0).prop_map(|(of, id, volume)| Command::SetSoundLevel { of, id, volume }),
         (kind(), any::<u32>(), any::<bool>()).prop_map(|(of, id, muted)| Command::SetSoundMuted { of, id, muted }),
         any::<u32>().prop_map(|id| Command::UseSoundOutput { id }),
         any::<u32>().prop_map(|id| Command::UseSoundInput { id }),

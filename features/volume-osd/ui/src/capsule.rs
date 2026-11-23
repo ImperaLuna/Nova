@@ -324,11 +324,11 @@ impl Capsule {
         }
     }
 
-    /// A click or drag set the volume (which unmutes, as setting it means
-    /// wanting to hear it).
+    /// A click or drag set the volume, leaving mute as it is (as today's
+    /// capsule does; quick settings' sliders unmute).
     pub fn set_volume(&mut self, volume: f32, cx: &mut Context<Self>) {
         if let Some(output) = self.output.filter(|output| output.volume != volume) {
-            Daemon::send(SoundCommand::SetSoundVolume { of: Kind::Output, id: output.id, volume }, cx);
+            Daemon::send(SoundCommand::SetSoundLevel { of: Kind::Output, id: output.id, volume }, cx);
         }
     }
 

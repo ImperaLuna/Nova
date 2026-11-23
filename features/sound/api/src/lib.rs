@@ -32,6 +32,9 @@ pub enum Command {
     /// 0 to [`VOLUME_MAX`]. Setting it means wanting to hear it, so it
     /// unmutes too.
     SetSoundVolume { of: Kind, id: u32, volume: f32 },
+    /// Sets a volume as [`Command::SetSoundVolume`] does but leaves mute as
+    /// it is: a click or drag on the volume capsule, as in today's shell.
+    SetSoundLevel { of: Kind, id: u32, volume: f32 },
     /// Mutes or unmutes an output, an input or an app (all its streams).
     SetSoundMuted { of: Kind, id: u32, muted: bool },
     /// Makes an output the one in use.
