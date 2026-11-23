@@ -102,10 +102,10 @@ pub fn check(user: &str, password: Secret) -> Verdict {
     let (Ok(user), Ok(folder)) = (CString::new(user), CString::new(folder.as_os_str().as_bytes())) else {
         return Verdict::Unchecked("the user's name or the runtime directory holds a NUL byte".into());
     };
-    let password = match CString::new(password.into_bytes()) {
+    let password = match CString::from_vec_with_nul(password.to_c_bytes()) {
         Ok(password) => password,
         Err(refused) => {
-            wipe(refused.into_vec());
+            wipe(refused.into_bytes());
             return Verdict::Unchecked("the password holds a NUL byte".into());
         }
     };
@@ -211,8 +211,18 @@ unsafe extern "C" fn answer(
 /// each text null or from `strdup`.
 unsafe fn free_answers(answers: *mut Response, filled: usize) {
     for index in 0..filled {
-        // SAFETY: as the function's contract says; `free(null)` is fine.
-        unsafe { free((*answers.add(index)).text.cast()) };
+        // SAFETY: as the function's contract says: each text is null or a
+        // NUL-terminated copy of the password, overwritten up to its NUL
+        // before it is freed; `free(null)` is fine.
+        unsafe {
+            let text = (*answers.add(index)).text;
+            let mut byte = text;
+            while !byte.is_null() && *byte != 0 {
+                byte.write_volatile(0);
+                byte = byte.add(1);
+            }
+            free(text.cast());
+        }
     }
     // SAFETY: `answers` came from `calloc`.
     unsafe { free(answers.cast()) };

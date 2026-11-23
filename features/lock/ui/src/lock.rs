@@ -26,6 +26,8 @@ use nova_desktop_info::{Desktop, Event as DesktopEvent};
 use nova_lock_api::{Command, Event, TOPIC};
 use nova_stage::{Screen, Stage};
 use nova_ui_client::{Daemon, Live};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// Where the user's name comes from, as in today's shell.
@@ -63,10 +65,18 @@ pub struct Prompt {
 pub struct LockScreen {
     /// This holds the session lock: asked for, or confirmed.
     held: bool,
+    /// The compositor confirmed the lock this holds.
+    confirmed: bool,
+    /// novad wasn't reached when the session was unlocked, so it still
+    /// says locked.
+    unreported: bool,
     user: SharedString,
     typed: Secret,
     /// The check under way.
     check: Option<Task<()>>,
+    /// PAM is still at a check, maybe one given up on: it gets no second
+    /// one meanwhile, so checks that hang can't pile up.
+    pam_busy: Arc<AtomicBool>,
     failed: bool,
     ring_changed: Option<Instant>,
     message: Option<&'static str>,
@@ -100,7 +110,7 @@ impl LockScreen {
             // restarted while locked locks again.
             let asked = Daemon::on_event(TOPIC, cx, move |Event::Lock { locked }, cx| {
                 if locked {
-                    let _ = this.update(cx, |lock, cx| lock.lock(cx));
+                    let _ = this.update(cx, |lock, cx| lock.asked(cx));
                 }
             });
             let this = cx.weak_entity();
@@ -127,9 +137,12 @@ impl LockScreen {
             }
             Self {
                 held: false,
+                confirmed: false,
+                unreported: false,
                 user: user_name().into(),
                 typed: Secret::default(),
                 check: None,
+                pam_busy: Arc::default(),
                 failed: false,
                 ring_changed: None,
                 message: None,
@@ -145,14 +158,35 @@ impl LockScreen {
         })
     }
 
-    /// novad asked for the lock.
+    /// novad says the session is locked.
+    fn asked(&mut self, cx: &mut Context<Self>) {
+        if self.unreported && !self.held {
+            // Its word is old: the session was unlocked while it couldn't
+            // be reached.
+            self.report_unlocked(cx);
+            return;
+        }
+        self.lock(cx);
+    }
+
     fn lock(&mut self, cx: &mut Context<Self>) {
         if self.held {
+            if self.unlocking.is_some() {
+                // Asked while the prompt fades after the right password:
+                // the lock stays, with an empty prompt.
+                self.reset();
+                cx.notify();
+            }
             // Asked again while locked (a novad that restarted lost who
             // waits for the screens to be covered): they are.
             if cx.session_lock_state() == SessionLockState::Locked {
                 Daemon::send(Command::ReportLocked, cx);
             }
+            return;
+        }
+        if self.user.is_empty() {
+            // PAM would have nobody to check a password for.
+            eprintln!("ERROR nova-ui: not locking: neither {} names the user", USER_VARS.join(" nor "));
             return;
         }
         if let Err(error) = cx.lock_session() {
@@ -175,14 +209,19 @@ impl LockScreen {
         match cx.session_lock_state() {
             SessionLockState::Locked => {
                 eprintln!("INFO nova-ui: session locked");
+                self.confirmed = true;
                 // `nova lock` can answer: the screens are covered.
                 Daemon::send(Command::ReportLocked, cx);
             }
             SessionLockState::Unlocked => {
-                // Another locker holds the session, or the compositor took
-                // the lock back. novad isn't told the session is unlocked:
-                // it may not be, and its next word locks again.
                 eprintln!("WARN nova-ui: the compositor refused or ended the session lock");
+                // A lock it had confirmed and then ended leaves the
+                // session open, and novad has to know to lock it again. A
+                // lock it refused means another locker holds the session:
+                // novad keeps its word and asks again.
+                if self.confirmed {
+                    self.report_unlocked(cx);
+                }
                 self.let_go(cx);
             }
             SessionLockState::Pending => {}
@@ -191,7 +230,7 @@ impl LockScreen {
 
     /// The lock is no longer this one's: no windows, nothing typed.
     fn let_go(&mut self, cx: &mut Context<Self>) {
-        self.held = false;
+        (self.held, self.confirmed) = (false, false);
         self.reset();
         self.close_windows(cx);
         // Dropped with its feature off, once this update ends.
@@ -199,7 +238,24 @@ impl LockScreen {
         cx.notify();
     }
 
+    /// Tells novad the session is unlocked, and remembers when it couldn't
+    /// be told: novad says locked on its next connection, and the session
+    /// would lock itself again.
+    fn report_unlocked(&mut self, cx: &mut Context<Self>) {
+        self.unreported = false;
+        let reported = Daemon::call::<()>(Command::ReportUnlocked, cx);
+        cx.spawn(async move |this, cx| {
+            if let Err(refusal) = reported.await {
+                eprintln!("WARN nova-ui: report_unlocked failed: {refusal}");
+                let _ = this.update(cx, |lock, _| lock.unreported = true);
+            }
+        })
+        .detach();
+    }
+
     fn reset(&mut self) {
+        // A window that couldn't open gets another try with each lock.
+        self.unopened.clear();
         self.typed.clear();
         (self.check, self.release) = (None, None);
         (self.failed, self.message) = (false, None);
@@ -211,7 +267,9 @@ impl LockScreen {
         if self.check.is_some() || self.unlocking.is_some() {
             return;
         }
-        match Key::of(&keystroke.key, keystroke.key_char.as_deref()) {
+        let held = keystroke.modifiers;
+        let shortcut = held.control || held.alt || held.platform;
+        match Key::of(&keystroke.key, keystroke.key_char.as_deref(), shortcut) {
             Key::Submit => self.submit(cx),
             Key::Clear => self.typed.clear(),
             Key::Erase => self.typed.pop(),
@@ -239,7 +297,16 @@ impl LockScreen {
         self.set_failed(false);
         self.message = None;
         let (user, password) = (self.user.clone(), self.typed.take());
-        let checked = cx.background_spawn(async move { pam::check(&user, password) });
+        if self.pam_busy.swap(true, Ordering::SeqCst) {
+            self.checked(&Verdict::Unchecked("PAM is still at an earlier check".into()), cx);
+            return;
+        }
+        let busy = Arc::clone(&self.pam_busy);
+        let checked = cx.background_spawn(async move {
+            let verdict = pam::check(&user, password);
+            busy.store(false, Ordering::SeqCst);
+            verdict
+        });
         self.check = Some(cx.spawn(async move |this, cx| {
             let mut too_long = cx.background_executor().timer(CHECK_TIMEOUT).fuse();
             let verdict = futures::select_biased! {
@@ -281,7 +348,7 @@ impl LockScreen {
         // The compositor first, then the surfaces it no longer shows.
         cx.unlock_session();
         eprintln!("INFO nova-ui: session unlocked");
-        Daemon::send(Command::ReportUnlocked, cx);
+        self.report_unlocked(cx);
         self.let_go(cx);
     }
 

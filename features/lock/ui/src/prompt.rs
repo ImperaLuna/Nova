@@ -37,13 +37,14 @@ pub enum Key<'a> {
 }
 
 impl<'a> Key<'a> {
-    /// `name` is GPUI's name for the key, `typed` the text it types, if any.
-    pub fn of(name: &str, typed: Option<&'a str>) -> Self {
+    /// `name` is GPUI's name for the key, `typed` the text it types, if
+    /// any, and `shortcut` whether Control, Alt or Super is held with it.
+    pub fn of(name: &str, typed: Option<&'a str>, shortcut: bool) -> Self {
         match (name, typed) {
             ("enter", _) => Self::Submit,
             ("escape", _) => Self::Clear,
             ("backspace", _) => Self::Erase,
-            (_, Some(text)) if is_printable(text) => Self::Type(text),
+            (_, Some(text)) if !shortcut && is_printable(text) => Self::Type(text),
             _ => Self::Ignored,
         }
     }
@@ -55,8 +56,9 @@ fn is_printable(text: &str) -> bool {
 
 /// The password typed so far, or one on its way to the check. No `Debug`
 /// and no `Display`, so it can't reach a log, and its bytes are overwritten
-/// when it is emptied or dropped. (Copies the allocator left behind as the
-/// text grew are beyond reach from here.)
+/// when it is emptied or dropped, those of characters taken back too.
+/// (Copies the allocator left behind as the text grew are beyond reach
+/// from here.)
 #[derive(Default)]
 pub struct Secret(String);
 
@@ -87,9 +89,13 @@ impl Secret {
         Secret(std::mem::take(&mut self.0))
     }
 
-    /// The bytes, for the check; the secret itself is spent.
-    pub fn into_bytes(mut self) -> Vec<u8> {
-        std::mem::take(&mut self.0).into_bytes()
+    /// The bytes with C's closing NUL, for the check. Made at their full
+    /// size, so handing them to C moves no copy; wipe them after.
+    pub fn to_c_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.0.len() + 1);
+        bytes.extend_from_slice(self.0.as_bytes());
+        bytes.push(0);
+        bytes
     }
 }
 
@@ -101,7 +107,10 @@ impl Drop for Secret {
 
 /// Overwrites a password's bytes before their memory is given back.
 pub fn wipe(mut bytes: Vec<u8>) {
-    bytes.fill(0);
+    // All it holds, the room behind its length too: bytes taken back stay
+    // there.
+    bytes.clear();
+    bytes.resize(bytes.capacity(), 0);
     // Kept from being optimized away as a write nobody reads.
     std::hint::black_box(&bytes);
 }
@@ -159,17 +168,19 @@ mod tests {
 
     #[test]
     fn keys_do_what_they_do_in_today_s_lock() {
-        assert_eq!(Key::of("enter", Some("\n")), Key::Submit);
-        assert_eq!(Key::of("escape", None), Key::Clear);
-        assert_eq!(Key::of("backspace", None), Key::Erase);
-        assert_eq!(Key::of("a", Some("a")), Key::Type("a"));
-        assert_eq!(Key::of("space", Some(" ")), Key::Type(" "));
-        assert_eq!(Key::of("e", Some("é")), Key::Type("é"));
+        assert_eq!(Key::of("enter", Some("\n"), false), Key::Submit);
+        assert_eq!(Key::of("escape", None, false), Key::Clear);
+        assert_eq!(Key::of("backspace", None, false), Key::Erase);
+        assert_eq!(Key::of("a", Some("a"), false), Key::Type("a"));
+        assert_eq!(Key::of("space", Some(" "), false), Key::Type(" "));
+        assert_eq!(Key::of("e", Some("é"), false), Key::Type("é"));
         // A shortcut, a modifier alone, and keys that type a control character.
-        assert_eq!(Key::of("a", None), Key::Ignored);
-        assert_eq!(Key::of("shift", None), Key::Ignored);
-        assert_eq!(Key::of("tab", Some("\t")), Key::Ignored);
-        assert_eq!(Key::of("delete", Some("\u{7f}")), Key::Ignored);
+        assert_eq!(Key::of("a", None, false), Key::Ignored);
+        assert_eq!(Key::of("l", Some("l"), true), Key::Ignored, "Super+L types nothing");
+        assert_eq!(Key::of("enter", None, true), Key::Submit);
+        assert_eq!(Key::of("shift", None, false), Key::Ignored);
+        assert_eq!(Key::of("tab", Some("\t"), false), Key::Ignored);
+        assert_eq!(Key::of("delete", Some("\u{7f}"), false), Key::Ignored);
     }
 
     #[test]
@@ -182,7 +193,9 @@ mod tests {
         assert_eq!(typed.len(), 2);
         let taken = typed.take();
         assert!(typed.is_empty());
-        assert_eq!(taken.into_bytes(), "pä".as_bytes());
+        let bytes = taken.to_c_bytes();
+        assert_eq!(bytes, "pä\0".as_bytes());
+        assert_eq!(bytes.capacity(), bytes.len(), "no room left for C's copy to move it");
     }
 
     #[test]
