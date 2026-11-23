@@ -173,10 +173,12 @@ pub struct UiStatus {
 #[serde(rename_all = "snake_case")]
 pub enum UiProgram {
     /// The QML shell Nova dropped (IMP-416). Never runs: kept so an older
-    /// status message and a `features.toml` that names it still read.
+    /// status message and a `features.toml` that names it still read. The
+    /// default only for a status without `program`, which only a novad
+    /// from before the GPUI UI sent.
+    #[default]
     Quickshell,
     /// `nova-ui`, the GPUI program.
-    #[default]
     Gpui,
 }
 

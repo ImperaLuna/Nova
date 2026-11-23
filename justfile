@@ -130,10 +130,6 @@ build:
 run: build
     scripts/run.sh target/debug/nova
 
-# Open and close a panel on this desktop and report the vblanks it misses (swaps the bar like `just run`)
-frames times="20" panel="ai-usage": build
-    scripts/frames.sh target/debug/nova {{times}} {{panel}}
-
 # Needs the Codex CLI and `codex login`; not part of the dev shell or CI.
 # Codex reviews this branch against `base` (sends the diff to OpenAI). Fetches
 # main first, so the diff isn't taken against a stale local main.

@@ -108,8 +108,8 @@ fn status_once_the_ui_runs(novad: &Novad) -> Status {
     })
 }
 
-/// `nova-ui` runs whatever `ui` in features.toml says: the Nix modules'
-/// `gpui` quietly, anything else with a warning.
+/// `nova-ui` runs whatever `ui` in features.toml says: the `gpui` older
+/// Nix modules wrote quietly, anything else with a warning.
 #[test]
 fn nova_ui_runs_whatever_features_toml_picks() {
     let log = |novad: &Novad| std::fs::read_to_string(nova_paths::log_file(&novad.dir.join("logs"))).unwrap();

@@ -220,19 +220,22 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     assert!(full_log.iter().any(|entry| entry.message.contains("failed to load")));
 }
 
-/// A missing `nova-ui` is no reason to run anything else: it fails like a
-/// crash, an error in the log and another try after a backoff.
+/// A missing `nova-ui` is no reason to run anything else: an error in the
+/// log, once, and another try after each backoff.
 #[test]
 fn a_missing_ui_is_an_error_and_tried_again() {
     let scripts = nova_test_support::TempDir::new("no-ui");
     let novad = TestDaemon::start("no-ui", Some(ui_settings(scripts.join("nova-ui"))));
-    let status = wait_for_status(&mut novad.connect(), |status| status.ui.restarts >= 1);
-    assert_eq!((status.ui.state, status.ui.pid), (UiState::Restarting, None));
-    let log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
-    let error = log.iter().find(|entry| entry.level == LogLevel::Error && entry.message.contains("didn't start"));
-    assert!(error.is_some_and(|entry| entry.message.contains("nova-ui")), "{log:?}");
-    assert_eq!(status.ui.last_crash, None, "nothing ran, so there's no crash log");
-    assert!(log.iter().any(|entry| entry.message.contains("starting the UI again in")), "{log:?}");
+    let log = || read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
+    let failed = |entry: &LogEntry| entry.level == LogLevel::Error && entry.message.contains("didn't start");
+    nova_test_support::eventually(Duration::from_secs(10), "the error", || log().iter().any(failed).then_some(()));
+    // Past the first backoff (1 s): tried again, and not logged again.
+    nova_test_support::settle(Duration::from_millis(1500));
+    let status = wait_for_status(&mut novad.connect(), |status| status.ui.state == UiState::Restarting);
+    assert_eq!((status.ui.pid, status.ui.restarts, status.ui.last_crash), (None, 0, None), "it never ran");
+    let errors: Vec<LogEntry> = log().into_iter().filter(failed).collect();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].message.contains("nova-ui"), "{errors:?}");
     novad.daemon.ui.as_ref().unwrap().stop();
 }
 

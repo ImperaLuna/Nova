@@ -1,7 +1,7 @@
 //! Runs the UI, `nova-ui` (the GPUI program), as a child of novad and
 //! restarts it when it exits. A `nova-ui` that is missing or won't start
-//! fails like one that crashed: an error in the log, and another try after
-//! a backoff, so installing it later brings the UI back with no restart.
+//! is an error in the log (once per reason) and another try after a
+//! backoff, so installing it later brings the UI back with no restart.
 //!
 //! It runs only while some feature with a UI is on ([`Supervisor::want`]):
 //! with every such feature off, novad keeps serving `nova` commands without
@@ -162,6 +162,8 @@ impl Supervisor {
 
     fn run(&self, settings: &UiSettings, logger: &Arc<Logger>) {
         let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
+        // Why the last start failed, so the same reason is logged once.
+        let mut failed_start: Option<String> = None;
         loop {
             loop {
                 let record = lock(&self.record);
@@ -193,15 +195,25 @@ impl Supervisor {
             exit_if_session_over(settings, logger);
             let ran_for = started.elapsed();
             match outcome {
-                Outcome::Exited(exit) => self.record_crash(&exit, ran_for, logger),
-                Outcome::NotStarted(problem) => self.record_failed_start(&problem, logger),
-                Outcome::NotWanted => {}
+                Outcome::Exited(exit) => {
+                    failed_start = None;
+                    self.record_crash(&exit, ran_for, logger);
+                }
+                Outcome::NotStarted(problem) if failed_start.as_ref() != Some(&problem) => {
+                    // No output to keep, so no crash snapshot, and not a
+                    // restart: it never ran.
+                    logger.error(LOG_SOURCE, &format!("the UI didn't start: {problem}"));
+                    failed_start = Some(problem);
+                }
+                Outcome::NotStarted(_) | Outcome::NotWanted => {}
             }
             if ran_for > HEALTHY_AFTER {
                 retry.reset();
             }
             let wait = retry.next();
-            logger.info(LOG_SOURCE, &format!("starting the UI again in {} s", wait.as_secs()));
+            if failed_start.is_none() {
+                logger.info(LOG_SOURCE, &format!("starting the UI again in {} s", wait.as_secs()));
+            }
             // Cut short by `stop`, or by `want(false)` (the loop then waits
             // until it's wanted again).
             let record = lock(&self.record);
@@ -253,12 +265,6 @@ impl Supervisor {
             Ok(status) => describe_exit(status),
             Err(e) => format!("couldn't wait for the UI: {e}"),
         })
-    }
-
-    /// A UI that never ran: no output to keep, so no crash snapshot.
-    fn record_failed_start(&self, problem: &str, logger: &Logger) {
-        logger.error(LOG_SOURCE, &format!("the UI didn't start: {problem}"));
-        lock(&self.record).restarts += 1;
     }
 
     fn record_crash(&self, exit: &str, ran_for: Duration, logger: &Logger) {

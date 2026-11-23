@@ -683,7 +683,7 @@ cores and a few GB of disk. Without a compositor `nova-ui` starts and prints
 its start line but opens no window; anything on screen is shown on the
 desktop, off the maintainer's screen like any other test run. To run it
 under a checkout's novad, pass `nova daemon --gpui-ui <path to nova-ui>`
-with `ui = "gpui"` in the features.toml it reads. By hand, as a second
+(`just run` does when `just ui-build` made one). By hand, as a second
 client of a running novad, set `NOVA_SOCKET` to novad's socket. `nova-ui
 --demo` shows test pills and panels on the stage with no feature ported, and
 `--frames` logs the frames it draws. `nova-ui
@@ -731,8 +731,8 @@ applies `~/nix-config` once the CI runners are idle, rolling back on failure. Ne
 Test runs on the desktop stay off the maintainer's screen. Frame captures and
 screenshots run headless (a sway with `WLR_BACKENDS=headless` and grim on
 its output); never open a nested compositor window, which lands on the maintainer's workspace (on
-Hyprland it takes the screen). `just run` and `just frames` swap the real bar,
-so run them only when asked.
+Hyprland it takes the screen). `just run` swaps the real bar, so run it only
+when asked.
 
 ## Review guidelines
 

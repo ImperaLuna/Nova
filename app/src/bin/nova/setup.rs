@@ -23,7 +23,7 @@
 //!   Lua config, or `hyprland.conf` sourced from an old one).
 //!
 //! It doesn't install `nova-ui`, the UI: only Nova's Nix flake ships it so
-//! far, and the end of setup says so when it isn't on `PATH`.
+//! far, so setup fails at the end when it isn't on `PATH`.
 
 use crate::host::{Distro, Host};
 use nova_features::{Gpu, Manifest, Selection};
@@ -467,7 +467,11 @@ fn create_parent(path: &Path) -> Result<(), String> {
 /// After the steps: what's left to do.
 fn finish(path_var: &str) -> Result<(), String> {
     if nova_paths::find_program(checks::GPUI_UI, path_var).is_none() {
-        println!("{} isn't on PATH, so Nova has no UI yet: so far only Nova's Nix flake ships it.", checks::GPUI_UI);
+        return Err(format!(
+            "everything else is set up, but {} isn't on PATH, so Nova has no UI: so far only Nova's Nix flake \
+             ships it. Put it on PATH, then run `nova doctor`.",
+            checks::GPUI_UI
+        ));
     }
     println!("Nova is set up. Start it with `nova`; `nova doctor` checks the rest.");
     println!("On Hyprland without uwsm, also add `exec-once = nova` to hyprland.conf so novad gets the session.");

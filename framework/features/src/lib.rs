@@ -343,7 +343,7 @@ pub fn load_all(root: &Path) -> Result<Vec<Manifest>, Error> {
 pub struct Selection {
     /// The UI program's name ([`UiProgram::name`]). Kept as written, so any
     /// other name is a warning ([`Selection::ui_problem`]) rather than a
-    /// file that doesn't load. Nix modules still write `gpui`.
+    /// file that doesn't load. Files from older Nix modules say `gpui`.
     #[serde(default)]
     pub ui: Option<String>,
     #[serde(default)]
@@ -361,7 +361,7 @@ impl Selection {
     }
 
     /// What is wrong with `ui`, when it picks anything but `nova-ui`, for
-    /// `nova doctor` and the log. `nova-ui` runs either way.
+    /// the log. `nova-ui` runs either way.
     pub fn ui_problem(&self) -> Option<String> {
         let name = self.ui.as_deref()?;
         match UiProgram::named(name) {
@@ -431,7 +431,7 @@ mod tests {
     fn a_ui_other_than_nova_ui_only_warns() {
         let problem = |text: &str| Selection::parse(text).unwrap().ui_problem();
         assert_eq!(problem(""), None);
-        // What the Nix modules write until they stop.
+        // What older Nix modules wrote.
         assert_eq!(problem("ui = \"gpui\"\ndisabled = [\"bar\"]"), None);
         assert!(problem("ui = \"quickshell\"").is_some_and(|problem| problem.contains("no longer")));
         // A name from a newer Nova (or a typo) still loads the file.
