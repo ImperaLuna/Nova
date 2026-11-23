@@ -309,7 +309,12 @@ An overlay's windows are its own, so it does for them what the stage does
 for panels: it opens each one once per screen (deferred out of the update
 that found the screen, and never at the start of a motion), keeps it only
 as big as what it draws, and passes its shapes to `set_blur_region` and
-`set_input_region` when they change. `Stage::observe_open` calls it back
+`set_input_region` when they change. GPUI redraws a window whenever an
+entity its last frame read notifies, so a window learns that it has nothing
+to draw in a `cx.observe`, and then renders without reading that entity: at
+rest it commits nothing. It resizes only while nothing moves: what is new
+is laid out unseen, the window grows once, and the motion starts in the
+frame after. `Stage::observe_open` calls it back
 whenever a panel opens, closes or resizes (the pop-ups pause while quick
 settings is open), and when `Stage::logs_frames` is set it logs its own
 frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
