@@ -167,8 +167,10 @@ impl Popups {
                 let _ = this.update(cx, |popups, cx| popups.opened(opened, cx));
             });
         }
-        if self.target.is_some_and(|target| !here.iter().any(|screen| screen.id == target)) {
-            // Those still up move to the screen with focus.
+        // Those still up move to the screen with focus when theirs left,
+        // or when every screen had gone and one came back.
+        let lost = self.target.is_none_or(|target| !here.iter().any(|screen| screen.id == target));
+        if lost && self.stack.busy() {
             self.target = self.focused_screen(cx);
             cx.notify();
         }
