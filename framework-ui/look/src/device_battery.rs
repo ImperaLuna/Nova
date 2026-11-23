@@ -22,7 +22,15 @@ pub struct DeviceBattery {
     charging: bool,
 }
 
+/// At or under this percent a battery reads as low (`devices.js`).
+pub const LOW_PERCENT: u8 = 15;
+
 impl DeviceBattery {
+    /// A battery at `percent`, low at or under [`LOW_PERCENT`].
+    pub fn percent(percent: u8) -> Self {
+        Self::new(f32::from(percent.min(100)) / 100.0).low(percent <= LOW_PERCENT)
+    }
+
     /// Filled `fill` of the way (0 to 1).
     pub fn new(fill: f32) -> Self {
         Self { fill: fill.clamp(0.0, 1.0), low: false, charging: false }

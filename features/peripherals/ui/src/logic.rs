@@ -2,11 +2,8 @@
 //! in it: each device's icon, how its link reads, how full its battery is
 //! drawn, when it reads as low, and the text beside it.
 
-use nova_look::Glyph;
+use nova_look::{Glyph, LOW_PERCENT};
 use nova_peripherals_api::{Battery, BatteryLevel, PeripheralKind, PeripheralLink};
-
-/// At or under this percent a battery reads as low.
-pub const LOW_PERCENT: u8 = 15;
 
 pub fn icon(kind: PeripheralKind) -> Glyph {
     match kind {

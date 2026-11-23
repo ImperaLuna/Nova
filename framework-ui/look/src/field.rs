@@ -440,6 +440,10 @@ impl EntityInputHandler for TextField {
     ) -> Option<String> {
         let range = self.editing.range_from_utf16(&range);
         adjusted.replace(self.editing.utf16_at(range.start)..self.editing.utf16_at(range.end));
+        // An input method gets no masked text, only what the field shows.
+        if self.masked {
+            return Some(MASK.to_string().repeat(self.text()[range].chars().count()));
+        }
         Some(self.text()[range].to_owned())
     }
 
