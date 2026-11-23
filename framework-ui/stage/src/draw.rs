@@ -24,9 +24,9 @@ use crate::stage::Stage;
 use crate::tokens::{PANEL_ENTER_RISE, PILL_FADE_OUT};
 use crate::view::{CENTER_ROW, PanelItem, PillBox, PillItem, ROWS, StageView};
 use gpui::{
-    AnyElement, App, Bounds, Context, DispatchPhase, Div, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseExitEvent, MouseMoveEvent, ParentElement, Pixels, Render, ScrollEvent, Styled, Window, canvas,
-    div, point, px, size,
+    AnyElement, App, Bounds, Context, DispatchPhase, Div, HoverListenerMode, InteractiveElement, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Render, ScrollEvent, StatefulInteractiveElement,
+    Styled, Window, canvas, div, point, px, size,
 };
 use nova_look::tokens::{BAR_GAP, BAR_HEIGHT, BAR_MARGIN, GAP, REVEAL_STRIP, SHADOW_ROOM};
 use nova_look::{Glass, LookStyled, Shape, region, set_blur_region};
@@ -368,15 +368,15 @@ impl Render for StageView {
 
         let panels: Vec<AnyElement> = self.panel_items().filter_map(|panel| self.panel(panel, now, cx)).collect();
         div()
+            .id("stage")
             .size_full()
             .body_text(cx)
             .track_focus(&self.focus)
             // On the strip along the top edge or a pill: the window takes
-            // the pointer nowhere else. Not `on_hover`, which works from
-            // where the pointer last was, and that stays inside the window
-            // after it left.
-            .on_mouse_move(cx.listener(|stage, _: &MouseMoveEvent, window, cx| stage.hover(true, window, cx)))
-            .on_mouse_exit(cx.listener(|stage, _: &MouseExitEvent, window, cx| stage.hover(false, window, cx)))
+            // the pointer nowhere else. A key pressed meanwhile leaves the
+            // pointer where it is.
+            .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
+            .on_hover(cx.listener(|stage, hovered: &bool, window, cx| stage.hover(*hovered, window, cx)))
             .on_key_down(cx.listener(|_, event: &KeyDownEvent, _, cx| {
                 if event.keystroke.key == ESCAPE {
                     Stage::dismiss(cx);

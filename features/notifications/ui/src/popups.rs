@@ -55,10 +55,6 @@ pub struct Popups {
     list_open: bool,
     /// A tick that drains the cards' time is running.
     ticking: bool,
-    /// The pointer is over a pop-up window, and the card GPUI last said it
-    /// was over.
-    pointer_in: bool,
-    hovered: Option<u64>,
     _followed: Vec<Subscription>,
 }
 
@@ -104,8 +100,6 @@ impl Popups {
                 features,
                 list_open: false,
                 ticking: false,
-                pointer_in: false,
-                hovered: None,
                 _followed: followed,
             }
         });
@@ -312,45 +306,7 @@ impl Popups {
         cx.notify();
     }
 
-    /// The pointer came into a pop-up window or left it. Leaving lets go
-    /// of every card, and no card is held until it comes back in.
-    ///
-    /// Works around the GPUI fork (ImperaLuna/zed): after `MouseExited`
-    /// the window keeps the pointer's last position, so the next frame's
-    /// hover check finds the card under it hovered again. Remove once the
-    /// fork clears its hit test on exit.
-    pub fn pointer(&mut self, inside: bool, cx: &mut Context<Self>) {
-        if inside == self.pointer_in {
-            return;
-        }
-        self.pointer_in = inside;
-        let now = Instant::now();
-        if inside {
-            // GPUI still has the card it last saw hovered, so it sends no
-            // hover for it again: hold it now. Should the pointer be on
-            // another card, GPUI lets this one go next.
-            if let Some(key) = self.hovered {
-                self.stack.set_held(key, true, now);
-            }
-        } else {
-            let held: Vec<u64> =
-                self.stack.entries().iter().filter(|entry| entry.held).map(|entry| entry.key).collect();
-            for key in held {
-                self.stack.set_held(key, false, now);
-            }
-        }
-        cx.notify();
-    }
-
     fn hover(&mut self, key: u64, held: bool, cx: &mut Context<Self>) {
-        if held {
-            self.hovered = Some(key);
-        } else if self.hovered == Some(key) {
-            self.hovered = None;
-        }
-        if held && !self.pointer_in {
-            return;
-        }
         self.stack.set_held(key, held, Instant::now());
         cx.notify();
     }
