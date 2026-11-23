@@ -579,6 +579,7 @@
             pkgs.nixfmt
             pkgs.statix
             pkgs.deadnix
+            pkgs.ast-grep # `just comments`
             pkgs.just
             pkgs.jq
             pkgs.git

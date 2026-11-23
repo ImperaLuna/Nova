@@ -67,6 +67,10 @@ lint-traps:
 file-length:
     scripts/check-file-length.sh
 
+# Comments outside the keep list in AGENTS.md; `--report` only counts them.
+comments *flags:
+    scripts/check-comments.sh {{ flags }}
+
 # Clippy with warnings as errors
 lint:
     cargo clippy --workspace --all-targets -- -D warnings

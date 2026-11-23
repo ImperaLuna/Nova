@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Fails on a Rust comment outside the keep list in AGENTS.md ("Comments"),
+# or a kept one past two lines, wherever the file lives. The rules live in
+# scripts/ast-grep/comments; their tests run first. `--report` only counts.
+# Nova Files' tools/check-comments.sh does the same with the same rules.
+set -euo pipefail
+
+readonly CONFIG=scripts/ast-grep/comments/sgconfig.yml
+readonly DOC_CRATES=(framework/*-info/Cargo.toml features/*/api/Cargo.toml)
+
+ast-grep test --config "$CONFIG" --skip-snapshot-tests
+
+files=$( (ast-grep scan --inline-rules '{id: rust-file, language: rust, rule: {kind: source_file}}' --json=stream . || true) | wc -l)
+if ((files == 0)); then
+    echo "No Rust files scanned: the comment lint covers nothing."
+    exit 1
+fi
+for crate in "${DOC_CRATES[@]}"; do
+    if [[ ! -f "$crate" ]]; then
+        echo "No crate matches $crate: the rules exempt docs by that folder; update them."
+        exit 1
+    fi
+done
+echo "Scanned $files Rust files."
+
+if [[ "${1:-}" == "--report" ]]; then
+    count=$( (ast-grep scan --config "$CONFIG" --json=stream || true) | wc -l)
+    echo "Comments outside the keep list: $count (report only)."
+    exit 0
+fi
+ast-grep scan --config "$CONFIG"
