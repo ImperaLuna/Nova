@@ -2,11 +2,13 @@
 //! top, each in a slot of its own, at most [`SHOWN`] at once; the rest wait
 //! under a "+N" chip and come up as room frees. A new one grows out of the
 //! quick settings button and, when its time runs out, folds back into it;
-//! one that's clicked, dismissed or closed elsewhere slides away. Several
-//! coming at once take their slots in one move, then open into them top
-//! to bottom, [`STAGGER`] apart. The same notification again (progress)
-//! updates its pop-up. `ui/notifications/NotificationStack.qml` in today's
-//! shell.
+//! one that's clicked, dismissed or closed elsewhere slides away. A new one
+//! waits, taking no room, until whoever draws the stack opens it
+//! ([`Stack::open_arrivals`]): the window grows first, so no motion starts
+//! with a resize. Several opened at once take their slots in one move, then
+//! open into them top to bottom, [`STAGGER`] apart. The same notification
+//! again (progress) updates its pop-up.
+//! `ui/notifications/NotificationStack.qml` in today's shell.
 
 use crate::logic;
 use crate::tokens::{SHOWN, STAGGER, TIMEOUT};
@@ -96,9 +98,9 @@ pub struct Entry {
     /// Seen in the list novad keeps, so leaving it means it was closed.
     listed: bool,
     pub leaving: Option<Leaving>,
-    /// Its slot, 0 none to 1 its card's room: taken at once, so cards
-    /// coming together push the others down in one move, and given back as
-    /// its card leaves.
+    /// Its slot, 0 none to 1 its card's room: taken when it's opened, by
+    /// all that open together at once, so they push the others down in one
+    /// move, and given back as its card leaves.
     pub room: Eased,
     /// Its card, 0 gone to 1 in place.
     pub presence: Eased,
@@ -124,15 +126,13 @@ impl Entry {
     }
 
     fn new(key: u64, notification: Notification, listed: bool, now: Instant) -> Self {
-        let mut room = Eased::at(0.0, now);
-        room.set_target(1.0, now);
         let countdown = Countdown::held(timeout(&notification));
         Self {
             key,
             notification,
             listed,
             leaving: None,
-            room,
+            room: Eased::at(0.0, now),
             presence: Eased::at(0.0, now),
             opens_at: None,
             countdown,
@@ -181,7 +181,7 @@ pub struct Stack {
     /// Newest first.
     waiting: Vec<Waiting>,
     next_key: u64,
-    /// Added since the stack last opened new ones, oldest first.
+    /// Those not opened yet, oldest first.
     arriving: Vec<u64>,
 }
 
@@ -202,6 +202,11 @@ impl Stack {
     /// Something is on its way: draw the next frame.
     pub fn moving(&self, now: Instant) -> bool {
         self.entries.iter().any(|entry| entry.moving(now) || entry.opens_at.is_some_and(|at| at > now))
+    }
+
+    /// Those waiting to be opened, which take no room yet.
+    pub fn arrivals(&self) -> &[u64] {
+        &self.arriving
     }
 
     /// A card's time is running: its line drains.
@@ -248,24 +253,23 @@ impl Stack {
         self.arriving.push(key);
     }
 
-    /// The ones that came together open, the newest (top) first.
+    /// Those waiting take their room at once and open, the newest (top)
+    /// first.
     pub fn open_arrivals(&mut self, now: Instant) {
         let arriving = std::mem::take(&mut self.arriving);
         let mut delay = Duration::ZERO;
         for key in arriving.into_iter().rev() {
-            if let Some(entry) = self.entries.iter_mut().find(|entry| entry.key == key && entry.leaving.is_none()) {
-                Self::opens(entry, now + delay);
+            if let Some(entry) = self.entries.iter_mut().find(|entry| entry.key == key) {
+                entry.room.set_target(1.0, now);
+                entry.opens_at = Some(now + delay);
+                entry.presence.set_target(1.0, now + delay);
                 delay += STAGGER;
             }
         }
     }
 
-    fn opens(entry: &mut Entry, at: Instant) {
-        entry.opens_at = Some(at);
-        entry.presence.set_target(1.0, at);
-    }
-
-    /// Takes pop-up `key` away, and brings up the next one waiting.
+    /// Takes pop-up `key` away, and brings in the next one waiting, to be
+    /// opened like any new one.
     pub fn remove(&mut self, key: u64, how: Leaving, now: Instant) {
         if self.take(key, how, now).is_none() {
             return;
@@ -273,15 +277,15 @@ impl Stack {
         if !self.waiting.is_empty() && self.shown().count() < SHOWN {
             let next = self.waiting.remove(0);
             let key = self.key();
-            let mut entry = Entry::new(key, next.notification, next.listed, now);
-            Self::opens(&mut entry, now);
-            self.entries.push(entry);
+            self.entries.push(Entry::new(key, next.notification, next.listed, now));
+            self.arriving.push(key);
         }
     }
 
     /// Starts `key` leaving, and returns it as it was.
     fn take(&mut self, key: u64, how: Leaving, now: Instant) -> Option<Entry> {
         let entry = self.entries.iter_mut().find(|entry| entry.key == key && entry.leaving.is_none())?;
+        self.arriving.retain(|arriving| *arriving != key);
         let before = entry.clone();
         entry.leaving = Some(how);
         entry.room.set_target(0.0, now);
@@ -409,6 +413,26 @@ mod tests {
     }
 
     #[test]
+    fn a_new_one_takes_no_room_and_stands_still_until_it_is_opened() {
+        let now = Instant::now();
+        let mut stack = Stack::default();
+        stack.add(notification(1), now);
+        let key = stack.entries()[0].key;
+        assert_eq!(stack.arrivals(), [key]);
+        let waited = later(now);
+        stack.step(waited);
+        assert!(stack.busy() && !stack.moving(waited) && !stack.counting());
+        assert_eq!(stack.entries()[0].room.value(waited), 0.0);
+        stack.open_arrivals(waited);
+        stack.step(waited);
+        assert!(stack.arrivals().is_empty() && stack.moving(waited) && stack.counting());
+        // One that left before it was opened isn't opened after all.
+        stack.add(notification(2), waited);
+        stack.clear(waited);
+        assert!(stack.arrivals().is_empty());
+    }
+
+    #[test]
     fn past_the_room_for_them_the_oldest_waits_and_comes_back_when_one_goes() {
         let now = Instant::now();
         let mut stack = Stack::default();
@@ -421,7 +445,9 @@ mod tests {
         let top = stack.entries()[0].key;
         stack.remove(top, Leaving::Away, later(now));
         assert_eq!(stack.waiting(), 0);
-        assert_eq!(stack.shown().last().map(|entry| entry.notification.id), Some(1), "the one waiting came back");
+        let back = stack.shown().last().expect("the one waiting came back");
+        assert_eq!(back.notification.id, 1);
+        assert_eq!(stack.arrivals(), [back.key], "to be opened like a new one");
     }
 
     #[test]

@@ -3010,6 +3010,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-media-api"
+version = "0.1.0"
+dependencies = [
+ "nova-app-info",
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-media-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-look",
+ "nova-media-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-notifications-api"
 version = "0.1.0"
 dependencies = [
@@ -3042,6 +3062,27 @@ version = "0.1.0"
 dependencies = [
  "nova-carrier",
  "serde",
+]
+
+[[package]]
+name = "nova-screenshot-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-screenshot-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "image",
+ "nova-desktop-info",
+ "nova-look",
+ "nova-screenshot-api",
+ "nova-stage",
+ "nova-ui-client",
 ]
 
 [[package]]
@@ -3080,7 +3121,9 @@ dependencies = [
  "nova-desktop-info",
  "nova-launcher-ui",
  "nova-look",
+ "nova-media-ui",
  "nova-notifications-ui",
+ "nova-screenshot-ui",
  "nova-stage",
  "nova-theme-info",
  "nova-ui-client",
