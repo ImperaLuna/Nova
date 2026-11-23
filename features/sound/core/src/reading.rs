@@ -26,7 +26,9 @@ const SAYS_WHAT_IT_IS: &[&CStr] =
 
 /// BlueZ's devices, by `device.api` and by how their nodes are named.
 const BLUEZ_API: &str = "bluez5";
-const BLUEZ_NAMES: &[&str] = &["bluez_output.", "bluez_input."];
+pub const BLUEZ_OUTPUT: &str = "bluez_output.";
+pub const BLUEZ_INPUT: &str = "bluez_input.";
+const BLUEZ_NAMES: &[&str] = &[BLUEZ_OUTPUT, BLUEZ_INPUT];
 const USB_BUS: &str = "usb";
 const USB_NAMES: &[&str] = &["alsa_output.usb-", "alsa_input.usb-"];
 /// What headphones and headsets call themselves.

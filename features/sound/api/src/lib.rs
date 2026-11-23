@@ -19,6 +19,11 @@ pub const TOPIC: Topic = Topic::named("sound");
 /// more, and [`Sound`] then reports it.
 pub const VOLUME_MAX: f32 = 1.0;
 
+/// How far one volume key (`nova volume up` or `down`) moves the output in
+/// use, while novad does the keys (the GPUI UI). `Tokens.volumeStep` in
+/// today's shell.
+pub const VOLUME_STEP: f32 = 0.05;
+
 /// Sent by the UI. Arguments with unknown fields are refused.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "cmd", content = "args", rename_all = "snake_case", deny_unknown_fields)]

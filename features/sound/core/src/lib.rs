@@ -16,6 +16,11 @@
 //! says so (`available: false`) and tries again with a doubling wait, since
 //! a server that isn't there sends nothing to wait on.
 //!
+//! While novad does the volume keys and the Bluetooth follow for the UI
+//! (the GPUI UI; Quickshell's shell does them itself), [`Sound::press`]
+//! steps the output in use and a Bluetooth device that appears becomes the
+//! one in use.
+//!
 //! novad runs it as a module (its wiring adapts [`Sound`] to novad's
 //! `Module` trait).
 
@@ -32,6 +37,8 @@ use nova_base::lock;
 use nova_hub::{ClientId, Hub};
 use nova_log::Logger;
 use nova_sound_api::{Command, Event, Sound as Reading};
+use nova_volume_osd_api::VolumeKey;
+use pulseaudio::protocol::Command as Request;
 pub use server::Sources;
 use server::{Failed, Link, Listing};
 use std::net::Shutdown;
@@ -56,6 +63,8 @@ const CLOSED: &str = "the connection closed";
 
 pub struct Sound {
     sources: Sources,
+    /// A Bluetooth device that appears becomes the one in use.
+    follows_bluetooth: bool,
     state: Mutex<State>,
     /// The connection that asks, with its count, while there is one. Never
     /// taken while `state` is held.
@@ -88,9 +97,14 @@ struct State {
 }
 
 impl Sound {
-    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    /// Starts following the server. With `follows_bluetooth` (while novad
+    /// does what today's shell's `VolumeService.qml` does, for the GPUI UI),
+    /// a Bluetooth output or input that appears becomes the one in use
+    /// ([`changes::arrived_bluetooth`]).
+    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>, follows_bluetooth: bool) -> Arc<Self> {
         let sound = Arc::new(Self {
             sources,
+            follows_bluetooth,
             state: Mutex::new(State::default()),
             asking: Mutex::new(None),
             wake: Condvar::new(),
@@ -121,10 +135,27 @@ impl Sound {
     /// Does `command`. What it changed is published when the server says
     /// so, not when this returns.
     pub fn change(&self, command: &Command) -> Result<(), String> {
+        self.ask(|listing| changes::requests(listing, command))
+    }
+
+    /// Does what a volume key asks of the output in use
+    /// ([`changes::press`]), as [`Self::change`] does a command.
+    pub fn press(&self, key: VolumeKey) -> Result<(), String> {
+        self.ask(|listing| changes::press(listing, key))
+    }
+
+    /// Sends the server the requests `requests` makes of the latest
+    /// listing.
+    fn ask(&self, requests: impl FnOnce(&Listing) -> Result<Vec<Request>, String>) -> Result<(), String> {
         let (requests, listed_by) = match &lock(&self.state).listing {
-            Some((listing, connection)) => (changes::requests(listing, command)?, *connection),
+            Some((listing, connection)) => (requests(listing)?, *connection),
             None => return Err(NO_SERVER.into()),
         };
+        self.send(&requests, listed_by)
+    }
+
+    /// Sends `requests`, made of what connection `listed_by` listed.
+    fn send(&self, requests: &[Request], listed_by: u64) -> Result<(), String> {
         let mut asking = lock(&self.asking);
         let Some((link, connection)) = asking.as_mut() else {
             return Err(NO_SERVER.into());
@@ -133,7 +164,7 @@ impl Sound {
         if connection != listed_by {
             return Err(SERVER_CAME_BACK.into());
         }
-        for request in &requests {
+        for request in requests {
             if lock(&self.state).stopped {
                 return Err(NO_SERVER.into());
             }
@@ -267,9 +298,42 @@ impl Sound {
                 named = true;
                 answered();
             }
+            let arrived = self.arrived_bluetooth(&listing, connection);
             if !self.tell(Some((listing, connection))) {
                 return "stopped".into();
             }
+            self.use_arrived(&arrived, connection);
+        }
+    }
+
+    /// What makes a Bluetooth device in `listing` that the last listing
+    /// from the same connection didn't have the one in use, while it
+    /// follows Bluetooth.
+    fn arrived_bluetooth(&self, listing: &Listing, connection: u64) -> Vec<Request> {
+        if !self.follows_bluetooth {
+            return Vec::new();
+        }
+        let state = lock(&self.state);
+        let before = state.listing.as_ref().filter(|(_, listed_by)| *listed_by == connection);
+        changes::arrived_bluetooth(before.map(|(listing, _)| listing), listing)
+    }
+
+    /// Sends what [`Self::arrived_bluetooth`] made. Its effect comes back
+    /// as the server's word that something changed, like any other.
+    fn use_arrived(&self, requests: &[Request], connection: u64) {
+        for request in requests {
+            let (what, name) = match request {
+                Request::SetDefaultSink(name) => ("sound", name),
+                Request::SetDefaultSource(name) => ("the mic", name),
+                _ => continue,
+            };
+            self.logger.info(LOG_SOURCE, &format!("switching {what} to {}", name.to_string_lossy()));
+        }
+        if requests.is_empty() {
+            return;
+        }
+        if let Err(reason) = self.send(requests, connection) {
+            self.logger.warn(LOG_SOURCE, &format!("can't switch to the Bluetooth device: {reason}"));
         }
     }
 

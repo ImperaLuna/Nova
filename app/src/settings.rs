@@ -56,8 +56,15 @@ pub struct Settings {
 impl Settings {
     /// The settings at start: a missing or broken file means defaults. The
     /// modules start before the features are published, so the UI that
-    /// loads a feature on that event finds its module running.
-    pub fn load(sources: &Sources, hub: &Arc<Hub>, logger: &Arc<Logger>, compositor: Option<Arc<Compositor>>) -> Self {
+    /// loads a feature on that event finds its module running. `ui` gives
+    /// the program that runs for the one `features.toml` picks.
+    pub fn load(
+        sources: &Sources,
+        hub: &Arc<Hub>,
+        logger: &Arc<Logger>,
+        compositor: Option<Arc<Compositor>>,
+        ui: impl FnOnce(UiProgram) -> UiProgram,
+    ) -> Self {
         let fallback = "broken settings, using the defaults";
         let config = logged(config::read(&sources.config), fallback, logger).unwrap_or_default();
         let selection = logged(features::read_selection(&sources.selection), fallback, logger).unwrap_or_default();
@@ -73,6 +80,7 @@ impl Settings {
             icons: Arc::clone(&sources.icons),
             compositor,
             apps: nova_apps::AppIndex::new(sources.modules.apps.clone(), &sources.path_var, Arc::clone(logger)),
+            ui: ui(selection.ui_program()),
         };
         let modules = Running::start(&context, &sources.modules, &config, &features);
         publish_features(&[], &features, hub, logger);
@@ -122,6 +130,12 @@ impl Settings {
     /// another one novad knows.
     pub fn ui_program(&self) -> UiProgram {
         self.selection.ui_program()
+    }
+
+    /// The UI program novad runs, which keeps the one it started with
+    /// ([`Self::ui_program`] may have changed since).
+    pub fn ui_in_use(&self) -> UiProgram {
+        self.context.ui
     }
 
     /// Stops every module, for a novad that ends without exiting the

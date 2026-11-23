@@ -189,6 +189,23 @@ fn volume_keys_reach_the_ui_once_it_listens() {
     assert!(cli.request(5, "volume", Some(json!({"key": "louder"})))["error"].is_string());
 }
 
+/// For the GPUI UI novad changes the volume itself, through the sound
+/// feature (here with no sound server to change it on), and the UI only
+/// shows the capsule.
+#[test]
+fn for_the_gpui_ui_novad_changes_the_volume_itself() {
+    let scripts = nova_test_support::TempDir::new("gpui-volume");
+    let fake_ui = write_program(&scripts, "nova-ui", "exec sleep 60");
+    let settings = super::ui_settings(Program::Gpui(fake_ui), PathBuf::from("no-quickshell"));
+    let novad = TestDaemon::start("gpui-volume", Some(settings));
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["volume"]})));
+    let mut cli = novad.connect();
+    let reply = cli.request(2, "volume", Some(json!({"key": "up"})));
+    assert_eq!(reply["error"], "there is no sound server", "{reply}");
+    assert_eq!(ui.next_event("volume"), json!({"key": "up"}));
+}
+
 #[test]
 fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
     let novad = TestDaemon::start("lock", None);
