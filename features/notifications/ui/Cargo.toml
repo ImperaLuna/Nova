@@ -1,0 +1,40 @@
+# nova-notifications-ui
+#
+# What the notifications feature draws with GPUI: the pop-ups (an overlay
+# with a window of its own on each screen), and quick settings' list and
+# settings page (parts of quick settings' hosts).
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-daemon-info
+# - nova-desktop-info
+# - nova-look
+# - nova-notifications-api
+# - nova-peripherals-api
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-notifications-ui"
+description = "Notifications' pop-ups, list and settings page, drawn with GPUI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-daemon-info.workspace = true
+nova-desktop-info.workspace = true
+nova-look.workspace = true
+nova-notifications-api.workspace = true
+nova-peripherals-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true
