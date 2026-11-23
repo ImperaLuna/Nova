@@ -1,8 +1,10 @@
-//! The card a saved screenshot lands in, in the bottom right corner of the
-//! screen that had focus: the shot, that it was copied, where it went and
-//! its size, and Open, Folder and Delete. A line along the bottom drains
-//! over its time and the card leaves when it runs out; the pointer on the
-//! card holds it. It slides in from the edge, and out before it goes.
+//! The card a saved screenshot or recording lands in, in the bottom right
+//! corner of the screen that had focus: the shot (or the recording's
+//! length), that it was saved, where it went, and Open, Folder and Delete.
+//! A recording that didn't start shows here too: why, with Try again and
+//! Open log, for longer. A line along the bottom drains over its time and
+//! the card leaves when it runs out; the pointer on the card holds it. It
+//! slides in from the edge, and out before it goes.
 //! `ui/capture/ShotCardWindow.qml` and `ShotCard.qml` in today's shell.
 //!
 //! Its own window on each screen, on the overlay layer like the volume
@@ -11,22 +13,24 @@
 //! with clicks and blur only on the card. It takes no keyboard and no
 //! space, and asks for frames only while the card slides.
 
-use crate::capture::{Capture, Card};
-use crate::pick::{contain, folder_label, size_label};
-use crate::tokens::{CARD_BUTTON_HEIGHT, CARD_GAP, CARD_WIDTH, DRAIN_HEIGHT, DRAIN_OPACITY, THUMB_HEIGHT};
+use crate::capture::{Button, Capture, Card, Saved};
+use crate::pick::{clock, contain, folder_label, size_label};
+use crate::tokens::{
+    CARD_BUTTON_HEIGHT, CARD_GAP, CARD_WIDTH, DRAIN_HEIGHT, DRAIN_OPACITY, FAILED_CARD_LINES, THUMB_HEIGHT,
+};
 use gpui::{
     AnyElement, App, AppContext, Bounds, Context, CursorStyle, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Pixels, Render, RenderImage, StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window,
-    WindowHandle, bounds, div, img,
+    ParentElement, Pixels, Render, RenderImage, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    TextRun, WeakEntity, Window, WindowHandle, bounds, div, font, img,
     layer_shell::{Anchor, Layer},
     point, px, size,
 };
 use nova_look::tokens::{
-    FONT_SIZE, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE, LABEL_NUDGE, LINE_HEIGHT, PAD, RADIUS_CONTROL, RADIUS_PANEL,
-    RADIUS_ROW, SHADOW_ROOM, WEIGHT_LABEL, WEIGHT_TITLE,
+    FONT_MONO, FONT_SANS, FONT_SIZE, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE, LABEL_NUDGE, LINE_HEIGHT, PAD,
+    RADIUS_CONTROL, RADIUS_PANEL, RADIUS_ROW, SHADOW_ROOM, WEIGHT_LABEL, WEIGHT_TITLE,
 };
 use nova_look::{Glass, Glyph, Icon, LookStyled, Shape, ShellWindow, Theme, region, set_blur_region};
-use nova_screenshot_api::{SavedScreenshot, ScreenshotAction};
+use nova_screenshot_api::ScreenshotAction;
 use nova_stage::{FrameLog, Screen, Stage};
 use std::sync::Arc;
 use std::time::Instant;
@@ -37,11 +41,14 @@ const NAMESPACE: &str = "nova-screenshot";
 /// A window with no card: as small as the compositor takes.
 const RESTING: Pixels = px(1.0);
 
-const BUTTONS: [(ScreenshotAction, Glyph, &str); 3] = [
-    (ScreenshotAction::Open, Glyph::OPEN, "Open"),
-    (ScreenshotAction::Folder, Glyph::FOLDER, "Folder"),
-    (ScreenshotAction::Delete, Glyph::TRASH, "Delete"),
+const FILE_BUTTONS: [(Button, Glyph, &str); 3] = [
+    (Button::File(ScreenshotAction::Open), Glyph::OPEN, "Open"),
+    (Button::File(ScreenshotAction::Folder), Glyph::FOLDER, "Folder"),
+    (Button::File(ScreenshotAction::Delete), Glyph::TRASH, "Delete"),
 ];
+const FAILED_BUTTONS: [(Button, Glyph, &str); 2] =
+    [(Button::Retry, Glyph::REBOOT, "Try again"), (Button::Log, Glyph::DOCUMENT, "Open log")];
+const DELETE: Button = Button::File(ScreenshotAction::Delete);
 
 /// How tall the title line and the line under it are.
 fn title_height() -> Pixels {
@@ -57,26 +64,55 @@ fn inset() -> Pixels {
     PAD + GAP / 2.0
 }
 
-/// The card's height: the shot, the two lines, the buttons.
-fn card_height() -> Pixels {
-    let content =
-        THUMB_HEIGHT + CARD_GAP + title_height() + LABEL_NUDGE + detail_height() + CARD_GAP + CARD_BUTTON_HEIGHT;
+/// The card's height: the shot, the two lines and the buttons; or, for a
+/// recording that didn't start, the title, the reason's `lines` and the
+/// buttons.
+fn card_height(failed: bool, lines: usize) -> Pixels {
+    let content = if failed {
+        title_height() + LABEL_NUDGE + detail_height() * lines as f32 + CARD_GAP + CARD_BUTTON_HEIGHT
+    } else {
+        THUMB_HEIGHT + CARD_GAP + title_height() + LABEL_NUDGE + detail_height() + CARD_GAP + CARD_BUTTON_HEIGHT
+    };
     content + inset() * 2.0
 }
 
-/// The window, with the card at rest in it: its shadow's room on the left
-/// and top, the card's gap from the screen's edges on the right and bottom.
-fn window_size() -> gpui::Size<Pixels> {
-    size(SHADOW_ROOM + CARD_WIDTH + CARD_GAP, SHADOW_ROOM + card_height() + CARD_GAP)
+/// The window, with a card `height` tall at rest in it: its shadow's room
+/// on the left and top, the card's gap from the screen's edges on the
+/// right and bottom.
+fn window_size(height: Pixels) -> gpui::Size<Pixels> {
+    size(SHADOW_ROOM + CARD_WIDTH + CARD_GAP, SHADOW_ROOM + height + CARD_GAP)
+}
+
+/// The lines novad's reason takes on the card, at most
+/// [`FAILED_CARD_LINES`].
+fn reason_lines(reason: &str, window: &Window) -> usize {
+    let run = TextRun {
+        len: reason.len(),
+        font: font(FONT_SANS),
+        color: gpui::black(),
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    let width = CARD_WIDTH - inset() * 2.0;
+    let shaped = window.text_system().shape_text(
+        SharedString::from(reason.to_owned()),
+        FONT_SIZE_SMALL,
+        &[run],
+        Some(width),
+        None,
+    );
+    let lines = shaped.map_or(1, |lines| lines.iter().map(|line| line.wrap_boundaries().len() + 1).sum());
+    lines.clamp(1, FAILED_CARD_LINES)
 }
 
 pub struct CardWindow {
     screen: Screen,
     capture: WeakEntity<Capture>,
-    /// It is card sized now (what the window was last set to).
-    shown: bool,
+    /// The window's size now: card sized, or none while it rests.
+    sized: Option<gpui::Size<Pixels>>,
     /// The button under the pointer.
-    hovered: Option<ScreenshotAction>,
+    hovered: Option<Button>,
     /// The card's place as the compositor last got it.
     sent: Option<Bounds<Pixels>>,
     frames: Option<FrameLog>,
@@ -96,7 +132,7 @@ impl CardWindow {
             window.set_input_region(Some(&[]));
             cx.new(|cx: &mut Context<Self>| {
                 let followed = capture.upgrade().map(|capture| cx.observe(&capture, |_, _, cx| cx.notify()));
-                Self { screen, capture, shown: false, hovered: None, sent: None, frames, _followed: followed }
+                Self { screen, capture, sized: None, hovered: None, sent: None, frames, _followed: followed }
             })
         });
         match opened {
@@ -115,19 +151,24 @@ impl CardWindow {
         }
     }
 
-    fn show(&mut self, shown: bool, window: &mut Window) {
-        if shown == self.shown {
+    /// Sizes the window for a card `height` tall, or rests it.
+    fn show(&mut self, height: Option<Pixels>, window: &mut Window) {
+        let sized = height.map(window_size);
+        if sized == self.sized {
             return;
         }
-        self.shown = shown;
-        self.hovered = None;
-        if shown {
-            window.resize(window_size());
-        } else {
-            window.resize(size(RESTING, RESTING));
-            window.set_input_region(Some(&[]));
-            set_blur_region(window, &[]);
-            self.sent = None;
+        if self.sized.is_none() {
+            self.hovered = None;
+        }
+        self.sized = sized;
+        match sized {
+            Some(sized) => window.resize(sized),
+            None => {
+                window.resize(size(RESTING, RESTING));
+                window.set_input_region(Some(&[]));
+                set_blur_region(window, &[]);
+                self.sent = None;
+            }
         }
     }
 
@@ -158,18 +199,21 @@ impl Render for CardWindow {
         capture.update(cx, |capture, cx| capture.step(now, cx));
         let capture_now = capture.read(cx);
         let card = capture_now.card().filter(|card| card.screen == self.screen.id);
-        self.show(card.is_some(), window);
-        let Some(card) = card else {
+        let lines = match card.map(|card| &card.saved) {
+            Some(Saved::Failed(reason)) => reason_lines(reason, window),
+            _ => 1,
+        };
+        let height = card.map(|card| card_height(matches!(card.saved, Saved::Failed(_)), lines));
+        self.show(height, window);
+        let (Some(card), Some(height)) = (card, height) else {
             self.log_frame(false, now);
             return div().into_any_element();
         };
         let slide = card.slide.value(now);
         let moving = !card.slide.settled(now);
-        let at = bounds(
-            point(SHADOW_ROOM + (CARD_WIDTH + CARD_GAP) * (1.0 - slide), SHADOW_ROOM),
-            size(CARD_WIDTH, card_height()),
-        );
-        let look = Look { card, slide, at, hovered: self.hovered, now };
+        let at =
+            bounds(point(SHADOW_ROOM + (CARD_WIDTH + CARD_GAP) * (1.0 - slide), SHADOW_ROOM), size(CARD_WIDTH, height));
+        let look = Look { card, slide, at, lines, hovered: self.hovered, now };
         let drawn = draw(&look, cx.weak_entity(), self.capture.clone(), cx);
         self.regions(at, window);
         if moving {
@@ -186,39 +230,26 @@ struct Look<'a> {
     card: &'a Card,
     slide: f32,
     at: Bounds<Pixels>,
-    hovered: Option<ScreenshotAction>,
+    /// The lines a failed recording's reason takes.
+    lines: usize,
+    hovered: Option<Button>,
     now: Instant,
 }
 
 fn draw(look: &Look, this: WeakEntity<CardWindow>, capture: WeakEntity<Capture>, cx: &App) -> AnyElement {
     let theme = Theme::of(cx);
     let Look { card, slide, at, now, .. } = *look;
-    // Sized here, in the middle of its room: GPUI lays a picture out by its
-    // own shape and would crop it to the room's.
-    let room = size(CARD_WIDTH - inset() * 2.0, THUMB_HEIGHT);
-    let thumb = div()
-        .flex_none()
-        .w(room.width)
-        .h(room.height)
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(RADIUS_ROW)
-        .bg(theme.backdrop)
-        .overflow_hidden()
-        .children(card.thumb.as_ref().map(|thumb| {
-            let pixels = thumb.size(0);
-            let fit = contain(size(pixels.width.0.max(0) as u32, pixels.height.0.max(0) as u32), room);
-            img(Arc::<RenderImage>::clone(thumb)).flex_none().w(fit.width).h(fit.height)
-        }));
+    let failed = matches!(card.saved, Saved::Failed(_));
     let held = capture.clone();
+    let drain_color = if failed { theme.error } else { theme.primary };
     let drain = div()
         .absolute()
         .left_0()
         .bottom_0()
         .h(DRAIN_HEIGHT)
         .w(CARD_WIDTH * card.countdown.remaining(now))
-        .bg(theme.primary.opacity(DRAIN_OPACITY));
+        .bg(drain_color.opacity(DRAIN_OPACITY));
+    let buttons: &[(Button, Glyph, &str)] = if failed { &FAILED_BUTTONS } else { &FILE_BUTTONS };
     Glass::new(RADIUS_PANEL)
         .shadow(slide)
         .build(cx)
@@ -239,55 +270,95 @@ fn draw(look: &Look, this: WeakEntity<CardWindow>, capture: WeakEntity<Capture>,
                 .flex()
                 .flex_col()
                 .gap(CARD_GAP)
-                .child(thumb)
-                .child(labels(&card.shot, cx))
-                .child(div().flex().gap(ICON_GAP).children(buttons(look.hovered, &this, &capture, cx))),
+                .children((!failed).then(|| thumb(card, cx)))
+                .child(labels(&card.saved, look.lines, cx))
+                .child(div().flex().gap(ICON_GAP).children(draw_buttons(buttons, look.hovered, &this, &capture, cx))),
         )
         .child(drain)
         .into_any_element()
 }
 
-/// That it was copied (saved either way; copied unless the clipboard
-/// failed), and where it went and its size.
-fn labels(shot: &SavedScreenshot, cx: &App) -> impl IntoElement {
+/// The shot, fitted whole; or for a recording, a video icon over its
+/// length.
+fn thumb(card: &Card, cx: &App) -> AnyElement {
     let theme = Theme::of(cx);
-    let title = if shot.copied { "Copied to clipboard" } else { "Saved" };
+    // Sized here, in the middle of its room: GPUI lays a picture out by its
+    // own shape and would crop it to the room's.
+    let room = size(CARD_WIDTH - inset() * 2.0, THUMB_HEIGHT);
+    let thumb = div()
+        .flex_none()
+        .w(room.width)
+        .h(room.height)
+        .flex()
+        .flex_col()
+        .gap(ICON_GAP)
+        .items_center()
+        .justify_center()
+        .rounded(RADIUS_ROW)
+        .bg(theme.backdrop)
+        .overflow_hidden();
+    match &card.saved {
+        Saved::Recording(saved) => thumb
+            .child(Icon::new(Glyph::VIDEO).color(theme.fg_dim()))
+            .child(div().font_family(FONT_MONO).text_color(theme.fg).child(clock(saved.duration_ms))),
+        _ => thumb.children(card.thumb.as_ref().map(|thumb| {
+            let pixels = thumb.size(0);
+            let fit = contain(size(pixels.width.0.max(0) as u32, pixels.height.0.max(0) as u32), room);
+            img(Arc::<RenderImage>::clone(thumb)).flex_none().w(fit.width).h(fit.height)
+        })),
+    }
+    .into_any_element()
+}
+
+/// What happened (saved, copied unless the clipboard failed, or didn't
+/// start), and where it went with its size or length, or why it didn't.
+fn labels(saved: &Saved, lines: usize, cx: &App) -> impl IntoElement {
+    let theme = Theme::of(cx);
+    let (glyph, ink, title) = match saved {
+        Saved::Shot(shot) if shot.copied => (Glyph::CHECK, theme.success, "Copied to clipboard"),
+        Saved::Shot(_) => (Glyph::CHECK, theme.success, "Saved"),
+        Saved::Recording(_) => (Glyph::CHECK, theme.success, "Recording saved"),
+        Saved::Failed(_) => (Glyph::VIDEO_OFF, theme.error, "Recording didn't start"),
+    };
     let title = div()
         .flex()
         .items_center()
         .gap(ICON_GAP)
         .h(title_height())
         .font_weight(WEIGHT_TITLE)
-        .child(Icon::new(Glyph::CHECK).color(theme.success))
+        .child(Icon::new(glyph).color(ink))
         .child(title);
-    let detail = format!("{} · {} · PNG", folder_label(&shot.path), size_label(shot.width, shot.height));
-    let detail = div()
-        .mt(LABEL_NUDGE)
-        .h(detail_height())
-        .text_size(FONT_SIZE_SMALL)
-        .text_color(theme.fg_dim())
-        .whitespace_nowrap()
-        .overflow_hidden()
-        .text_ellipsis()
-        .child(detail);
+    let detail = div().mt(LABEL_NUDGE).text_size(FONT_SIZE_SMALL).text_color(theme.fg_dim());
+    let detail = match saved {
+        Saved::Failed(reason) => detail.h(detail_height() * lines as f32).line_clamp(lines).child(reason.clone()),
+        Saved::Shot(shot) => {
+            let line = format!("{} · {} · PNG", folder_label(&shot.path), size_label(shot.width, shot.height));
+            detail.h(detail_height()).whitespace_nowrap().overflow_hidden().text_ellipsis().child(line)
+        }
+        Saved::Recording(saved) => {
+            let line = format!("{} · {} · MP4", folder_label(&saved.path), clock(saved.duration_ms));
+            detail.h(detail_height()).whitespace_nowrap().overflow_hidden().text_ellipsis().child(line)
+        }
+    };
     div().flex().flex_col().child(title).child(detail)
 }
 
-/// Open, Folder and Delete, each as wide; Delete turns the error color
-/// under the pointer.
-fn buttons(
-    hovered: Option<ScreenshotAction>,
+/// The card's buttons, each as wide; Delete turns the error color under
+/// the pointer.
+fn draw_buttons(
+    buttons: &[(Button, Glyph, &'static str)],
+    hovered: Option<Button>,
     this: &WeakEntity<CardWindow>,
     capture: &WeakEntity<Capture>,
     cx: &App,
 ) -> Vec<AnyElement> {
     let theme = Theme::of(cx);
-    BUTTONS
+    buttons
         .iter()
-        .map(|(action, glyph, label)| {
-            let action = *action;
-            let lit = hovered == Some(action);
-            let ink = if lit && action == ScreenshotAction::Delete { theme.error } else { theme.fg };
+        .map(|(button, glyph, label)| {
+            let button = *button;
+            let lit = hovered == Some(button);
+            let ink = if lit && button == DELETE { theme.error } else { theme.fg };
             let (this, capture) = (this.clone(), capture.clone());
             div()
                 .id(*label)
@@ -306,7 +377,7 @@ fn buttons(
                 .child(*label)
                 .on_hover(move |hovered, _, cx| {
                     let _ = this.update(cx, |window, cx| {
-                        let now = if *hovered { Some(action) } else { window.hovered.filter(|was| *was != action) };
+                        let now = if *hovered { Some(button) } else { window.hovered.filter(|was| *was != button) };
                         if now != window.hovered {
                             window.hovered = now;
                             cx.notify();
@@ -315,7 +386,7 @@ fn buttons(
                 })
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     cx.stop_propagation();
-                    let _ = capture.update(cx, |capture, cx| capture.act(action, cx));
+                    let _ = capture.update(cx, |capture, cx| capture.act(button, cx));
                 })
                 .into_any_element()
         })
@@ -328,9 +399,16 @@ mod tests {
 
     #[test]
     fn the_window_holds_the_card_its_gaps_and_its_shadow() {
-        let window = window_size();
+        let height = card_height(false, 1);
+        let window = window_size(height);
         assert_eq!(window.width, SHADOW_ROOM + CARD_WIDTH + CARD_GAP);
-        assert!(card_height() > THUMB_HEIGHT + CARD_BUTTON_HEIGHT + CARD_GAP * 2.0);
-        assert_eq!(window.height, SHADOW_ROOM + card_height() + CARD_GAP);
+        assert!(height > THUMB_HEIGHT + CARD_BUTTON_HEIGHT + CARD_GAP * 2.0);
+        assert_eq!(window.height, SHADOW_ROOM + height + CARD_GAP);
+    }
+
+    #[test]
+    fn a_failed_recording_s_card_grows_with_its_reason() {
+        assert!(card_height(true, 1) < card_height(false, 1));
+        assert_eq!(card_height(true, 3) - card_height(true, 1), detail_height() * 2.0);
     }
 }

@@ -12,6 +12,7 @@
 //! token's property there, and a test reads that file and holds the two
 //! equal, so the shells can't drift apart. Change a value in both.
 
+use crate::Family;
 use gpui::{FontWeight, Pixels, px};
 use std::time::Duration;
 
@@ -176,6 +177,10 @@ tokens! {
     LOGO_SIZE: px = 36.0, "logoSize";
     /// Between the sections of its pages, its own and other features'.
     QUICK_SETTINGS_GAP: px = 12.0, "quickSettingsGap";
+    /// How far quick settings' pages sit in from its edges: a page's top
+    /// row leaves room for the pill's buttons by it
+    /// (`page_header::header_inset`).
+    QUICK_SETTINGS_PAD: px = 16.0, "quickSettingsPad";
     /// A toggle tile (`crate::Tile`), and the arrow at its end that opens
     /// its page.
     TILE_HEIGHT: px = 58.0, "tileHeight";
@@ -192,6 +197,24 @@ tokens! {
     /// fainter while muted.
     SLIDER_APP_RADIUS: px = 11.0, "appIconRadius";
     SLIDER_APP_MUTED_OPACITY: ratio = 0.45, "appMutedOpacity";
+    // Small controls on quick settings' pages: an on/off switch, the
+    // buttons on a card that asks something, a device's battery (a rim with
+    // a nub, filled to its level, with a bolt while charging), and the
+    // lines of a graph over time.
+    SWITCH_WIDTH: px = 40.0, "switchWidth";
+    SWITCH_HEIGHT: px = 24.0, "switchHeight";
+    SWITCH_KNOB: px = 18.0, "switchKnob";
+    CONFIRM_BUTTON_HEIGHT: px = 26.0, "confirmButtonHeight";
+    DEVICE_BATTERY_WIDTH: px = 22.0, "deviceBatteryWidth";
+    DEVICE_BATTERY_HEIGHT: px = 11.0, "deviceBatteryHeight";
+    DEVICE_BATTERY_RADIUS: px = 3.0, "deviceBatteryRadius";
+    DEVICE_BATTERY_INSET: px = 2.0, "deviceBatteryInset";
+    DEVICE_BATTERY_NUB_WIDTH: px = 2.0, "deviceBatteryNubWidth";
+    DEVICE_BATTERY_NUB_HEIGHT: px = 4.0, "deviceBatteryNubHeight";
+    DEVICE_BATTERY_RIM: px = 1.25, "deviceBatteryRim";
+    DEVICE_BATTERY_RIM_OPACITY: ratio = 0.55, "deviceBatteryRimOpacity";
+    DEVICE_BOLT_SIZE: px = 9.0, "deviceBoltSize";
+    GRAPH_LINE: px = 2.0, "graphLine";
 
     // The type scale: six steps, from labels up, then a panel's headline.
     /// Small caps labels and badges.
@@ -256,10 +279,11 @@ pub const ICON_GRID: f32 = 24.0;
 pub const EASING: [f32; 4] = [0.2, 0.8, 0.2, 1.0];
 
 // Type: the families, and the weights of running text, of labels and
-// names, of titles and picked options, and of a badge's count.
-pub const FONT_SANS: &str = "Inter";
-pub const FONT_MONO: &str = "JetBrains Mono";
-pub const FONT_DISPLAY: &str = "Instrument Serif";
+// names, of titles and picked options, and of a badge's count. A family
+// draws with the face this system matches it to, as Qt's does ([`Family`]).
+pub const FONT_SANS: Family = Family::named("Inter");
+pub const FONT_MONO: Family = Family::named("JetBrains Mono");
+pub const FONT_DISPLAY: Family = Family::named("Instrument Serif");
 /// A line's height as a share of its text size: Inter's own spacing, which
 /// is how Qt lays text out (GPUI's default is 1.618). `body_text` sets it,
 /// so nothing else does.

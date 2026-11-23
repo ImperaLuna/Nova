@@ -46,6 +46,12 @@ pub fn part(view: &'static str, cx: &mut App, build: impl Fn(&Screen, &mut App) 
     cx.default_global::<Registry>().parts.insert(view.into(), Rc::new(build));
 }
 
+/// Whether some feature's ui registered `view` as a [`part`]: a host's
+/// [`Parts`] build only those.
+pub fn has_part(view: &str, cx: &App) -> bool {
+    cx.try_global::<Registry>().is_some_and(|registry| registry.parts.contains_key(view))
+}
+
 /// Registers what a `shell.overlays` slot names as `view`: something with
 /// windows of its own over the screens (pop-ups, the volume capsule).
 /// `build` runs once while its feature is ready and returns whatever keeps

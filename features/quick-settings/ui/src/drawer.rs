@@ -27,7 +27,7 @@ pub const FOOT: &str = "quick-settings.foot";
 pub const PAGES: &str = "quick-settings.pages";
 /// The right pill's buttons, which the drawer draws where the pill had
 /// them: it grows over the pill, and the button that opened it closes it.
-pub const PILL_BUTTONS: &str = "right-pill.buttons";
+pub use nova_look::PILL_BUTTONS;
 
 const MINUTE: Duration = Duration::from_secs(60);
 

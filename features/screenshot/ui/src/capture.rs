@@ -1,26 +1,33 @@
-//! The `capture.overlay` view (host `shell.overlays`): the region picker on
-//! every screen novad froze, while it's open (`nova screenshot region`),
-//! and the card a saved shot lands in, on the screen that had focus when
-//! it was saved. `ui/capture/CaptureOverlay.qml`, `ShotCards.qml` and
-//! `service/ScreenshotService.qml` in today's shell.
+//! The `capture.overlay` view (host `shell.overlays`), shared by
+//! screenshots and recordings: the region picker on every screen, the card
+//! a saved shot or recording lands in, on the screen that had focus when
+//! it was saved, and the marks around a region being recorded.
+//! `ui/capture/CaptureOverlay.qml`, `ShotCards.qml` and
+//! `service/ScreenshotService.qml` in today's shell; the recording's side
+//! is in [`record`].
 //!
 //! This is the link to novad and the state every screen shares: the
 //! frozen frames, the toolbar's mode, a pick being saved, the card. Each
-//! screen has a picker window ([`crate::picker`]) and a card window
-//! ([`crate::card`]), opened when the overlay starts and kept, one pixel
-//! big and taking nothing, while they show nothing: opening a window
-//! stalls every window's frames, so none opens as the picker or the card
-//! comes in.
+//! screen has a picker window ([`crate::picker`]), a card window
+//! ([`crate::card`]) and a marks window ([`crate::marks`]), opened when the
+//! overlay starts and kept, one pixel big and taking nothing, while they
+//! show nothing: opening a window stalls every window's frames, so none
+//! opens as the picker or the card comes in.
+
+mod record;
 
 use crate::card::CardWindow;
 use crate::images;
+use crate::marks::MarksWindow;
 use crate::pick::Countdown;
 use crate::picker::PickerWindow;
-use crate::tokens::{CARD_TIME, CARD_WIDTH, COUNTDOWN_TICK, THUMB_HEIGHT};
+use crate::tokens::{CARD_TIME, CARD_WIDTH, COUNTDOWN_TICK, FAILED_CARD_TIME, THUMB_HEIGHT};
 use gpui::{App, AppContext, Context, DisplayId, Entity, RenderImage, Size, Subscription, Task, WindowHandle, size};
+use nova_daemon_info::{Event as FeaturesEvent, FeatureState, FeatureStatus, topics};
 use nova_desktop_info::{Desktop, Event as DesktopEvent};
 use nova_look::motion::Eased;
 use nova_look::tokens::{DURATION_PANEL, GAP, PAD};
+use nova_recording_api::{ActiveRecording, LayoutRect, SavedRecording};
 use nova_screenshot_api::{
     CaptureFrame, CaptureMode, Command, Event, PixelRect, SavedScreenshot, ScreenshotAction, TOPIC,
 };
@@ -39,37 +46,146 @@ pub struct Frame {
     pub pixels: Size<u32>,
 }
 
-/// The card on one screen: the saved shot, its picture once read, its
-/// time, and how far in it has slid (1 in, 0 out).
+/// What a card shows.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Saved {
+    Shot(SavedScreenshot),
+    Recording(SavedRecording),
+    /// A recording didn't start after the countdown: novad's reason.
+    Failed(String),
+}
+
+/// A card's button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Button {
+    /// Open, Folder or Delete on a saved shot or recording.
+    File(ScreenshotAction),
+    /// A recording that didn't start: the picker once more, or novad's
+    /// log.
+    Retry,
+    Log,
+}
+
+/// The card on one screen: what was saved, the shot's picture once read,
+/// its time, and how far in it has slid (1 in, 0 out).
 pub struct Card {
-    pub shot: SavedScreenshot,
+    pub saved: Saved,
     pub screen: DisplayId,
     pub thumb: Option<Arc<RenderImage>>,
     pub countdown: Countdown,
     pub slide: Eased,
 }
 
+/// The picker on one screen, as it shows this frame.
+pub struct Picking<'a> {
+    /// The frozen frame under a screenshot's picker; none when picking
+    /// what to record, over the live screen.
+    pub frame: Option<&'a Frame>,
+    pub mode: CaptureMode,
+    pub video: bool,
+    /// A pick is being saved, or counted down to: it takes no more.
+    pub busy: bool,
+    /// The count to the recording's start, 0 when not counting.
+    pub countdown: u32,
+    /// The toolbar can switch to the other kind, and this picker was
+    /// opened by that switch.
+    pub can_switch: bool,
+    pub switched: bool,
+    pub desktop_audio: bool,
+    pub mic_audio: bool,
+}
+
+/// One screen's windows: all three or none.
+struct Windows {
+    picker: WindowHandle<PickerWindow>,
+    card: WindowHandle<CardWindow>,
+    marks: WindowHandle<MarksWindow>,
+}
+
+impl Windows {
+    fn open(screen: &Screen, capture: gpui::WeakEntity<Capture>, cx: &mut App) -> Option<Self> {
+        let picker = PickerWindow::open(screen, capture.clone(), cx);
+        let card = CardWindow::open(screen, capture.clone(), cx);
+        let marks = MarksWindow::open(screen, capture, cx);
+        match (picker, card, marks) {
+            (Some(picker), Some(card), Some(marks)) => Some(Self { picker, card, marks }),
+            (picker, card, marks) => {
+                close_window(picker, cx);
+                close_window(card, cx);
+                close_window(marks, cx);
+                None
+            }
+        }
+    }
+
+    fn alive(&self, cx: &mut App) -> bool {
+        self.picker.update(cx, |_, _, _| ()).is_ok()
+            && self.card.update(cx, |_, _, _| ()).is_ok()
+            && self.marks.update(cx, |_, _, _| ()).is_ok()
+    }
+
+    /// A screen that changed size, scale or place: its windows follow.
+    fn set_screen(&self, screen: &Screen, cx: &mut App) {
+        let _ = self.picker.update(cx, |picker, window, cx| picker.set_screen(screen, window, cx));
+        let _ = self.card.update(cx, |card, _, cx| card.set_screen(screen, cx));
+        let _ = self.marks.update(cx, |marks, _, cx| marks.set_screen(screen, cx));
+    }
+
+    fn close(self, cx: &mut App) {
+        close_window(Some(self.picker), cx);
+        close_window(Some(self.card), cx);
+        close_window(Some(self.marks), cx);
+    }
+}
+
 pub struct Capture {
-    /// The frames, while the picker is open; `None` while they are read.
+    /// The frames, while the screenshot picker is open (or held behind the
+    /// recording's); `None` while they are read.
     frames: Option<Vec<Frame>>,
     /// Counts novad's capture events, so frames read for an older one are
     /// dropped.
     generation: u64,
+    /// The toolbar's mode, carried over by its switch; each pick starts on
+    /// a region.
     mode: CaptureMode,
     /// A pick was sent and novad is saving it: the picker goes meanwhile.
     saving: bool,
+    /// The screenshot picker was opened by the toolbar's switch, and the
+    /// mode it opens in once its frames come.
+    switched: bool,
+    next_mode: Option<CaptureMode>,
+    /// Which of the two features are ready.
+    ready: Ready,
+    /// The recording's side: picking what to record, the countdown, what
+    /// records.
+    record: record::Record,
     card: Option<Card>,
     /// A tick that drains the card's time is running.
     ticking: bool,
-    pickers: Vec<(DisplayId, WindowHandle<PickerWindow>)>,
-    cards: Vec<(DisplayId, WindowHandle<CardWindow>)>,
+    windows: Vec<(DisplayId, Windows)>,
     /// Screens whose windows are about to open, and those whose windows
     /// couldn't (tried again when the screens change).
     opening: Vec<DisplayId>,
     failed: Vec<DisplayId>,
     desktop: Entity<Live<Desktop>>,
+    _features: Entity<Live<Ready>>,
     _saving: Option<Task<()>>,
     _followed: Vec<Subscription>,
+}
+
+/// The features this overlay serves that novad says are ready.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Ready {
+    screenshot: bool,
+    recording: bool,
+}
+
+impl Ready {
+    fn of(features: &[FeatureState]) -> Self {
+        let ready =
+            |id: &str| features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready);
+        Self { screenshot: ready("screenshot"), recording: ready("recording") }
+    }
 }
 
 impl Capture {
@@ -80,7 +196,19 @@ impl Capture {
                 let _ = this.update(cx, |capture, cx| capture.take(event, cx));
             });
             let desktop = Live::follow(nova_desktop_info::TOPIC, cx, |DesktopEvent::Compositor(desktop)| Some(desktop));
-            let mut followed = vec![events, cx.on_release(|capture: &mut Self, cx| capture.close(cx))];
+            let features = Live::follow(topics::FEATURES, cx, |event| match event {
+                FeaturesEvent::Features { features } => Some(Ready::of(&features)),
+                _ => None,
+            });
+            let mut followed = vec![
+                events,
+                record::follow(cx),
+                cx.observe(&features, |capture: &mut Self, features, cx| {
+                    let ready = features.read(cx).get().copied().unwrap_or_default();
+                    capture.follow_ready(ready, cx);
+                }),
+                cx.on_release(|capture: &mut Self, cx| capture.close(cx)),
+            ];
             // A pick doesn't outlive novad: the next one knows nothing of it.
             if let Some(connection) = Daemon::connection(cx) {
                 followed.push(cx.observe(&connection, |capture: &mut Self, connection, cx| {
@@ -98,13 +226,19 @@ impl Capture {
                 generation: 0,
                 mode: CaptureMode::Region,
                 saving: false,
+                switched: false,
+                next_mode: None,
+                // Until novad says, as if both were: the overlay runs only
+                // while one is.
+                ready: Ready { screenshot: true, recording: true },
+                record: record::Record::default(),
                 card: None,
                 ticking: false,
-                pickers: Vec::new(),
-                cards: Vec::new(),
+                windows: Vec::new(),
                 opening: Vec::new(),
                 failed: Vec::new(),
                 desktop,
+                _features: features,
                 _saving: None,
                 _followed: followed,
             }
@@ -121,7 +255,21 @@ impl Capture {
             if self.frames.is_some() {
                 self.drop_frames(cx);
             }
+            self.cancel_recording_pick(cx);
+            // Frames being frozen for it went with novad too.
+            self.record.held = false;
         }
+    }
+
+    fn follow_ready(&mut self, ready: Ready, cx: &mut Context<Self>) {
+        if ready == self.ready {
+            return;
+        }
+        self.ready = ready;
+        if !ready.recording {
+            self.cancel_recording_pick(cx);
+        }
+        cx.notify();
     }
 
     fn take(&mut self, event: Event, cx: &mut Context<Self>) {
@@ -131,15 +279,15 @@ impl Capture {
                 self.generation += 1;
                 self.drop_frames(cx);
             }
-            Event::ScreenshotSaved(shot) => self.show_card(shot, cx),
+            Event::ScreenshotSaved(shot) => self.show_card(Saved::Shot(shot), cx),
         }
     }
 
     /// Reads novad's frames off the main thread; the picker opens once all
-    /// are here, in the Region mode.
+    /// are here, in the Region mode (or the one the switch asked for).
     fn read_frames(&mut self, frames: Vec<CaptureFrame>, cx: &mut Context<Self>) {
         self.generation += 1;
-        self.drop_frames(cx);
+        self.forget_frames(cx);
         let generation = self.generation;
         let read = cx.background_spawn(async move {
             frames
@@ -159,38 +307,94 @@ impl Capture {
         });
         cx.spawn(async move |capture, cx| {
             let frames = read.await;
-            let _ = capture.update(cx, |capture, cx| {
-                if capture.generation != generation {
-                    drop_images(frames.into_iter().map(|frame| frame.image), cx);
-                    return;
-                }
-                if frames.is_empty() {
-                    // Nothing to pick on: novad's pick ends rather than
-                    // stay open with no picker to close it.
-                    Daemon::send(Command::CancelCapture, cx);
-                    return;
-                }
-                capture.frames = Some(frames);
-                capture.mode = CaptureMode::Region;
-                capture.saving = false;
-                eprintln!("INFO nova-ui: region picker shown");
-                cx.notify();
-            });
+            let _ = capture.update(cx, |capture, cx| capture.frames_read(frames, generation, cx));
         })
         .detach();
     }
 
-    fn drop_frames(&mut self, cx: &mut Context<Self>) {
+    fn frames_read(&mut self, frames: Vec<Frame>, generation: u64, cx: &mut Context<Self>) {
+        if self.generation != generation {
+            drop_images(frames.into_iter().map(|frame| frame.image), cx);
+            return;
+        }
+        if frames.is_empty() {
+            // Nothing to pick on: novad's pick ends rather than stay open
+            // with no picker to close it.
+            Daemon::send(Command::CancelCapture, cx);
+            self.frames_held(false, cx);
+            return;
+        }
+        self.frames = Some(frames);
         self.saving = false;
-        if let Some(frames) = self.frames.take() {
+        if self.record.held {
+            // Frozen for the recording picker, kept behind it.
+            self.frames_held(true, cx);
+        } else {
+            self.switched = self.next_mode.is_some();
+            self.mode = self.next_mode.take().unwrap_or(CaptureMode::Region);
+            eprintln!("INFO nova-ui: region picker shown");
+        }
+        cx.notify();
+    }
+
+    /// The frames go: the picker closes, unless the recording picker shows.
+    fn drop_frames(&mut self, cx: &mut Context<Self>) {
+        let was_held = self.record.held;
+        self.record.held = false;
+        let shown = self.frames.is_some() && !was_held;
+        self.forget_frames(cx);
+        if shown {
             eprintln!("INFO nova-ui: region picker hidden");
+        }
+        // Closed while the recording picker waited for them.
+        if was_held {
+            self.frames_held(false, cx);
+        }
+    }
+
+    fn forget_frames(&mut self, cx: &mut Context<Self>) {
+        self.saving = false;
+        self.switched = false;
+        if let Some(frames) = self.frames.take() {
             drop_images(frames.into_iter().map(|frame| frame.image), cx);
         }
         cx.notify();
     }
 
-    /// The frame the picker on the screen named `output` draws, while it
-    /// shows.
+    /// The picker on the screen named `output`, while one shows there.
+    pub fn picking(&self, output: &str) -> Option<Picking<'_>> {
+        let can_switch = self.ready.screenshot && self.ready.recording && self.record.active.is_none();
+        if self.record.picking {
+            return Some(Picking {
+                frame: None,
+                mode: self.mode,
+                video: true,
+                busy: self.record.countdown > 0,
+                countdown: self.record.countdown,
+                can_switch,
+                switched: self.record.switched,
+                desktop_audio: self.record.desktop_audio,
+                mic_audio: self.record.mic_audio,
+            });
+        }
+        if self.record.held {
+            return None;
+        }
+        Some(Picking {
+            frame: Some(self.frame_for(output)?),
+            mode: self.mode,
+            video: false,
+            busy: false,
+            countdown: 0,
+            can_switch,
+            switched: self.switched,
+            desktop_audio: self.record.desktop_audio,
+            mic_audio: self.record.mic_audio,
+        })
+    }
+
+    /// The frame the screenshot picker on the screen named `output` draws,
+    /// while it shows.
     pub fn frame_for(&self, output: &str) -> Option<&Frame> {
         if self.saving {
             return None;
@@ -198,7 +402,8 @@ impl Capture {
         self.frames.as_ref()?.iter().find(|frame| frame.output == output)
     }
 
-    pub fn mode(&self) -> CaptureMode {
+    /// The toolbar's mode.
+    pub fn picking_mode(&self) -> CaptureMode {
         self.mode
     }
 
@@ -230,13 +435,18 @@ impl Capture {
         }));
     }
 
-    pub fn cancel(&self, cx: &App) {
-        Daemon::send(Command::CancelCapture, cx);
+    /// Esc, a right click or close: the picker that shows goes.
+    pub fn cancel(&mut self, cx: &mut Context<Self>) {
+        if self.record.picking || self.record.opening {
+            self.cancel_recording_pick(cx);
+        } else {
+            Daemon::send(Command::CancelCapture, cx);
+        }
     }
 
-    /// The card comes in on the screen with focus; a new shot while it's
+    /// The card comes in on the screen with focus; a new one while it's
     /// out replaces it in place, with its full time.
-    fn show_card(&mut self, shot: SavedScreenshot, cx: &mut Context<Self>) {
+    fn show_card(&mut self, saved: Saved, cx: &mut Context<Self>) {
         let now = Instant::now();
         let old = self.card.take();
         if let Some(thumb) = old.as_ref().and_then(|card| card.thumb.clone()) {
@@ -249,13 +459,16 @@ impl Capture {
         };
         let Some(screen) = screen else { return };
         let slide = kept.as_ref().map_or_else(|| Eased::lasting(0.0, DURATION_PANEL, now), |card| card.slide);
-        let mut countdown = Countdown::start(CARD_TIME, now);
+        let time = if matches!(saved, Saved::Failed(_)) { FAILED_CARD_TIME } else { CARD_TIME };
+        let mut countdown = Countdown::start(time, now);
         // Still under the pointer, which no hover change will say again.
         countdown.set_held(kept.is_some_and(|card| card.countdown.held()), now);
-        let mut card = Card { shot: shot.clone(), screen, thumb: None, countdown, slide };
+        let mut card = Card { saved: saved.clone(), screen, thumb: None, countdown, slide };
         card.slide.set_target(1.0, now);
         self.card = Some(card);
-        self.read_thumb(shot, cx);
+        if let Saved::Shot(shot) = saved {
+            self.read_thumb(shot, cx);
+        }
         self.keep_ticking(cx);
         cx.notify();
     }
@@ -270,7 +483,7 @@ impl Capture {
         cx.spawn(async move |capture, cx| {
             let thumb = read.await;
             let _ = capture.update(cx, |capture, cx| match (thumb, capture.card.as_mut()) {
-                (Ok(thumb), Some(card)) if card.shot.id == shot.id => {
+                (Ok(thumb), Some(card)) if card.saved == Saved::Shot(shot) => {
                     card.thumb = Some(thumb);
                     cx.notify();
                 }
@@ -300,14 +513,24 @@ impl Capture {
         }
     }
 
-    /// Runs a card button on the shown shot, and slides the card out.
-    pub fn act(&mut self, action: ScreenshotAction, cx: &mut Context<Self>) {
+    /// Runs a card button on what the card shows, and slides the card out.
+    pub fn act(&mut self, button: Button, cx: &mut Context<Self>) {
         let Some(card) = &mut self.card else { return };
         if card.slide.target() == 0.0 {
             return;
         }
-        Daemon::send(Command::ScreenshotAction { id: card.shot.id, action }, cx);
         card.slide.set_target(0.0, Instant::now());
+        match (&card.saved, button) {
+            (Saved::Shot(shot), Button::File(action)) => {
+                Daemon::send(Command::ScreenshotAction { id: shot.id, action }, cx);
+            }
+            (Saved::Recording(saved), Button::File(action)) => {
+                Daemon::send(nova_recording_api::Command::RecordingAction { id: saved.id, action }, cx);
+            }
+            (Saved::Failed(_), Button::Retry) => self.record_again(cx),
+            (Saved::Failed(_), Button::Log) => Daemon::send(nova_recording_api::Command::OpenLog, cx),
+            _ => {}
+        }
         cx.notify();
     }
 
@@ -345,8 +568,8 @@ impl Capture {
     /// window that reads the capture, the pickers too.
     fn redraw_card(&self, cx: &mut App) {
         let Some(screen) = self.card.as_ref().map(|card| card.screen) else { return };
-        if let Some((_, window)) = self.cards.iter().find(|(id, _)| *id == screen) {
-            let _ = window.update(cx, |_, _, cx| cx.notify());
+        if let Some((_, windows)) = self.windows.iter().find(|(id, _)| *id == screen) {
+            let _ = windows.card.update(cx, |_, _, cx| cx.notify());
         }
     }
 
@@ -362,35 +585,26 @@ impl Capture {
         screens.read(cx).for_output(output.map(|output| output.name.as_str())).map(|screen| screen.id)
     }
 
-    /// Opens a picker and a card window on each screen that has none, and
-    /// closes those whose screen left.
+    /// Opens the windows on each screen that has none, and closes those
+    /// whose screen left.
     fn sync_windows(&mut self, cx: &mut Context<Self>) {
         let Some(screens) = Stage::screens(cx) else { return };
         let here = screens.read(cx).list().to_vec();
-        let kept = |screen: &DisplayId| here.iter().any(|kept| kept.id == *screen);
-        // A screen keeps its two windows together: one lost, both go and
-        // open again.
-        let both = |screen: &DisplayId,
-                    pickers: &[(DisplayId, WindowHandle<PickerWindow>)],
-                    cards: &[(DisplayId, WindowHandle<CardWindow>)],
-                    cx: &mut App| {
-            pickers.iter().any(|(id, window)| id == screen && window.update(cx, |_, _, _| ()).is_ok())
-                && cards.iter().any(|(id, window)| id == screen && window.update(cx, |_, _, _| ()).is_ok())
-        };
-        let whole: Vec<DisplayId> =
-            here.iter().map(|screen| screen.id).filter(|screen| both(screen, &self.pickers, &self.cards, cx)).collect();
-        keep_windows(&mut self.pickers, |screen| whole.contains(screen), cx);
-        keep_windows(&mut self.cards, |screen| whole.contains(screen), cx);
-        // A screen that changed size or scale: its windows follow.
-        for screen in &here {
-            if let Some((_, window)) = self.pickers.iter().find(|(id, _)| *id == screen.id) {
-                let _ = window.update(cx, |picker, window, cx| picker.set_screen(screen, window, cx));
-            }
-            if let Some((_, window)) = self.cards.iter().find(|(id, _)| *id == screen.id) {
-                let _ = window.update(cx, |card, _, cx| card.set_screen(screen, cx));
+        // A screen keeps its windows together: one lost, all go and open
+        // again.
+        for (screen, windows) in std::mem::take(&mut self.windows) {
+            if here.iter().any(|kept| kept.id == screen) && windows.alive(cx) {
+                self.windows.push((screen, windows));
+            } else {
+                windows.close(cx);
             }
         }
-        if self.card.as_ref().is_some_and(|card| !kept(&card.screen)) {
+        for screen in &here {
+            if let Some((_, windows)) = self.windows.iter().find(|(id, _)| *id == screen.id) {
+                windows.set_screen(screen, cx);
+            }
+        }
+        if self.card.as_ref().is_some_and(|card| !here.iter().any(|screen| screen.id == card.screen)) {
             // Its screen left: it goes with it.
             if let Some(thumb) = self.card.take().and_then(|card| card.thumb) {
                 drop_images([thumb], cx);
@@ -399,7 +613,7 @@ impl Capture {
         let new: Vec<Screen> = here
             .iter()
             .filter(|screen| {
-                !self.pickers.iter().any(|(id, _)| *id == screen.id)
+                !self.windows.iter().any(|(id, _)| *id == screen.id)
                     && !self.opening.contains(&screen.id)
                     && !self.failed.contains(&screen.id)
             })
@@ -413,67 +627,42 @@ impl Capture {
         self.opening.extend(new.iter().map(|screen| screen.id));
         let this = cx.weak_entity();
         cx.defer(move |cx| {
-            let opened: Vec<_> = new
-                .iter()
-                .map(|screen| {
-                    let picker = PickerWindow::open(screen, this.clone(), cx);
-                    let card = CardWindow::open(screen, this.clone(), cx);
-                    (screen.id, picker, card)
-                })
-                .collect();
+            let opened: Vec<_> =
+                new.iter().map(|screen| (screen.id, Windows::open(screen, this.clone(), cx))).collect();
             let _ = this.update(cx, |capture, cx| capture.opened(opened, cx));
         });
     }
 
-    #[expect(clippy::type_complexity, reason = "the windows a deferred open made, by screen")]
-    fn opened(
-        &mut self,
-        opened: Vec<(DisplayId, Option<WindowHandle<PickerWindow>>, Option<WindowHandle<CardWindow>>)>,
-        cx: &mut Context<Self>,
-    ) {
-        for (screen, picker, card) in opened {
+    fn opened(&mut self, opened: Vec<(DisplayId, Option<Windows>)>, cx: &mut Context<Self>) {
+        for (screen, windows) in opened {
             self.opening.retain(|id| *id != screen);
-            match (picker, card) {
-                (Some(picker), Some(card)) => {
-                    self.pickers.push((screen, picker));
-                    self.cards.push((screen, card));
-                }
-                (picker, card) => {
-                    close_window(picker, cx);
-                    close_window(card, cx);
-                    self.failed.push(screen);
-                }
+            match windows {
+                Some(windows) => self.windows.push((screen, windows)),
+                None => self.failed.push(screen),
             }
         }
         self.sync_windows(cx);
     }
 
     fn close(&mut self, cx: &mut App) {
-        for (_, window) in self.pickers.drain(..) {
-            close_window(Some(window), cx);
-        }
-        for (_, window) in self.cards.drain(..) {
-            close_window(Some(window), cx);
+        for (_, windows) in self.windows.drain(..) {
+            windows.close(cx);
         }
         let frames = self.frames.take().into_iter().flatten().map(|frame| frame.image);
         let thumb = self.card.take().and_then(|card| card.thumb);
         drop_images(frames.chain(thumb), cx);
     }
+
+    /// What is being recorded, while something is.
+    pub fn recording(&self) -> Option<&ActiveRecording> {
+        self.record.active.as_ref()
+    }
 }
 
-/// Keeps the windows whose screen is still here, and closes the rest.
-fn keep_windows<V: 'static>(
-    windows: &mut Vec<(DisplayId, WindowHandle<V>)>,
-    kept: impl Fn(&DisplayId) -> bool,
-    cx: &mut App,
-) {
-    windows.retain(|(screen, window)| {
-        let keep = kept(screen) && window.update(cx, |_, _, _| ()).is_ok();
-        if !keep {
-            close_window(Some(*window), cx);
-        }
-        keep
-    });
+/// A region of the compositor's layout in `screen`'s logical pixels.
+pub fn on_screen(region: LayoutRect, screen: &Screen) -> gpui::Bounds<gpui::Pixels> {
+    let origin = gpui::point(gpui::px(region.x as f32) - screen.origin.x, gpui::px(region.y as f32) - screen.origin.y);
+    gpui::bounds(origin, gpui::size(gpui::px(region.width as f32), gpui::px(region.height as f32)))
 }
 
 fn close_window<V: 'static>(window: Option<WindowHandle<V>>, cx: &mut App) {

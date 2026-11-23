@@ -13,6 +13,9 @@
 //! `on_key_down` around it. Typed text and an input method's composing
 //! text arrive through GPUI's input handler.
 //!
+//! A password's field is [`TextField::set_masked`]: it shows a dot for each
+//! character, and copies and cuts nothing.
+//!
 //! The owner subscribes to [`FieldEvent::Changed`] and reads
 //! [`TextField::text`]. [`Editing`] is the text and the cursor without
 //! GPUI, tested alone.
@@ -168,6 +171,9 @@ impl Editing {
     }
 }
 
+/// What a masked field shows for each character.
+const MASK: char = '•';
+
 /// A one-line text field (see the module).
 pub struct TextField {
     focus: FocusHandle,
@@ -178,6 +184,8 @@ pub struct TextField {
     ghost: SharedString,
     /// What an input method is composing.
     marked: Option<Range<usize>>,
+    /// Shown as a dot per character (a password).
+    masked: bool,
     /// How far the text is scrolled left, so the cursor stays in view.
     scroll: Pixels,
     selecting: bool,
@@ -195,6 +203,7 @@ impl TextField {
             placeholder: SharedString::default(),
             ghost: SharedString::default(),
             marked: None,
+            masked: false,
             scroll: px(0.0),
             selecting: false,
             drawn: None,
@@ -233,6 +242,32 @@ impl TextField {
         cx.notify();
     }
 
+    /// Shows a dot for each character, or the text again.
+    pub fn set_masked(&mut self, masked: bool, cx: &mut Context<Self>) {
+        if masked != self.masked {
+            self.masked = masked;
+            cx.notify();
+        }
+    }
+
+    /// Where `offset` in the text is in the line drawn: past as many dots
+    /// as characters before it while masked.
+    fn shown_at(&self, offset: usize) -> usize {
+        match self.masked {
+            true => self.text()[..offset].chars().count() * MASK.len_utf8(),
+            false => offset,
+        }
+    }
+
+    /// The offset in the text at `shown` in the line drawn.
+    fn text_at(&self, shown: usize) -> usize {
+        if !self.masked {
+            return shown;
+        }
+        let characters = shown / MASK.len_utf8();
+        self.text().char_indices().nth(characters).map_or(self.text().len(), |(offset, _)| offset)
+    }
+
     /// The dim text after what's typed (see the field of that name).
     pub fn set_ghost(&mut self, ghost: impl Into<SharedString>, cx: &mut Context<Self>) {
         let ghost = ghost.into();
@@ -260,10 +295,10 @@ impl TextField {
         let clipboard = control && !shift;
         let handled = match keystroke.key.as_str() {
             "c" | "x" if clipboard => {
-                if !selected.is_empty() {
+                if !selected.is_empty() && !self.masked {
                     cx.write_to_clipboard(ClipboardItem::new_string(self.text()[selected.clone()].to_owned()));
                 }
-                if keystroke.key == "x" {
+                if keystroke.key == "x" && !self.masked {
                     self.change(cx, |field| field.editing.replace(selected, ""));
                 }
                 true
@@ -292,7 +327,7 @@ impl TextField {
     fn offset_at(&self, position: Point<Pixels>) -> usize {
         let Some((line, bounds)) = &self.drawn else { return self.text().len() };
         let across = position.x - bounds.left() + self.scroll;
-        line.closest_index_for_x(across).min(self.text().len())
+        self.text_at(line.closest_index_for_x(across)).min(self.text().len())
     }
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -339,8 +374,17 @@ impl TextField {
             placeholder.font.weight = WEIGHT_BODY;
             (self.placeholder.clone(), vec![placeholder])
         } else {
-            let selected = self.editing.selection();
-            let marked = self.marked.clone().unwrap_or(0..0);
+            let shown = |range: Range<usize>| self.shown_at(range.start)..self.shown_at(range.end);
+            let selected = shown(self.editing.selection());
+            let marked = shown(self.marked.clone().unwrap_or(0..0));
+            let masked: String;
+            let text = match self.masked {
+                true => {
+                    masked = std::iter::repeat_n(MASK, text.chars().count()).collect();
+                    masked.as_str()
+                }
+                false => text,
+            };
             // Where the look changes: around the selection and the composing text.
             let mut cuts = vec![0, selected.start, selected.end, marked.start, marked.end, text.len()];
             cuts.sort_unstable();
@@ -366,7 +410,7 @@ impl TextField {
     /// Draws the line in `bounds`, scrolled so the cursor is in view, with
     /// the caret when the field has the focus.
     fn paint(&mut self, bounds: Bounds<Pixels>, line: ShapedLine, window: &mut Window, cx: &mut App) {
-        let cursor = line.x_for_index(self.editing.cursor);
+        let cursor = line.x_for_index(self.shown_at(self.editing.cursor));
         let furthest = (bounds.size.width - CARET_WIDTH).max(px(0.0));
         // No further than the line overflows: a line that fits isn't scrolled.
         let overflow = (line.width - furthest).max(px(0.0));
@@ -396,6 +440,10 @@ impl EntityInputHandler for TextField {
     ) -> Option<String> {
         let range = self.editing.range_from_utf16(&range);
         adjusted.replace(self.editing.utf16_at(range.start)..self.editing.utf16_at(range.end));
+        // An input method gets no masked text, only what the field shows.
+        if self.masked {
+            return Some(MASK.to_string().repeat(self.text()[range].chars().count()));
+        }
         Some(self.text()[range].to_owned())
     }
 
@@ -469,8 +517,8 @@ impl EntityInputHandler for TextField {
         let range = self.editing.range_from_utf16(&range);
         let left = bounds.left() - self.scroll;
         Some(Bounds::from_corners(
-            point(left + line.x_for_index(range.start), bounds.top()),
-            point(left + line.x_for_index(range.end), bounds.bottom()),
+            point(left + line.x_for_index(self.shown_at(range.start)), bounds.top()),
+            point(left + line.x_for_index(self.shown_at(range.end)), bounds.bottom()),
         ))
     }
 

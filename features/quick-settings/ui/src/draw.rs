@@ -10,12 +10,13 @@
 
 use crate::drawer::Drawer;
 use crate::logic::{self, Logo};
-use crate::tokens::{PAD, WIDTH};
+use crate::tokens::WIDTH;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, AnyView, Context, Font, FontStyle, Image, ImageFormat, IntoElement, ObjectFit, ParentElement, Pixels,
     Render, SharedString, Styled, StyledImage, TextRun, Window, div, font, img, px,
 };
+use nova_look::tokens::QUICK_SETTINGS_PAD as PAD;
 use nova_look::tokens::{
     BAR_GAP, BAR_HEIGHT, BAR_MARGIN, FONT_DISPLAY, FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP,
     ICON_GAP, ICON_SIZE_MENU, ICON_SIZE_SMALL, LOGO_SIZE, PILL_BUTTON_GAP, PILL_BUTTON_INSET, QUICK_SETTINGS_GAP,
@@ -172,7 +173,7 @@ impl Drawer {
         let greeting = logic::greeting(now.hour());
         let name = host.as_ref().map(|host| host.user.clone()).unwrap_or_default();
         let greeting = if name.is_empty() { greeting.to_owned() } else { format!("{greeting}, ") };
-        let inset = logic::header_inset(self.buttons.views().count(), PAD);
+        let inset = nova_look::header_inset(self.buttons.views().count());
         let room = WIDTH - PAD * 2.0 - inset - LOGO_SIZE - nova_look::tokens::PAD;
         let wide = text_width(&greeting, false, window) + text_width(&name, true, window);
         let size = logic::greeting_size(FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, wide, room);
