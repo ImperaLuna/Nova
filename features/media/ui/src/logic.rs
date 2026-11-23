@@ -56,10 +56,16 @@ pub fn time(micros: i64) -> String {
     if hours > 0 { format!("{hours}:{minutes:02}:{seconds:02}") } else { format!("{minutes}:{seconds:02}") }
 }
 
+/// How far before the track's end a seek lands at most, in microseconds: a
+/// looping player takes a seek to the very end as a restart at 0:00.
+const SEEK_END_ROOM_US: i64 = 1_000_000;
+
 /// The position at `fraction` (0..1, kept within) of the way through the
-/// track, in microseconds, for `media_seek`.
+/// track, in microseconds, for `media_seek`; never closer to the end than
+/// [`SEEK_END_ROOM_US`].
 pub fn seek_target(player: &MediaPlayer, fraction: f32) -> i64 {
-    (f64::from(fraction.clamp(0.0, 1.0)) * player.length_us as f64).round() as i64
+    let at = (f64::from(fraction.clamp(0.0, 1.0)) * player.length_us as f64).round() as i64;
+    at.min(player.length_us - SEEK_END_ROOM_US).max(0)
 }
 
 /// Whether the progress line takes clicks: the player seeks and the
@@ -248,7 +254,8 @@ mod tests {
     fn a_seek_lands_within_the_track() {
         let known = player("a", PlaybackStatus::Playing);
         assert_eq!(seek_target(&known, 0.5), 119_000_000);
-        assert_eq!(seek_target(&known, 1.4), 238_000_000);
+        assert_eq!(seek_target(&known, 1.4), 237_000_000, "short of the end");
+        assert_eq!(seek_target(&known, 1.0), 237_000_000);
         assert_eq!(seek_target(&known, -1.0), 0);
     }
 
