@@ -36,9 +36,8 @@ fi
 report "a novad test asserting that no event came at all" "use hub::count_named for the event that mustn't come" \
   "$(grep -rnE 'try_recv\(\)\.is_err\(\)|try_iter\(\)\.any\(' app/src framework features || true)"
 
-# The places that may build them: the look kit's own, and the probe, an
-# app's window with a title bar that goes with the first ported feature.
-window_options_home=(framework-ui/look/src/window.rs app-ui/src/probe.rs)
+# The one place that may build them: the look kit's own.
+window_options_home=(framework-ui/look/src/window.rs)
 mapfile -t ui_sources < <(find app-ui framework-ui features -name target -prune -o -name '*.rs' -path '*/src/*' -print 2>/dev/null | grep -E '^(app-ui|framework-ui|features/[^/]+/ui)/' | grep -vxF "${window_options_home[@]/#/-e}" || true)
 if ((${#ui_sources[@]})); then
   report "a GPUI window with options of its own" "open it with nova_look::ShellWindow::options()" \

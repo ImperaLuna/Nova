@@ -1,0 +1,35 @@
+# nova-stage
+#
+# The stage: the see-through window across the top of each screen that
+# pills and panels are drawn on, and what every feature's ui plugs its
+# views into (the slots of its `feature.toml`). It follows screens, lays
+# out the bar's rows, morphs a pill into its panel, keeps the blur and
+# click regions on what is drawn, and closes panels on Esc and on a click
+# outside.
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-daemon-info
+# - nova-look
+# - nova-ui-client
+
+[package]
+name = "nova-stage"
+description = "Nova's stage for the GPUI program: a window per screen that features plug pills and panels into"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-daemon-info.workspace = true
+nova-look.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

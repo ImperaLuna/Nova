@@ -3,21 +3,26 @@
 //! the socket (`NOVA_SOCKET`) and restarts it when it exits
 //! (`app/src/supervisor.rs`).
 //!
-//! It starts GPUI with the look kit's icons as its assets, connects to novad
-//! and draws nothing yet. The stage and each feature's ui crate plug in here
-//! as the GPUI ports land (IMP-368). Until a feature shows novad's state,
-//! `--probe` opens a window that does ([`probe`]), and `--replay` runs
-//! against recordings where the real novad can't ([`replay`]).
+//! It starts GPUI with the look kit's icons as its assets, connects to
+//! novad, lets every ported feature's ui register its views
+//! ([`register_features`]) and starts the stage, which shows them on every
+//! screen. Wiring only: it also hands the stage what novad sends that is no
+//! feature's ui to follow, the theme's colors and `nova toggle`.
+//!
+//! By hand, `--demo` puts test pills and panels on the stage ([`demo`]) and
+//! `--replay` runs against recordings where the real novad can't
+//! ([`replay`]).
 
 mod args;
-mod probe;
+mod demo;
 mod replay;
 
 use args::Args;
-use gpui::App;
+use gpui::{App, Subscription};
 use gpui_platform::application;
 use nova_daemon_info::SOCKET_VAR;
-use nova_look::IconAssets;
+use nova_look::{IconAssets, Theme};
+use nova_stage::{Stage, StageOptions};
 use nova_ui_client::Daemon;
 use nova_ui_client::fake::FakeDaemon;
 use std::path::PathBuf;
@@ -43,11 +48,37 @@ fn main() -> ExitCode {
     };
     application().with_assets(IconAssets).run(move |cx: &mut App| {
         Daemon::connect(socket, cx);
-        if args.probe {
-            probe::open(cx);
+        // Followed for as long as the program runs.
+        for followed in follow_novad(cx) {
+            followed.detach();
+        }
+        register_features(cx);
+        let extra_slots = if args.demo { demo::slots(cx) } else { Vec::new() };
+        Stage::start(StageOptions { extra_slots, log_frames: args.frames }, cx);
+        if let Some(times) = args.demo_toggles {
+            demo::toggle_by_itself(times, cx);
         }
     });
     ExitCode::SUCCESS
+}
+
+/// Each ported feature's ui registers its views with the stage here, one
+/// line per feature, sorted by feature id:
+/// `nova_<id>_ui::register(cx);`
+fn register_features(_cx: &mut App) {}
+
+/// What novad sends that no feature's ui follows: the theme's colors, which
+/// repaint every window, and `nova toggle`, which opens a panel on the
+/// focused output. The stage names no feature, so the bar's `Panel` list
+/// meets it here.
+fn follow_novad(cx: &mut App) -> [Subscription; 2] {
+    let theme = Daemon::on_event(nova_theme_info::TOPIC, cx, |nova_theme_info::Event::Theme(theme), cx| {
+        Theme::set(Theme::from(&theme), cx);
+    });
+    let toggle = Daemon::on_event(nova_bar_api::TOPIC, cx, |nova_bar_api::Event::Toggle { panel, output }, cx| {
+        Stage::toggle_on_output(panel.name(), output.as_deref(), cx);
+    });
+    [theme, toggle]
 }
 
 /// Where novad listens: the fake one's socket with `--replay` (it runs

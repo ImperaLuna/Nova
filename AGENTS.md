@@ -179,18 +179,120 @@ sample`). Every ui crate draws with it:
 - A window opens with `ShellWindow::options()` and nothing else: GPUI draws
   a window without focus at 30 frames a second at most, and a shell window
   never has focus. `just lint-traps` fails on `WindowOptions {` elsewhere.
-- Glass is `Glass::new(radius).build(cx)`. The window's owner passes the
-  shapes it draws to `set_blur_region` and to GPUI's `set_input_region`
-  each frame they change, and leaves `tokens::SHADOW_ROOM` free around
-  glass. Nothing clips there, the glass included: content that must be
-  clipped to it goes in a child with `overflow_hidden`. A window draws at
-  most 32 glasses with a shadow.
+- Glass is `Glass::new(radius).build(cx)`. The window's owner (the stage,
+  for pills and panels) passes the shapes it draws to `set_blur_region`
+  and to GPUI's `set_input_region` each frame they change, and leaves
+  `tokens::SHADOW_ROOM` free around glass. Nothing clips there, the glass
+  included: content that must be clipped to it goes in a child with
+  `overflow_hidden`. A window draws at most 32 glasses with a shadow.
 - GPUI clips children to a rounded parent's box, not its corners: content
   that reaches the edge rounds itself with `fit_corners`.
 - Motion is `motion::ease`, `Eased` and `Spring`. Ask for the next frame
   only while a value hasn't settled.
 - An icon is `Icon::new(Glyph::NAME)`; a new glyph joins the list in
   `icon.rs` (and `icons.js`, while it exists).
+
+### Porting a feature's UI to GPUI
+
+The stage (`framework-ui/stage`, `nova-stage`) is the one see-through
+window across the top of each screen that pills and panels are drawn on.
+It draws the glass, lays out the bar's rows, grows a pill into its panel,
+keeps the blur and click regions on what it drew, holds the keyboard while
+a panel is open and closes panels on Esc and a click outside. A feature's
+ui never does any of that, and opens no window for a pill or a panel. It
+hands over views that draw content, registered by the view ids its
+`feature.toml` slots already name.
+
+**1. Registering views.** `features/<id>/ui` (`nova-<id>-ui`) has one
+`pub fn register(cx: &mut App)`, and `app-ui/src/main.rs` calls it in
+`register_features` (one line per feature, sorted by id; the crate joins
+`app-ui`'s allowed list and the UI workspace's dependencies). `register`
+only stores functions: the stage builds a view when a slot of a ready
+feature asks for it, once per screen, and drops it when the feature goes.
+A feature that is off or not ready costs nothing, so start nothing in
+`register` itself; follow novad (`Live::follow`) inside the build function
+or the view's constructor.
+
+A pill in a bar row (hosts `bar.left`, `bar.center`, `bar.right`). The view
+draws the pill's content at the bar's height; the stage draws the glass:
+
+```rust
+nova_stage::pill("resources.pill", cx, |_screen, cx| Pill::new(cx.new(ResourcesPill::new)));
+```
+
+A pill with a panel. A click on the pill opens it, and the panel's view
+draws only its open look, filling `size`:
+
+```rust
+nova_stage::pill("media.pill", cx, |_screen, cx| {
+    let panel = Panel::new("media", size(PANEL_WIDTH, MEDIA_HEIGHT), cx.new(MediaPanel::new));
+    Pill::new(cx.new(MediaPill::new)).panel(panel)
+});
+```
+
+A panel that is no pill's own (host `stage.panels`), growing out of
+another feature's pill by that pill's view id. With that pill off it rises
+into place instead. `takes_typing` gives the panel the keyboard and the
+focus each time it opens:
+
+```rust
+nova_stage::panel("launcher.panel", cx, |_screen, cx| {
+    let launcher = cx.new(Launcher::new);
+    let field = launcher.read(cx).field.clone();
+    Panel::new("launcher", size(LAUNCHER_WIDTH, LAUNCHER_HEIGHT), launcher).from("central-pill").takes_typing(field)
+});
+```
+
+A part: a view for a host another feature draws (`central-pill.parts`,
+`right-pill.buttons`, `quick-settings.tiles`). The host's owner keeps a
+`Parts` per screen, calls `sync` when `Stage::slots` notifies and draws
+`views()` in slot order:
+
+```rust
+// features/clock/ui
+nova_stage::part("clock.time", cx, |_screen, cx| cx.new(ClockTime::new).into());
+// features/bar/ui, in the central pill's view
+let parts = Parts::new("central-pill.parts", screen, cx);
+```
+
+An overlay (host `shell.overlays`): something with windows of its own over
+the screens, like pop-ups or the volume capsule. `build` runs once while
+the feature is ready and returns what keeps it alive; the stage drops that
+when the feature goes. It opens its windows with `ShellWindow::options()`
+and follows `Stage::screens` for screens that come and go:
+
+```rust
+nova_stage::overlay("sound.capsule", cx, |cx| Box::new(cx.new(Capsule::new)));
+```
+
+**2. What holds for every view on the stage.**
+
+- A panel's name is its feature's id, the name `nova toggle` uses. Code
+  opens and closes one with `Stage::toggle`, `open`, `close` and
+  `is_open`, by name and screen. A pill whose own buttons decide what a
+  click does (the central pill) is built with `.opens_on_click(false)` and
+  calls `Stage::toggle` itself.
+- The contract's flags are on `Panel`: `.exclusive(false)` to stay open
+  beside the others, `.closes_on_click_outside(false)`, `.takes_typing`,
+  `.top` and `.radius` for a panel that isn't the usual shape.
+- A panel changes size only with `Stage::resize(name, screen, size, cx)`,
+  open or not; an open one eases there. The view never sizes its own glass.
+- A view redraws by itself (`cx.notify()` when what it shows changed) and
+  repaints only itself: the stage's own drawing reads no feature state. It
+  asks for frames only while one of its values is moving. `nova-ui
+  --frames` logs the frames each screen's stage drew: nothing for a shell
+  at rest, one a second for a clock that shows seconds, and for each
+  motion how many of its frames came late.
+- A `Screen` gives a view its screen's `id` (for `Stage` calls), `name`
+  (the output name novad's messages use), `size` and `refresh`.
+- A feature's ui uses its own api crate and other features' api crates,
+  never another feature's ui (rule F4): what one draws inside another
+  comes in as a part.
+
+`nova-ui --demo` puts three test pills and two test panels on the stage
+with no feature ported (`app-ui/src/demo.rs`, a short worked example of
+all of the above but parts); `--demo-toggles <n>` toggles one
+`n` times and quits.
 
 ### Moving a feature out of novad
 
@@ -413,8 +515,8 @@ desktop, off the maintainer's screen like any other test run. To run it
 under a checkout's novad, pass `nova daemon --gpui-ui <path to nova-ui>`
 with `ui = "gpui"` in the features.toml it reads. By hand, as a second
 client of a running novad, set `NOVA_SOCKET` to novad's socket. `nova-ui
---probe` opens a plain window showing the connection, the feature count and
-the `sound` topic, to see the socket client work on its own. `nova-ui
+--demo` shows test pills and panels on the stage with no feature ported, and
+`--frames` logs the frames it draws. `nova-ui
 --replay <folder>` talks to a fake novad that replays the folder's
 recordings where the real one can't run: a recording is `<topic>.jsonl`,
 what `nova ipc subscribe '{"topics": ["<topic>"]}'` printed on a real
