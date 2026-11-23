@@ -1,0 +1,31 @@
+# nova-clock-ui
+#
+# The clock feature's part of the central pill (`clock.time`): the day and
+# the time, whose digits roll when they change.
+#
+# Allowed outside crates:
+# - gpui
+# - jiff
+#
+# Allowed workspace crates:
+# - nova-look
+# - nova-stage
+
+[package]
+name = "nova-clock-ui"
+description = "The clock's part of the central pill for the GPUI program: the day and the time with rolling digits"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+jiff.workspace = true
+nova-look.workspace = true
+nova-stage.workspace = true
+
+[lints]
+workspace = true

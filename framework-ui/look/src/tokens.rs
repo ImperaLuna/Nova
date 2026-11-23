@@ -97,14 +97,20 @@ tokens! {
     BAR_MARGIN: px = 8.0, "barMargin";
     /// And this far from the screen's top edge and the windows below.
     BAR_GAP: px = 4.0, "barGap";
-    /// The central pill's workspace numbers and its search button: each a
-    /// round cell this big.
-    WORKSPACE_SIZE: px = 26.0, "workspaceSize";
     /// The line between two groups in a pill.
     DIVIDER_HEIGHT: px = 16.0, "dividerHeight";
     DIVIDER_WIDTH: px = 1.0, "dividerWidth";
     /// Small marks, like a "wants attention" dot.
     DOT_SIZE: px = 4.0, "dotSize";
+    /// The central pill's workspace numbers, each a round cell this big and
+    /// this far apart, with extra room after the special workspaces. The
+    /// search button beside them is a cell too.
+    WORKSPACE_SIZE: px = 26.0, "workspaceSize";
+    WORKSPACE_GAP: px = 2.0, "workspaceGap";
+    WORKSPACE_GROUP_GAP: px = 4.0, "workspaceGroupGap";
+    /// Marks inside a round cell (a ring, a dot) keep this far inside its
+    /// edge.
+    RING_INSET: px = 2.0, "ringInset";
     /// While the bar steps aside for a fullscreen window: the strip along
     /// the top edge that brings it back when the pointer touches it.
     REVEAL_STRIP: px = 2.0, "revealStrip";
