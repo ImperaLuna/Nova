@@ -268,8 +268,9 @@ impl Panel {
     /// A panel called `name`: its feature's id, which is also what `nova
     /// toggle` and [`crate::Stage::toggle`] call it. `size` is its size
     /// once open, and `content` a view of the feature's own that fills it.
-    /// The stage shows the content only once the panel has grown, so the
-    /// view draws its open look and nothing else.
+    /// The stage shows the content only once the panel has grown (one that
+    /// rises into place fades in with its glass), so the view draws its
+    /// open look and nothing else.
     pub fn new(name: impl Into<SharedString>, size: Size<Pixels>, content: impl Into<AnyView>) -> Self {
         Self {
             name: name.into(),
