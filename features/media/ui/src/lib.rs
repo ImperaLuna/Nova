@@ -10,10 +10,13 @@
 //! - `art`: the app's icon and the cover, or a music note.
 //! - `logic`: what `media.js` worked out (positions, times, the chips, the
 //!   title's scroll and fade), tested alone.
+//! - `equalizer`: the equalizer's heights easing between steps, and the
+//!   smooth outline through them, tested alone.
 //! - `measure`: text widths and lines, for sizes asked before drawing.
 //! - `tokens`: the feature's own sizes.
 
 mod art;
+mod equalizer;
 mod logic;
 mod measure;
 mod model;

@@ -89,6 +89,14 @@ tokens! {
     DURATION_SEEK_HOLD: ms = 2000, "durationSeekHold";
 }
 
+/// The equalizer between steps (GPUI only: today's shell jumps straight
+/// to each step). Its bars close in on a new height with these time
+/// constants, quick going up and slower coming down, and its outline has
+/// this many points between two bars.
+pub const DURATION_EQ_RISE: Duration = Duration::from_millis(40);
+pub const DURATION_EQ_FALL: Duration = Duration::from_millis(160);
+pub const EQ_OUTLINE_SAMPLES: usize = 6;
+
 #[cfg(test)]
 mod tests {
     use super::*;
