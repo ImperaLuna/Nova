@@ -1,0 +1,41 @@
+# nova-screenshot-ui
+#
+# What the screenshot feature draws with GPUI: the region picker and the
+# card a saved shot lands in (`capture.overlay`, an overlay with windows of
+# its own on each screen). `image` reads the frozen frames and the saved
+# shots off the main thread: GPUI's own image loading keeps a picture by its
+# path for good, and novad writes each screen's frame to the same path. It
+# is already in the tree through GPUI, with the same features.
+#
+# Allowed outside crates:
+# - gpui
+# - image
+#
+# Allowed workspace crates:
+# - nova-desktop-info
+# - nova-look
+# - nova-screenshot-api
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-screenshot-ui"
+description = "The screenshot region picker and card, drawn with GPUI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+image.workspace = true
+nova-desktop-info.workspace = true
+nova-look.workspace = true
+nova-screenshot-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true
