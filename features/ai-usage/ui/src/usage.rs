@@ -5,14 +5,13 @@
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nova_ai_usage_api::{AiProvider, AiUsage, ProviderUsage, UsageState, UsageWindow};
+use nova_look::span::{DAY_MINUTES, minutes};
 
 /// From this percent a limit turns the theme's primary color. One rule, no
 /// further tiers.
 pub const WARN_PERCENT: u8 = 80;
 
 const MINUTE_MS: i64 = 60 * 1000;
-const HOUR_MINUTES: i64 = 60;
-const DAY_MINUTES: i64 = 24 * HOUR_MINUTES;
 const DAY_MS: i64 = DAY_MINUTES * MINUTE_MS;
 
 /// One limit, as the panel writes it.
@@ -76,19 +75,6 @@ fn window_name(window: UsageWindow) -> &'static str {
     match window {
         UsageWindow::Session => "5-hour session",
         UsageWindow::Weekly => "Weekly",
-    }
-}
-
-/// `minutes` as days and hours, or hours and minutes, leaving out a zero
-/// second part: "3d 2h", "2h 14m", "45m" (`ui/text/duration.js`).
-pub fn minutes(minutes: i64) -> String {
-    let (days, hours, rest) = (minutes / DAY_MINUTES, minutes % DAY_MINUTES / HOUR_MINUTES, minutes % HOUR_MINUTES);
-    match (days, hours, rest) {
-        (0, 0, rest) => format!("{rest}m"),
-        (0, hours, 0) => format!("{hours}h"),
-        (0, hours, rest) => format!("{hours}h {rest}m"),
-        (days, 0, _) => format!("{days}d"),
-        (days, hours, _) => format!("{days}d {hours}h"),
     }
 }
 
@@ -259,15 +245,6 @@ mod tests {
         assert_eq!(left_text(Some("2026-10-23T08:00:00Z"), now()), "");
         let later: Timestamp = "2026-10-23T08:00:00.600Z".parse().unwrap();
         assert_eq!(left_text(Some("2026-10-23T08:01:00.700Z"), later), "2m left", "rounded from the milliseconds");
-    }
-
-    #[test]
-    fn spans_read_as_duration_js_writes_them() {
-        assert_eq!(minutes(45), "45m");
-        assert_eq!(minutes(120), "2h");
-        assert_eq!(minutes(134), "2h 14m");
-        assert_eq!(minutes(3 * DAY_MINUTES), "3d");
-        assert_eq!(minutes(3 * DAY_MINUTES + 2 * 60 + 5), "3d 2h");
     }
 
     #[test]

@@ -3165,6 +3165,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-power-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "nova-power-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-look",
+ "nova-power-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-quick-settings-ui"
 version = "0.1.0"
 dependencies = [
@@ -3313,6 +3331,7 @@ dependencies = [
  "nova-network-ui",
  "nova-notifications-ui",
  "nova-peripherals-ui",
+ "nova-power-ui",
  "nova-quick-settings-ui",
  "nova-resources-ui",
  "nova-screenshot-ui",

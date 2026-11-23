@@ -86,6 +86,7 @@ fn register_features(cx: &mut App) {
     nova_network_ui::register(cx);
     nova_notifications_ui::register(cx);
     nova_peripherals_ui::register(cx);
+    nova_power_ui::register(cx);
     nova_quick_settings_ui::register(cx);
     nova_resources_ui::register(cx);
     nova_screenshot_ui::register(cx);
