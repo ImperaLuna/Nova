@@ -8,7 +8,7 @@
 use crate::host::{Distro, Host};
 use crate::login_apps::{self, AUTOSTART_DIR, StartupCommand};
 use nova_cli::client::{Client, RESTART_COMMAND, Unreachable};
-use nova_daemon_info::{FeatureState, FeatureStatus};
+use nova_daemon_info::{FeatureState, FeatureStatus, UiState, UiStatus};
 use nova_desktop_info::HYPRLAND_LOCK_RESTORE;
 use nova_features::Gpu;
 use nova_tray_api::TrayItem;
@@ -63,6 +63,8 @@ pub enum Daemon {
         version: String,
         /// The apps in the tray, when its feature is on.
         tray: Vec<TrayItem>,
+        /// How novad's UI is doing, or `None` when it didn't say.
+        ui: Option<UiStatus>,
     },
     /// No socket, or nothing listening on it.
     NotRunning,
@@ -134,6 +136,7 @@ fn reach(socket: &Path) -> Daemon {
         Err(Unreachable::NoAnswer(problem)) => Daemon::NoAnswer(problem),
         Ok(mut client) => {
             // Only for a warning: a novad too old to answer is still running.
+            let ui = client.status().ok().map(|status| status.ui);
             let events = client.current(vec![nova_tray_api::TOPIC]).unwrap_or_default();
             let tray = events
                 .into_iter()
@@ -142,7 +145,7 @@ fn reach(socket: &Path) -> Daemon {
                     _ => None,
                 })
                 .unwrap_or_default();
-            Daemon::Running { version: client.daemon_version, tray }
+            Daemon::Running { version: client.daemon_version, tray, ui }
         }
     }
 }
@@ -158,7 +161,7 @@ pub fn lines(facts: &Facts) -> Vec<Line> {
     let mut lines = vec![
         system(&facts.host),
         compositor(facts.compositor),
-        ui(facts.ui.as_deref()),
+        ui(facts.ui.as_deref(), &facts.daemon),
         daemon(&facts.daemon),
         config(&facts.config),
         fonts(&facts.fonts, &facts.host.distro),
@@ -224,11 +227,27 @@ fn compositor(name: Option<&str>) -> Line {
     }
 }
 
-/// novad runs `nova-ui` from `PATH`: without it, Nova has no UI.
-fn ui(program: Option<&Path>) -> Line {
-    match program {
-        Some(program) => Line::new(Level::Ok, "ui", program.display().to_string()),
-        None => Line::new(Level::Fail, "ui", format!("{} isn't on PATH, so Nova has no UI", checks::GPUI_UI)),
+/// How the UI novad runs is doing, from novad itself; with no novad to
+/// ask, whether `nova-ui` is on `PATH`, where novad looks for it.
+fn ui(program: Option<&Path>, daemon: &Daemon) -> Line {
+    let since = |status: &UiStatus| status.since.as_deref().map(|since| format!(" since {since}")).unwrap_or_default();
+    match daemon {
+        Daemon::Running { ui: Some(status), .. } => match status.state {
+            UiState::Running => {
+                let pid = status.pid.map(|pid| format!(", pid {pid}")).unwrap_or_default();
+                Line::new(Level::Ok, "ui", format!("running{}{pid}", since(status)))
+            }
+            UiState::Restarting => {
+                let problem = status.problem.as_deref().unwrap_or("novad is starting it again");
+                Line::new(Level::Fail, "ui", format!("not running{}: {problem}", since(status)))
+            }
+            UiState::Disabled => Line::new(Level::Warn, "ui", "novad runs without its UI (--no-ui)"),
+            UiState::NotNeeded => Line::new(Level::Ok, "ui", "not running: no feature with a UI is on"),
+        },
+        _ => match program {
+            Some(program) => Line::new(Level::Ok, "ui", program.display().to_string()),
+            None => Line::new(Level::Fail, "ui", format!("{} isn't on PATH, so Nova has no UI", checks::GPUI_UI)),
+        },
     }
 }
 
@@ -438,7 +457,7 @@ mod tests {
             host: host(Distro::Arch, vec![Gpu::Amd], false),
             compositor: Some("niri"),
             ui: Some(PathBuf::from("/usr/bin/nova-ui")),
-            daemon: Daemon::Running { version: env!("CARGO_PKG_VERSION").into(), tray: vec![] },
+            daemon: Daemon::Running { version: env!("CARGO_PKG_VERSION").into(), tray: vec![], ui: None },
             config: Ok(vec![]),
             features: Ok(vec![
                 feature("ai-usage", FeatureStatus::Ready, &[]),
@@ -471,6 +490,7 @@ mod tests {
                 has_menu: false,
                 is_menu: false,
             }],
+            ui: None,
         };
         let text = rendered(&facts);
         assert!(
@@ -558,11 +578,42 @@ mod tests {
         assert!(missing.contains("FAIL  ui          nova-ui isn't on PATH, so Nova has no UI"), "{missing}");
     }
 
+    /// With novad there, the line is what novad says of its UI, wherever
+    /// `nova-ui` is: one that won't start fails with novad's reason.
+    #[test]
+    fn the_ui_line_asks_novad() {
+        let with_ui = |state, problem: Option<&str>| {
+            let ui = UiStatus {
+                program: nova_daemon_info::UiProgram::Gpui,
+                state,
+                pid: (state == UiState::Running).then_some(7),
+                pss_kib: None,
+                restarts: 0,
+                last_crash: None,
+                since: Some("2026-11-23T21:00:00.000Z".into()),
+                problem: problem.map(str::to_owned),
+            };
+            let daemon = Daemon::Running { version: env!("CARGO_PKG_VERSION").into(), tray: vec![], ui: Some(ui) };
+            rendered(&Facts { daemon, ..healthy() })
+        };
+        let running = with_ui(UiState::Running, None);
+        assert!(running.contains("ok    ui          running since 2026-11-23T21:00:00.000Z, pid 7"), "{running}");
+        let missing = with_ui(UiState::Restarting, Some("it didn't start: couldn't start /nonexistent/nova-ui"));
+        assert!(
+            missing.contains(
+                "FAIL  ui          not running since 2026-11-23T21:00:00.000Z: it didn't start: couldn't start /nonexistent/nova-ui"
+            ),
+            "{missing}"
+        );
+        let not_needed = with_ui(UiState::NotNeeded, None);
+        assert!(not_needed.contains("ok    ui          not running: no feature with a UI is on"), "{not_needed}");
+    }
+
     #[test]
     fn novad_down_warns_and_stuck_fails() {
         assert_eq!(daemon(&Daemon::NotRunning).level, Level::Warn);
         assert_eq!(daemon(&Daemon::NoAnswer("novad didn't say hello".into())).level, Level::Fail);
-        let old = daemon(&Daemon::Running { version: "0.0.1".into(), tray: vec![] });
+        let old = daemon(&Daemon::Running { version: "0.0.1".into(), tray: vec![], ui: None });
         assert_eq!(old.level, Level::Warn);
         assert!(old.detail.contains("nova restart"), "{old}");
     }

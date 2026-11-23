@@ -213,24 +213,47 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     assert!(crash_entries.iter().any(|entry| entry.message.contains("exit code 3")));
     let full_log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
     assert!(full_log.iter().any(|entry| entry.message.contains("failed to load")));
+
+    // One that exits at once keeps being started, and novad says why it
+    // isn't running.
+    let status =
+        wait_for_status(&mut client, |status| status.ui.restarts >= 2 && status.ui.state == UiState::Restarting);
+    assert!(status.ui.problem.as_deref().is_some_and(|problem| problem.contains("exit code 3")), "{:?}", status.ui);
+    assert!(status.ui.since.is_some(), "{:?}", status.ui);
 }
 
 /// A missing `nova-ui` is no reason to run anything else: an error in the
-/// log, once, and another try after each backoff.
+/// log, once, another try after each backoff (each one logged), and novad's
+/// status says why there is no UI. Once the program is there, it runs.
 #[test]
 fn a_missing_ui_is_an_error_and_tried_again() {
     let scripts = nova_test_support::TempDir::new("no-ui");
-    let novad = TestDaemon::start("no-ui", Some(ui_settings(scripts.join("nova-ui"))));
+    let program = scripts.join("nova-ui");
+    let novad = TestDaemon::start("no-ui", Some(ui_settings(program.clone())));
     let log = || read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
     let failed = |entry: &LogEntry| entry.level == LogLevel::Error && entry.message.contains("didn't start");
-    nova_test_support::eventually(Duration::from_secs(10), "the error", || log().iter().any(failed).then_some(()));
-    // Past the first backoff (1 s): tried again, and not logged again.
-    nova_test_support::settle(Duration::from_millis(1500));
-    let status = wait_for_status(&mut novad.connect(), |status| status.ui.state == UiState::Restarting);
-    assert_eq!((status.ui.pid, status.ui.restarts, status.ui.last_crash), (None, 0, None), "it never ran");
+    let retried = |entry: &LogEntry| entry.message.starts_with("starting the UI again");
+    // Two tries after the first: 1 s and 2 s of backoff.
+    nova_test_support::eventually(Duration::from_secs(10), "two retries", || {
+        (log().iter().filter(|entry| retried(entry)).count() >= 2).then_some(())
+    });
     let errors: Vec<LogEntry> = log().into_iter().filter(failed).collect();
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert!(errors[0].message.contains("nova-ui"), "{errors:?}");
+
+    let mut client = novad.connect();
+    let status = wait_for_status(&mut client, |status| status.ui.state == UiState::Restarting);
+    assert_eq!((status.ui.pid, status.ui.restarts, &status.ui.last_crash), (None, 0, &None), "it never ran");
+    let problem = status.ui.problem.as_deref().unwrap_or_default();
+    assert!(problem.starts_with("it didn't start: couldn't start") && problem.contains("nova-ui"), "{problem}");
+    let since = status.ui.since.clone();
+    assert!(since.is_some(), "{:?}", status.ui);
+
+    // The next try finds it.
+    write_program(&scripts, "nova-ui", "exec sleep 60");
+    let status = wait_for_status(&mut client, |status| status.ui.state == UiState::Running);
+    assert_eq!(status.ui.problem, None);
+    assert_ne!(status.ui.since, since, "since it started");
     novad.daemon.ui.as_ref().unwrap().stop();
 }
 

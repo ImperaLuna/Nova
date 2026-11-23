@@ -165,6 +165,15 @@ pub struct UiStatus {
     pub restarts: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_crash: Option<Crash>,
+    /// When the UI got to its state: when it started, while it runs, else
+    /// since when it hasn't run (RFC 3339, UTC). Missing from a novad that
+    /// hasn't tried to run it yet, or from before IMP-467.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
+    /// Why the UI isn't running while novad wants it: the last start's
+    /// error, or how it last exited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
 }
 
 /// A program that draws Nova's UI, by its wire name, which `features.toml`

@@ -177,6 +177,8 @@ impl Daemon {
             pss_kib: None,
             restarts: 0,
             last_crash: None,
+            since: None,
+            problem: None,
         };
         Status {
             daemon: env!("CARGO_PKG_VERSION").into(),
