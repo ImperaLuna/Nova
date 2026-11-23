@@ -69,26 +69,13 @@
             ./features
             ./framework
             (uiCrates lib)
-            # The look kit compiles in the fallback theme, and its tests
-            # hold its tokens and glyphs equal to the Quickshell shell's.
+            # The look kit compiles in the fallback theme.
             ./themes
-            ./ui/theme/Tokens.qml
-            ./ui/theme/icons.js
-            # The slot hosts, which nova-stage's test holds equal to its own.
-            ./ui/slots/slots.js
-            # The AI usage marks and countdown, held equal to today's.
-            ./ui/ai_usage/AiUsage.qml
-            ./ui/ai_usage/ProviderLogo.qml
-            # Quick settings' header draws Nova's own NixOS logo.
-            ./ui/quick_settings/logos/nixos.svg
-            # The lock screen's PAM service, compiled into its check.
-            ./ui/lock/pam/nova-lock
           ];
         };
 
       # The daemon side's Rust sources only, so UI edits don't rebuild the
-      # daemon. Tokens.qml and protocol.js are the exceptions: Rust tests
-      # check they match novad.
+      # daemon.
       rustSrc =
         lib:
         lib.fileset.toSource {
@@ -107,10 +94,6 @@
             ./app
             ./packaging
             ./themes
-            ./ui/theme/Tokens.qml
-            ./ui/daemon/protocol.js
-            # The slot hosts and view registry, checked against the manifests.
-            ./ui/slots
           ];
         };
 
@@ -146,11 +129,10 @@
           }
         } ${prefix}/share/nova/features
         cp -r --no-preserve=mode ${./themes} ${prefix}/share/nova/themes
-        cp -r --no-preserve=mode ${./ui} ${prefix}/share/nova/ui
       '';
 
-      # The nova binary (CLI and daemon), feature manifests, the QML UI and
-      # the systemd unit.
+      # The nova binary (CLI and daemon), feature manifests, themes and the
+      # systemd unit.
       novaFor =
         pkgs:
         let
@@ -235,20 +217,6 @@
           ''
         );
 
-      # qmllint over ui/ against pkgs' Quickshell types.
-      qmllintFor =
-        pkgs:
-        pkgs.runCommand "nova-qmllint" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
-          cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
-          patchShebangs scripts
-          scripts/qmllint.sh ${pkgs.lib.escapeShellArgs (qmlImports pkgs)}
-          touch $out
-        '';
-
-      qmlImports = pkgs: [
-        "${pkgs.quickshell}/lib/qt-6/qml"
-        "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml"
-      ];
     in
     {
       # `programs.nova`: Nova, and a switch per feature that also installs
@@ -356,8 +324,6 @@
             cargo fmt --all --check
           '';
 
-          qmllint = qmllintFor pkgs;
-
           # The NixOS module with every feature on, with and without NVIDIA:
           # each manifest's `nix` packages exist in nixpkgs, and the
           # features.toml it writes reads back as the same choice, modes
@@ -426,14 +392,6 @@
             pkgs.writeText "nova-nix-modules" (
               report (evalWith [ "nvidia" ]) + report (evalWith [ "modesetting" ])
             );
-
-          # The committed .qsb shaders match their .frag sources.
-          shaders = pkgs.runCommand "nova-shaders" { nativeBuildInputs = [ pkgs.qt6.qtshadertools ]; } ''
-            cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
-            patchShebangs scripts
-            scripts/shaders.sh --check
-            touch $out
-          '';
 
           # install.sh: shellcheck, and a run against a fake release.
           install-script =
@@ -578,13 +536,6 @@
             touch $out
           '';
 
-          qmlformat = pkgs.runCommand "nova-qmlformat" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
-            cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
-            patchShebangs scripts
-            scripts/qmlformat.sh --check
-            touch $out
-          '';
-
           nix-lint =
             pkgs.runCommand "nova-nix-lint"
               {
@@ -607,29 +558,12 @@
                 touch $out
               '';
 
-          qml-tests =
-            pkgs.runCommand "nova-qml-tests"
-              {
-                nativeBuildInputs = [ pkgs.qt6.qtdeclarative ];
-                QT_QPA_PLATFORM = "offscreen";
-                QML_IMPORT_PATH = "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml";
-              }
-              ''
-                export HOME=$TMPDIR
-                # Failures again at the end: Nix shows only the last lines.
-                if ! qmltestrunner -input ${./ui}/tests 2>&1 | tee $TMPDIR/qml-tests.log; then
-                  grep -A3 '^FAIL!' $TMPDIR/qml-tests.log
-                  exit 1
-                fi
-                touch $out
-              '';
         }
       );
 
       devShells = forAllSystems (pkgs: {
         # For the UI side (`nix develop .#ui`): what GPUI needs to build and
-        # run, which the default shell leaves out so its Quickshell runs
-        # with the session's own libraries.
+        # run, which the default shell leaves out.
         ui = (uiFor pkgs).devShell;
 
         default = pkgs.mkShell {
@@ -639,9 +573,6 @@
             pkgs.clippy
             pkgs.rustfmt
             pkgs.rust-analyzer
-            pkgs.quickshell
-            pkgs.qt6.qtdeclarative # qmllint, qmlls, qmlformat, qmltestrunner
-            pkgs.qt6.qtshadertools # qsb, for scripts/shaders.sh
             pkgs.dbus # dbus-daemon, for the tray's and notifications' tests
             pkgs.cargo-insta # `cargo insta review` for snapshot tests
             pkgs.cargo-deny
@@ -652,9 +583,6 @@
             pkgs.jq
             pkgs.git
           ];
-          # Lets `just lint-qml` and qmlls find Quickshell's types.
-          NOVA_QML_IMPORTS = builtins.concatStringsSep ":" (qmlImports pkgs);
-          QML_IMPORT_PATH = builtins.concatStringsSep ":" (qmlImports pkgs);
         };
       });
 

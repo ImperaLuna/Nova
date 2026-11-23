@@ -20,8 +20,7 @@ pub const TOPIC: Topic = Topic::named("sound");
 pub const VOLUME_MAX: f32 = 1.0;
 
 /// How far one volume key (`nova volume up` or `down`) moves the output in
-/// use, while novad does the keys (the GPUI UI). `Tokens.volumeStep` in
-/// today's shell.
+/// use.
 pub const VOLUME_STEP: f32 = 0.05;
 
 /// Sent by the UI. Arguments with unknown fields are refused.
@@ -33,7 +32,7 @@ pub enum Command {
     /// unmutes too.
     SetSoundVolume { of: Kind, id: u32, volume: f32 },
     /// Sets a volume as [`Command::SetSoundVolume`] does but leaves mute as
-    /// it is: a click or drag on the volume capsule, as in today's shell.
+    /// it is: a click or drag on the volume capsule.
     SetSoundLevel { of: Kind, id: u32, volume: f32 },
     /// Mutes or unmutes an output, an input or an app (all its streams).
     SetSoundMuted { of: Kind, id: u32, muted: bool },

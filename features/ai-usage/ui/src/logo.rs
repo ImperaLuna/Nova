@@ -57,14 +57,6 @@ pub fn logo(provider: AiProvider, size: Pixels, color: Hsla) -> impl IntoElement
 mod tests {
     use super::*;
 
-    const PROVIDER_LOGO_QML: &str = include_str!("../../../../ui/ai_usage/ProviderLogo.qml");
-
-    #[test]
-    fn the_marks_are_today_s_shell_s() {
-        assert!(PROVIDER_LOGO_QML.contains(&format!("claude: \"{CLAUDE}\"")));
-        assert!(PROVIDER_LOGO_QML.contains(&format!("codex: \"{CODEX}\"")));
-    }
-
     #[test]
     fn a_mark_is_drawn_in_the_color_asked_for() {
         let white = gpui::white();

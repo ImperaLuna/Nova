@@ -2,15 +2,13 @@
 //! `nova_daemon_info::topics`, each other one in the -info or api crate of
 //! the event it carries. A client may subscribe only to these
 //! (`subscribe`'s names are checked against [`TOPICS`] as the request is
-//! read), and `ui/daemon/protocol.js` names them in this order.
-//!
-//! A new topic goes at the end, where protocol.js adds it.
+//! read).
 
 use nova_carrier::Topic;
 use nova_daemon_info::topics;
 use std::sync::LazyLock;
 
-/// The topics, in protocol.js's order.
+/// The topics. A new one goes at the end.
 pub const TOPICS: &[Topic] = &[
     topics::FEATURES,
     topics::LOGS,

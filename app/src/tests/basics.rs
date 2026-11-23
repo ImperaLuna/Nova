@@ -58,18 +58,13 @@ fn bad_requests_get_an_error_when_they_have_an_id() {
 
 /// The router's error for a command nobody serves is the one decoding the
 /// whole command list gives, word for word: every command, in the order
-/// protocol.js names them, however many routes serve them.
+/// the routes take them, however many routes serve them.
 #[test]
 fn an_unknown_command_gets_the_decoders_error() {
     let novad = TestDaemon::start("unknown", None);
     let mut client = novad.connect();
     client.send(&json!({"v": 2, "id": 5, "cmd": "reboot"}));
-    let protocol_js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../ui/daemon/protocol.js"));
-    let named: Vec<String> = protocol_js
-        .unwrap()
-        .lines()
-        .filter_map(|line| Some(format!("`{}`", line.strip_prefix("var CMD_")?.split('"').nth(1)?)))
-        .collect();
+    let named: Vec<String> = crate::requests::router().names().iter().map(|name| format!("`{name}`")).collect();
     let decoded = format!("unknown variant `reboot`, expected one of {}", named.join(", "));
     assert_eq!(client.next()["error"], format!("bad request: {decoded}"));
 }

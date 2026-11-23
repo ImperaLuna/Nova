@@ -80,8 +80,6 @@ impl Slots {
 mod tests {
     use super::*;
 
-    const SLOTS_JS: &str = include_str!("../../../ui/slots/slots.js");
-
     fn feature(id: &str, status: FeatureStatus, slots: &[(&str, &str, i64)]) -> FeatureState {
         let slots =
             slots.iter().map(|(host, view, order)| Slot { host: (*host).into(), view: (*view).into(), order: *order });
@@ -109,14 +107,5 @@ mod tests {
             feature("recording", FeatureStatus::Ready, &[(HOST_SHELL_OVERLAYS, "capture.overlay", 0)]),
         ];
         assert_eq!(for_host(&features, HOST_SHELL_OVERLAYS), ["capture.overlay"]);
-    }
-
-    /// Until the Quickshell shell is removed, its list of hosts names the
-    /// same ones.
-    #[test]
-    fn the_stage_s_hosts_are_slots_js_s() {
-        for host in [HOST_BAR_LEFT, HOST_BAR_CENTER, HOST_BAR_RIGHT, HOST_STAGE_PANELS, HOST_SHELL_OVERLAYS] {
-            assert!(SLOTS_JS.contains(&format!("= \"{host}\";")), "slots.js has no host {host}");
-        }
     }
 }

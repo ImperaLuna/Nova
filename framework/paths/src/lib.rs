@@ -2,9 +2,6 @@
 //! programs. novad and the `nova` CLI both resolve paths here, so the two
 //! always agree. The XDG data folders apps, icons and file types are
 //! looked up in ([`data_dirs`]) are here too.
-//!
-//! `ui/daemon/Daemon.qml` derives the socket path on its own (QML can't call
-//! Rust); keep it in step with [`socket`].
 
 pub mod reference;
 

@@ -9,7 +9,7 @@ use std::str::FromStr;
 
 /// The font families Nova's look is drawn in, the same in every theme:
 /// running text, numbers, and display text. The look tokens name them
-/// (`nova-look`, `ui/theme/Tokens.qml`), Nova's Nix modules install them
+/// (`nova-look`), Nova's Nix modules install them
 /// (`packaging/nix/fonts.nix`) and `nova doctor` checks that each is there.
 pub const FONT_SANS: &str = "Inter";
 pub const FONT_MONO: &str = "JetBrains Mono";
@@ -51,8 +51,7 @@ pub enum ThemeMode {
     Light,
 }
 
-/// Every color token a theme sets, by the name `ui/theme/Tokens.qml` exposes
-/// it under. Theme files must set all of them and nothing else.
+/// Every color token a theme sets, by its name in the theme file. Theme files must set all of them and nothing else.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Palette {

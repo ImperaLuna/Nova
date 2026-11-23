@@ -5,8 +5,7 @@
 //! in it: toggle tiles two to a row, sliders, cards, one view in the room
 //! left below them and one pinned at the foot. Its sections come in one
 //! after another as it opens. Every other page is a feature's, sliding in
-//! from the right. `ui/quick_settings/QuickSettings.qml`, `MainPage.qml`
-//! and `Header.qml` in today's shell.
+//! from the right.
 
 use crate::drawer::Drawer;
 use crate::logic::{self, Logo};
@@ -26,13 +25,9 @@ use nova_stage::Part;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
-/// Nova's own logo for NixOS (`ui/quick_settings/logos`, see its CREDITS).
-static NIXOS_LOGO: LazyLock<Arc<Image>> = LazyLock::new(|| {
-    Arc::new(Image::from_bytes(
-        ImageFormat::Svg,
-        include_bytes!("../../../../ui/quick_settings/logos/nixos.svg").to_vec(),
-    ))
-});
+/// Nova's own logo for NixOS (`logos`, see its CREDITS).
+static NIXOS_LOGO: LazyLock<Arc<Image>> =
+    LazyLock::new(|| Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../logos/nixos.svg").to_vec())));
 
 /// What one of the first page's sections is, and the room it takes.
 enum Room {

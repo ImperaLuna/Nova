@@ -2,7 +2,6 @@
 /app-ui/target
 /result*
 .direnv/
-.qmlls.ini
 __pycache__/
 /.scratch/
 /.claude/worktrees/

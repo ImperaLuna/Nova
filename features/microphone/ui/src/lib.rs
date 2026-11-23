@@ -130,10 +130,4 @@ mod tests {
         assert_eq!(recording_text(&names(&["Discord", "OBS"])), "Discord and OBS are using the mic");
         assert_eq!(recording_text(&names(&["A", "B", "C"])), "A, B and C are using the mic");
     }
-
-    #[test]
-    fn its_fill_is_tokens_qml_s() {
-        let tokens = include_str!("../../../../ui/theme/Tokens.qml");
-        assert!(tokens.contains(&format!("readonly property real micFillOpacity: {FILL_OPACITY}")));
-    }
 }
