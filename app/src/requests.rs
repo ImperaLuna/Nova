@@ -8,7 +8,7 @@ use crate::Daemon;
 use nova_bar_api::Panel;
 use nova_base::lock;
 use nova_carrier::{Outcome, Topic};
-use nova_daemon_info::{Command, Event, topics};
+use nova_daemon_info::{Command, Event, UiProgram, topics};
 use nova_hub::ClientId;
 use nova_socket::{Answer, Caller, Router, done, value};
 
@@ -153,11 +153,16 @@ impl<'a> Connection<'a> {
         })
     }
 
-    /// Passes a volume key to the UI, which owns audio (PipeWire through
-    /// Quickshell) and the capsule. The keys change the volume while the UI
-    /// runs, whichever features draw it (the capsule, quick settings).
+    /// Passes a volume key to the UI, which shows the capsule. Quickshell's
+    /// shell changes the volume itself (PipeWire through Quickshell), so
+    /// the key does nothing without it; for the GPUI UI novad changes it,
+    /// through the sound feature, whether or not a UI is there to show it.
     fn volume(&self, key: nova_volume_osd_api::VolumeKey) -> Answer {
-        Answer::Now(match self.daemon.hub.publish(&nova_volume_osd_api::Event::Volume { key }) {
+        let shown = self.daemon.hub.publish(&nova_volume_osd_api::Event::Volume { key });
+        if lock(&self.daemon.settings).ui_in_use() == UiProgram::Gpui {
+            return crate::sound::press(self.daemon, key);
+        }
+        Answer::Now(match shown {
             0 => Outcome::Error("the UI isn't connected to novad, so nothing can change the volume".into()),
             _ => Outcome::Result(serde_json::Value::Null),
         })
