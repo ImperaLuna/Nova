@@ -2,33 +2,37 @@
 //! disturb, and a switch per app that has sent one (off mutes it).
 //! `ui/quick_settings/NotificationSettingsPage.qml` in today's shell.
 //!
-//! Quick settings draws it and its back button's way home (port 17
-//! onwards).
+//! Quick settings draws it; the list's gear opens it and its back button
+//! goes home (`Stage::show_page`).
 
 use crate::app_icon::AppIcon;
 use crate::model::{self, Model};
 use crate::pieces::switch;
-use crate::tokens::{PAGE_GAP, PAGE_HEADER_HEIGHT, ROW_ICON, SWITCH_ROW_HEIGHT};
+use crate::tokens::ROW_ICON;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div,
+    AnyElement, App, ClickEvent, Context, DisplayId, ElementId, Entity, InteractiveElement, IntoElement, ParentElement,
+    Render, StatefulInteractiveElement, Styled, Window, div,
 };
 use nova_look::tokens::{
-    FONT_SIZE, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP, LABEL_NUDGE, PAD, PILL_BUTTON_SIZE, RADIUS_ROW, WEIGHT_LABEL,
-    WEIGHT_TITLE,
+    FONT_SIZE, FONT_SIZE_SMALL, LIST_ROW_HEIGHT, PAD, QUICK_SETTINGS_GAP, RADIUS_ROW, WEIGHT_LABEL,
 };
-use nova_look::{Glyph, Icon, LookStyled, Theme};
+use nova_look::{LookStyled, PageHeader, Theme};
+use nova_stage::Stage;
+
+/// The panel it is a page of.
+const QUICK_SETTINGS: &str = "quick-settings";
 
 pub struct Page {
+    screen: DisplayId,
     model: Entity<Model>,
 }
 
 impl Page {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(screen: DisplayId, cx: &mut Context<Self>) -> Self {
         let model = Model::get(cx);
         cx.observe(&model, |_, _, cx| cx.notify()).detach();
-        Self { model }
+        Self { screen, model }
     }
 }
 
@@ -37,26 +41,9 @@ impl Render for Page {
         let theme = Theme::of(cx);
         let list = self.model.read(cx).list(cx).cloned();
         let do_not_disturb = list.as_ref().is_some_and(|list| list.do_not_disturb);
-        let back_size = PILL_BUTTON_SIZE + LABEL_NUDGE * 2.0;
-        let hover = theme.hover();
-        let header = div()
-            .h(PAGE_HEADER_HEIGHT)
-            .flex()
-            .items_center()
-            .gap(GAP)
-            .child(
-                div()
-                    .id("back")
-                    .size(back_size)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .bg(theme.surface_raised())
-                    .hover(move |style| style.bg(hover))
-                    .child(Icon::new(Glyph::LEFT)),
-            )
-            .child(div().text_size(FONT_SIZE_HEADING).font_weight(WEIGHT_TITLE).child("Notifications"));
+        let screen = self.screen;
+        let header =
+            PageHeader::new("Notifications", move |_, _, cx| Stage::show_page(QUICK_SETTINGS, screen, None, cx));
         let dnd = SwitchRow { lead: None, title: "Do not disturb".into(), on: do_not_disturb, selected: true }.build(
             "do-not-disturb",
             cx,
@@ -86,7 +73,7 @@ impl Render for Page {
             })
             .unwrap_or_default();
         let has_apps = !apps.is_empty();
-        div().size_full().body_text(cx).flex().flex_col().gap(PAGE_GAP).child(header).child(dnd).when(
+        div().size_full().body_text(cx).flex().flex_col().gap(QUICK_SETTINGS_GAP).child(header).child(dnd).when(
             has_apps,
             |page| {
                 page.child(div().px(PAD).text_size(FONT_SIZE_SMALL).text_color(theme.fg_soft()).child("APPS"))
@@ -118,7 +105,7 @@ impl SwitchRow {
         div()
             .id(id)
             .flex_none()
-            .h(SWITCH_ROW_HEIGHT)
+            .h(LIST_ROW_HEIGHT)
             .px(PAD)
             .flex()
             .items_center()

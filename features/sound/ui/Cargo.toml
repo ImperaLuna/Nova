@@ -1,0 +1,37 @@
+# nova-sound-ui
+#
+# What the sound feature draws with GPUI: the volume slider in quick
+# settings (`sound.slider`) and its Sound page (`sound.page`), with the
+# output and input in use, every output and input to switch to, and each
+# app's own volume.
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-launcher-api
+# - nova-look
+# - nova-sound-api
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-sound-ui"
+description = "The sound feature's UI for the GPUI program: quick settings' volume slider and the Sound page with outputs, inputs and apps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-launcher-api.workspace = true
+nova-look.workspace = true
+nova-sound-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

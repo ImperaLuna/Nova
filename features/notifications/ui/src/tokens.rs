@@ -64,14 +64,10 @@ pub const PEEK_INSET: Pixels = px(10.0);
 pub const MENU_WIDTH: Pixels = px(170.0);
 pub const EMPTY_ICON: Pixels = px(28.0);
 
-/// The settings page's on/off switches and their rows.
+/// The settings page's on/off switches (their rows are `LIST_ROW_HEIGHT`).
 pub const SWITCH_WIDTH: Pixels = px(40.0);
 pub const SWITCH_HEIGHT: Pixels = px(24.0);
 pub const SWITCH_KNOB: Pixels = px(18.0);
-pub const SWITCH_ROW_HEIGHT: Pixels = px(46.0);
-/// Between the page's sections, and its header's height.
-pub const PAGE_GAP: Pixels = px(12.0);
-pub const PAGE_HEADER_HEIGHT: Pixels = px(36.0);
 /// The ⋯ menu's inner padding and its items' height.
 pub const MENU_PAD: Pixels = px(4.0);
 pub const MENU_ITEM_HEIGHT: Pixels = px(30.0);
@@ -159,9 +155,6 @@ mod tests {
             ("switchWidth", pixels(SWITCH_WIDTH)),
             ("switchHeight", pixels(SWITCH_HEIGHT)),
             ("switchKnob", pixels(SWITCH_KNOB)),
-            ("powerRowHeight", pixels(SWITCH_ROW_HEIGHT)),
-            ("quickSettingsGap", pixels(PAGE_GAP)),
-            ("logoSize", pixels(PAGE_HEADER_HEIGHT)),
             ("segmentPad", pixels(MENU_PAD)),
             ("segmentHeight", pixels(MENU_ITEM_HEIGHT)),
             ("deviceBatteryWidth", pixels(BATTERY_WIDTH)),

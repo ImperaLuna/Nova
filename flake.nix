@@ -87,6 +87,8 @@
             # The AI usage marks and countdown, held equal to today's.
             ./ui/ai_usage/AiUsage.qml
             ./ui/ai_usage/ProviderLogo.qml
+            # Quick settings' header draws Nova's own NixOS logo.
+            ./ui/quick_settings/logos/nixos.svg
           ];
         };
 

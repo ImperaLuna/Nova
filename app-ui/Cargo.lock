@@ -2976,6 +2976,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-host-info"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
 name = "nova-launcher-api"
 version = "0.1.0"
 dependencies = [
@@ -3030,6 +3038,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-microphone-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-look",
+ "nova-sound-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-notifications-api"
 version = "0.1.0"
 dependencies = [
@@ -3065,6 +3084,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-quick-settings-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "jiff",
+ "nova-host-info",
+ "nova-look",
+ "nova-notifications-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-screenshot-api"
 version = "0.1.0"
 dependencies = [
@@ -3081,6 +3113,26 @@ dependencies = [
  "nova-desktop-info",
  "nova-look",
  "nova-screenshot-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
+name = "nova-sound-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-sound-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-launcher-api",
+ "nova-look",
+ "nova-sound-api",
  "nova-stage",
  "nova-ui-client",
 ]
@@ -3143,8 +3195,11 @@ dependencies = [
  "nova-launcher-ui",
  "nova-look",
  "nova-media-ui",
+ "nova-microphone-ui",
  "nova-notifications-ui",
+ "nova-quick-settings-ui",
  "nova-screenshot-ui",
+ "nova-sound-ui",
  "nova-stage",
  "nova-theme-info",
  "nova-tray-ui",

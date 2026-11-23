@@ -307,6 +307,13 @@ look in place (the tray opening inside the right pill, `features/tray/ui`).
 screen before it opens, kept inside the bar's margins, for one that drops
 below the thing clicked (the tray's menu below an app's icon).
 
+A panel with pages (quick settings): a part turns it with
+`Stage::show_page(name, screen, Some("<part's view id>"))`, and its back
+button with `None` (the first page). The stage only keeps the page; the
+panel's view reads `Stage::page`, draws it, and goes back to the first page
+once it has closed. `features/quick-settings/ui` lists the hosts a
+feature's tile, slider, card or page goes in.
+
 An overlay (host `shell.overlays`): something with windows of its own over
 the screens, like pop-ups or the volume capsule. `build` runs once while
 the feature is ready and returns what keeps it alive; the stage drops that

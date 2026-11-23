@@ -84,6 +84,7 @@ impl List {
                 )
             });
         let bell = if do_not_disturb { Glyph::BELL_OFF } else { Glyph::BELL };
+        let screen = self.screen.id;
         let buttons = div()
             .flex()
             .items_center()
@@ -96,8 +97,9 @@ impl List {
                     .on(do_not_disturb)
                     .build(cx, move |_, _, cx| model::set_do_not_disturb(!do_not_disturb, cx)),
             )
-            // The settings page is quick settings' to show (port 17).
-            .child(RoundButton::new("settings", Glyph::GEAR, BUTTON).build(cx, |_, _, _| {}));
+            .child(RoundButton::new("settings", Glyph::GEAR, BUTTON).build(cx, move |_, _, cx| {
+                Stage::show_page(QUICK_SETTINGS, screen, Some(crate::PAGE), cx);
+            }));
         div().h(BUTTON).flex().items_center().justify_between().child(title).child(buttons)
     }
 

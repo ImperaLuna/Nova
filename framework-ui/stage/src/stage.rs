@@ -44,6 +44,9 @@ pub(crate) struct Panels {
     /// The outputs whose shown workspace has a fullscreen window
     /// ([`Stage::set_fullscreen`]).
     fullscreen: Vec<SharedString>,
+    /// The page a panel with pages shows, other than its first
+    /// ([`Stage::show_page`]).
+    pages: HashMap<(DisplayId, SharedString), SharedString>,
 }
 
 impl Panels {
@@ -60,6 +63,7 @@ impl Panels {
     pub fn know(&mut self, screen: DisplayId, panels: Vec<PanelRules>) -> bool {
         let closed = self.open.retain(|on, open| on != screen || panels.iter().any(|panel| panel.name == open.name));
         self.sizes.retain(|(on, name), _| *on != screen || panels.iter().any(|panel| panel.name == *name));
+        self.pages.retain(|(on, name), _| *on != screen || panels.iter().any(|panel| panel.name == *name));
         self.places.retain(|(on, name), _| *on != screen || panels.iter().any(|panel| panel.name == *name));
         let names = |list: &[PanelRules]| list.iter().map(|panel| panel.name.clone()).collect::<Vec<_>>();
         let before = self.known.insert(screen, panels.clone());
@@ -74,6 +78,7 @@ impl Panels {
     fn keep_screens(&mut self, here: &[DisplayId]) -> bool {
         self.known.retain(|screen, _| here.contains(screen));
         self.sizes.retain(|(screen, _), _| here.contains(screen));
+        self.pages.retain(|(screen, _), _| here.contains(screen));
         self.places.retain(|(screen, _), _| here.contains(screen));
         self.open.retain(|screen, _| here.contains(&screen))
     }
@@ -192,6 +197,31 @@ impl Stage {
         });
     }
 
+    /// Shows the page `page` in the panel called `name` on `screen`, or its
+    /// first page with `None`: for a panel with pages (quick settings),
+    /// whose parts turn them (a slider's arrow opens its page, a page's
+    /// back button returns). The stage only keeps it, open or not; the
+    /// panel's view draws it, and goes back to the first page itself once
+    /// it has closed.
+    pub fn show_page(name: &str, screen: DisplayId, page: Option<&str>, cx: &mut App) {
+        change(cx, |panels| {
+            let key = (screen, SharedString::from(name.to_owned()));
+            let before = match page {
+                Some(page) => panels.pages.insert(key, SharedString::from(page.to_owned())),
+                None => panels.pages.remove(&key),
+            };
+            before.as_deref() != page
+        });
+    }
+
+    /// The page the panel called `name` shows on `screen`; `None` is its
+    /// first. Read it again when [`Stage::observe_panels`] or
+    /// [`Stage::observe_open`] calls back.
+    pub fn page(name: &str, screen: DisplayId, cx: &App) -> Option<SharedString> {
+        let state = cx.try_global::<StageState>()?;
+        state.panels.read(cx).pages.get(&(screen, SharedString::from(name.to_owned()))).cloned()
+    }
+
     /// Puts the left edge of the panel called `name` on `screen` at `left`
     /// across the screen once open, for a panel that grows out of no pill
     /// (a tray app's menu under its icon): it rises into place there rather
@@ -216,7 +246,7 @@ impl Stage {
     }
 
     /// Calls `changed` each time a panel opens or closes, on any screen
-    /// (and when one is resized, or a bar steps aside): for what follows a
+    /// (and when one is resized or turns a page, or a bar steps aside): for what follows a
     /// panel it doesn't draw, like pop-ups that wait while quick settings
     /// shows their list. It asks [`Stage::is_open`] what is open now.
     /// `None` before [`Stage::start`].
