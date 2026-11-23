@@ -12,8 +12,8 @@
 //!
 //! Scrolling anywhere over it steps through the screen's workspaces, one
 //! per wheel notch, while the compositor can (capability
-//! `focus_workspace`). The launcher grows out of it (`.from("central-pill")`
-//! on its panel); the button only toggles it.
+//! `focus_workspace`). The button only toggles the launcher, which fades in
+//! where it stands, not out of this pill.
 
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
