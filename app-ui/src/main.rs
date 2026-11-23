@@ -75,6 +75,7 @@ fn register_features(cx: &mut App) {
     nova_media_ui::register(cx);
     nova_notifications_ui::register(cx);
     nova_screenshot_ui::register(cx);
+    nova_wallpaper_ui::register(cx);
     nova_workspaces_ui::register(cx);
 }
 

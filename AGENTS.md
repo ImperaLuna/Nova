@@ -330,6 +330,9 @@ frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
 - The contract's flags are on `Panel`: `.exclusive(false)` to stay open
   beside the others, `.closes_on_click_outside(false)`, `.takes_typing`,
   `.top` and `.radius` for a panel that isn't the usual shape.
+  `.covers_screen()` is a panel over the whole screen that draws all of
+  it (the wallpaper carousel): no glass and no blur, every click on that
+  screen is its own, and it fades with the morph.
 - A panel changes size only with `Stage::resize(name, screen, size, cx)`,
   open or not; an open one eases there. The view never sizes its own glass.
 - A view redraws by itself (`cx.notify()` when what it shows changed) and

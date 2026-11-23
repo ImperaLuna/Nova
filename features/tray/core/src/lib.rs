@@ -3,8 +3,12 @@
 //! Apps show tray icons as StatusNotifierItems on the session bus and
 //! register them with a watcher, `org.kde.StatusNotifierWatcher`. novad is
 //! that watcher, so the list lives as long as novad and survives UI
-//! restarts; the UI (Quickshell's `SystemTray`) is the host that reads each
-//! item's icon and menu. Owned here rather than by the UI because Chromium
+//! restarts; today's Quickshell UI (its `SystemTray`) is the host that
+//! reads each item's icon and menu. The GPUI UI talks only to novad, so
+//! novad reads them too (`look`, `menu`): each item's picture as a file,
+//! whether it asks for attention, and its menu one level at a time. Only
+//! reading: nothing registers as a host, and nothing is sent to an app
+//! until the UI asks. Owned here rather than by the UI because Chromium
 //! and Electron look for a host once, at start: an app autostarted before
 //! the UI would otherwise fall back to an X11 icon for good. So the watcher
 //! always says a host is there, and novad claims the name before it starts
@@ -21,6 +25,10 @@
 
 mod app;
 pub use app::candidates;
+mod bus;
+mod look;
+mod menu;
+use bus::*;
 #[cfg(any(test, feature = "test-support"))]
 #[expect(clippy::unwrap_used, reason = "test helpers fail the test that calls them, loudly")]
 pub mod test_items;
@@ -33,15 +41,18 @@ use nova_apps::AppIndex;
 use nova_base::{lock, state_file};
 use nova_carrier::log::LogLevel;
 use nova_hub::{ClientId, Hub};
+use nova_icons::Icons;
 use nova_log::Logger;
 use nova_session_bus::{self as session_bus, Bus, Stop};
-use nova_tray_api::{Event, Tray as TrayEvent, TrayItem};
+use nova_tray_api::{Event, Tray as TrayEvent, TrayItem, TrayMenuLevel};
+use std::collections::HashMap;
 use std::future::poll_fn;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use std::time::Duration;
+use zbus::OwnedVariant as OwnedValue;
 use zbus::fdo::RequestNameReply;
 use zbus::message::Header;
 use zbus::names::{BusName, UniqueName};
@@ -85,14 +96,21 @@ pub struct Sources {
     pub state_file: PathBuf,
     /// Where an item's process is looked up (`/proc`, or a copy in tests).
     pub proc_root: PathBuf,
+    /// Where an item's icon name is looked up.
+    pub icons: Arc<Icons>,
+    /// Where the pictures items send as pixels are written, under the
+    /// runtime dir. Emptied at start.
+    pub pictures: PathBuf,
 }
 
 impl Sources {
-    pub fn new(state_dir: &std::path::Path) -> Self {
+    pub fn new(state_dir: &std::path::Path, runtime_dir: &std::path::Path, icons: Arc<Icons>) -> Self {
         Self {
             bus: Bus::Session,
             state_file: state_dir.join("tray.json"),
             proc_root: PathBuf::from(nova_process::procfs::PROC),
+            icons,
+            pictures: runtime_dir.join("tray"),
         }
     }
 }
@@ -110,6 +128,8 @@ struct Shared {
     state_file: PathBuf,
     /// Finds the app an item belongs to.
     apps: Arc<AppIndex>,
+    icons: Arc<Icons>,
+    pictures: PathBuf,
     /// The watcher's connection, once it's up, for `activate_app`.
     connection: Mutex<Option<Connection>>,
     stop: Stop,
@@ -121,6 +141,8 @@ struct State {
     saved: Saved,
     /// The last event published, so an unchanged list isn't sent again.
     sent: Option<TrayEvent>,
+    /// The number the next item gets, which its pictures are named by.
+    next_serial: u64,
 }
 
 /// What survives a restart.
@@ -136,8 +158,18 @@ struct Item {
     bus: String,
     /// The unique name that owned `bus` at registration: the item goes when it does.
     owner: String,
+    serial: u64,
     /// `None` until its id and title are read.
     read: Option<Read>,
+    /// Its picture, status or menu changed while it was being read: read
+    /// them again once it is.
+    look_stale: bool,
+}
+
+impl Item {
+    fn path(&self) -> &str {
+        &self.address[self.bus.len()..]
+    }
 }
 
 /// What came of calling an item's `Activate`.
@@ -159,6 +191,11 @@ struct Read {
     bridged: bool,
     /// It has no `Activate` (see [`TrayItem::menu_only`]).
     menu_only: bool,
+    /// Its picture, status and menu.
+    look: look::Look,
+    /// Its menu's layout revision, the newest seen: a click on an entry
+    /// read at an older one is refused.
+    menu_revision: Option<u32>,
 }
 
 impl Tray {
@@ -167,7 +204,8 @@ impl Tray {
     /// watcher, or connecting failed (logged), so apps started after it
     /// find the watcher.
     pub fn start(sources: Sources, apps: Arc<AppIndex>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
-        let Sources { bus, state_file, proc_root } = sources;
+        let Sources { bus, state_file, proc_root, icons, pictures } = sources;
+        look::clear(&pictures);
         let saved = match std::fs::read_to_string(&state_file) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
                 logger.warn(LOG_SOURCE, &format!("ignoring {}: {e}", state_file.display()));
@@ -182,6 +220,8 @@ impl Tray {
             proc_root,
             state_file,
             apps,
+            icons,
+            pictures,
             connection: Mutex::new(None),
             stop: Stop::default(),
         });
@@ -283,6 +323,83 @@ impl Tray {
         }
     }
 
+    /// A middle click on the item at `address` (`SecondaryActivate`).
+    pub fn secondary_activate(&self, address: &str) -> Result<(), String> {
+        let (connection, owner, path) = self.reach(address)?;
+        zbus::block_on(connection.call_method(
+            Some(owner.as_str()),
+            path.as_str(),
+            Some(ITEM_INTERFACE),
+            "SecondaryActivate",
+            &(0i32, 0i32),
+        ))
+        .map(drop)
+        .map_err(|e| format!("{address} didn't answer: {e}"))
+    }
+
+    /// The level under entry `id` of the menu of the item at `address`.
+    pub fn menu_level(&self, address: &str, id: i32) -> Result<TrayMenuLevel, String> {
+        let (connection, owner, path) = self.reach_menu(address)?;
+        let level = zbus::block_on(menu::level(&connection, &owner, &path, id))
+            .map_err(|e| format!("{address}'s menu didn't answer: {e}"))?;
+        self.shared.saw_revision(&owner, &path, level.revision);
+        Ok(level)
+    }
+
+    /// Clicks entry `id` of the menu of the item at `address`, read at
+    /// `revision`: refused once the app changed its menu since.
+    pub fn run_menu_entry(&self, address: &str, id: i32, revision: u32) -> Result<(), String> {
+        let (connection, owner, path) = self.reach_menu(address)?;
+        let newest = self.read_of(address, |read| read.menu_revision)?;
+        // Never read (or read from a menu the item has since replaced): refused too.
+        let changed = || Err(format!("{address}'s menu changed since it was read"));
+        if newest != Some(revision) {
+            return changed();
+        }
+        // LayoutUpdated comes on another thread, maybe not yet: ask the app.
+        zbus::block_on(async {
+            let now = menu::revision(&connection, &owner, &path).await?;
+            if now != revision {
+                self.shared.saw_revision(&owner, &path, now);
+                return Ok(changed());
+            }
+            menu::click(&connection, &owner, &path, id).await.map(Ok)
+        })
+        .map_err(|e| format!("{address}'s menu didn't answer: {e}"))?
+    }
+
+    /// The connection, owner and object path to call the item at `address` on.
+    fn reach(&self, address: &str) -> Result<(Connection, String, String), String> {
+        let connection = lock(&self.shared.connection).clone().ok_or("the tray isn't on the session bus")?;
+        let state = lock(&self.shared.state);
+        let item = state
+            .items
+            .iter()
+            .find(|item| item.address == address)
+            .ok_or_else(|| format!("no tray icon at {address}"))?;
+        Ok((connection, item.owner.clone(), item.path().to_string()))
+    }
+
+    /// Like `reach`, with the path of the item's menu.
+    fn reach_menu(&self, address: &str) -> Result<(Connection, String, String), String> {
+        let (connection, owner, _) = self.reach(address)?;
+        let path = self
+            .read_of(address, |read| read.look.menu_path.clone())?
+            .ok_or_else(|| format!("{address} has no menu"))?;
+        Ok((connection, owner, path))
+    }
+
+    /// What `pick` finds in what was read of the item at `address`.
+    fn read_of<T>(&self, address: &str, pick: impl Fn(&Read) -> T) -> Result<T, String> {
+        let state = lock(&self.shared.state);
+        let item = state
+            .items
+            .iter()
+            .find(|item| item.address == address)
+            .ok_or_else(|| format!("no tray icon at {address}"))?;
+        item.read.as_ref().map(pick).ok_or_else(|| format!("{address} isn't read yet"))
+    }
+
     /// The first item published (one whose id and title were read) that
     /// `wanted` picks.
     fn item(&self, wanted: impl Fn(&TrayItem) -> bool) -> Option<TrayItem> {
@@ -336,6 +453,10 @@ impl Shared {
                         title: read.title.clone(),
                         app: self.apps.find_app(&read.app_ids),
                         menu_only: read.menu_only,
+                        icon: read.look.icon.clone(),
+                        attention: read.look.attention,
+                        has_menu: read.look.menu_path.is_some(),
+                        is_menu: read.look.is_menu,
                     },
                 ))
             })
@@ -391,7 +512,16 @@ impl Shared {
         if state.items.iter().filter(|item| item.owner == owner).count() >= MAX_ITEMS_PER_APP {
             return Err(format!("the sender already has {MAX_ITEMS_PER_APP} items"));
         }
-        state.items.push(Item { address: address.clone(), bus: bus.to_string(), owner, read: None });
+        let serial = state.next_serial;
+        state.next_serial += 1;
+        state.items.push(Item {
+            address: address.clone(),
+            bus: bus.to_string(),
+            owner,
+            serial,
+            read: None,
+            look_stale: false,
+        });
         Ok((address, true))
     }
 
@@ -439,15 +569,76 @@ impl Shared {
             self.logger.log(LogLevel::Debug, LOG_SOURCE, &message);
         }
         let title = title.unwrap_or_default();
+        let props = item_props(connection, &owner, path).await.unwrap_or_default();
         let app_ids = app::candidates(&self.proc_root, pid.as_ref().ok().copied(), &id);
         let bridged = pid.as_ref().is_ok_and(|&pid| app::is_bridge(&self.proc_root, pid));
+        if self.install(
+            address,
+            &owner,
+            Read { id, title, app_ids, bridged, menu_only, look: look::Look::default(), menu_revision: None },
+            &props,
+        ) {
+            Box::pin(self.look_changed(connection, &owner, path)).await;
+        }
+    }
+
+    /// Keeps what was read of the item at `address`, and returns whether its
+    /// look changed meanwhile, so it is read again.
+    fn install(&self, address: &str, owner: &str, mut read: Read, props: &look::Props) -> bool {
         let mut state = lock(&self.state);
         let Some(item) = state.items.iter_mut().find(|item| item.address == address && item.owner == owner) else {
+            return false;
+        };
+        self.logger.info(LOG_SOURCE, &format!("{address} came: {} ({})", read.id, read.app_ids.join(", ")));
+        read.look = self.pictures().look(props, item.serial, None);
+        item.read = Some(read);
+        let stale = std::mem::take(&mut item.look_stale);
+        self.publish(&mut state);
+        stale
+    }
+
+    fn pictures(&self) -> look::Pictures<'_> {
+        look::Pictures { icons: &self.icons, folder: &self.pictures }
+    }
+
+    /// The item at `path` on `sender` said its picture, status or menu
+    /// changed: reads them again.
+    async fn look_changed(&self, connection: &Connection, sender: &str, path: &str) {
+        {
+            let mut state = lock(&self.state);
+            let Some(item) = state.items.iter_mut().find(|item| item.owner == sender && item.path() == path) else {
+                return;
+            };
+            if item.read.is_none() {
+                // What is being read may be from before the change.
+                item.look_stale = true;
+                return;
+            }
+        }
+        // It didn't answer: keep the last look rather than none.
+        let Some(props) = item_props(connection, sender, path).await else { return };
+        let mut state = lock(&self.state);
+        let Some(item) = state.items.iter_mut().find(|item| item.owner == sender && item.path() == path) else {
             return;
         };
-        self.logger.info(LOG_SOURCE, &format!("{address} came: {id} ({})", app_ids.join(", ")));
-        item.read = Some(Read { id, title, app_ids, bridged, menu_only });
+        let serial = item.serial;
+        let Some(read) = item.read.as_mut() else { return };
+        let look = self.pictures().look(&props, serial, read.look.written.as_deref());
+        if look.menu_path != read.look.menu_path {
+            read.menu_revision = None;
+        }
+        read.look = look;
         self.publish(&mut state);
+    }
+
+    /// The menu at `path` on `sender` is at `revision` now, or was read there.
+    fn saw_revision(&self, sender: &str, path: &str, revision: u32) {
+        let mut state = lock(&self.state);
+        for item in state.items.iter_mut().filter(|item| item.owner == sender) {
+            if let Some(read) = item.read.as_mut().filter(|read| read.look.menu_path.as_deref() == Some(path)) {
+                read.menu_revision = Some(read.menu_revision.map_or(revision, |seen| seen.max(revision)));
+            }
+        }
     }
 
     /// Marks the item at `address` as having no `Activate`.
@@ -476,6 +667,9 @@ impl Shared {
         let mut state = lock(&self.state);
         let (gone, kept) = std::mem::take(&mut state.items).into_iter().partition::<Vec<_>, _>(gone);
         state.items = kept;
+        for written in gone.iter().filter_map(|item| item.read.as_ref()?.look.written.as_deref()) {
+            look::remove(written);
+        }
         let gone: Vec<String> = gone.into_iter().map(|item| item.address).collect();
         if !gone.is_empty() {
             self.logger.info(LOG_SOURCE, &format!("{} went", gone.join(", ")));
@@ -504,199 +698,4 @@ fn without_bridged_twins(items: Vec<(bool, TrayItem)>) -> Vec<TrayItem> {
 /// What `hide` and `Tray::hidden` know an item's app by.
 fn key(item: &TrayItem) -> &str {
     item.app.as_ref().map_or(&item.id, |app| &app.id)
-}
-
-/// Connects to `bus`, claims the watcher's name and serves it, dropping
-/// items whose app leaves the bus, until `stop` or the bus goes. Sends on
-/// `ready` once apps can register.
-async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<()>) -> zbus::Result<()> {
-    let builder = bus.builder();
-    let watcher = Watcher { shared: Arc::clone(shared) };
-    let connection = builder.method_timeout(CALL_TIMEOUT).serve_at(WATCHER_PATH, watcher).build().await?;
-    // Followed before the name is claimed, so no app leaving in between is missed.
-    let rule = MatchRule::builder()
-        .msg_type(zbus::message::Type::Signal)
-        .sender(DBUS_NAME)
-        .interface(DBUS_NAME)
-        .member("NameOwnerChanged")
-        .build()?;
-    let mut owners = MessageStream::for_match_rule(rule, &connection, None).await?;
-    // Queued behind another watcher (another shell's, say), novad takes over when it leaves.
-    match session_bus::claim(&connection, WATCHER_NAME).await? {
-        RequestNameReply::InQueue => shared.logger.warn(
-            LOG_SOURCE,
-            &format!("another program owns {WATCHER_NAME}; tray icons show through it until it quits"),
-        ),
-        _ => shared.logger.info(LOG_SOURCE, &format!("watching for tray icons as {WATCHER_NAME}")),
-    }
-    *lock(&shared.connection) = Some(connection.clone());
-    let _ = ready.send(());
-    let result = follow_owners(shared, &connection, &mut owners).await;
-    // The watcher it serves holds `shared`: kept, the connection would never
-    // close, and a stopped tray would keep the name from the next one.
-    *lock(&shared.connection) = None;
-    result
-}
-
-/// Drops the items of apps that leave the bus, until `stop` or the bus goes.
-async fn follow_owners(shared: &Shared, connection: &Connection, owners: &mut MessageStream) -> zbus::Result<()> {
-    let emitter = SignalEmitter::new(connection, WATCHER_PATH)?;
-    while let Some(message) = next_unless_stopped(owners, &shared.stop).await {
-        let (name, old, new): (String, String, String) = message?.body().deserialize()?;
-        let gone = match (old.is_empty(), new.is_empty()) {
-            (_, true) => shared.drop_bus(&name),
-            (false, false) => shared.drop_handed_over(&name, &old),
-            (true, false) => continue,
-        };
-        for address in gone {
-            emitter.status_notifier_item_unregistered(&address).await?;
-        }
-    }
-    Ok(())
-}
-
-/// The stream's next message; `None` once the connection closes or `stop` is set.
-async fn next_unless_stopped(stream: &mut MessageStream, stop: &Stop) -> Option<zbus::Result<zbus::Message>> {
-    poll_fn(|cx| {
-        if stop.poll(cx).is_ready() {
-            return Poll::Ready(None);
-        }
-        Pin::new(&mut *stream).poll_next(cx)
-    })
-    .await
-}
-
-/// Whether `e` is an app's answer that it has no such item, rather than
-/// no answer in time or a passing failure.
-fn says_not_there(e: &zbus::Error) -> bool {
-    matches!(
-        error_name(e).as_deref().unwrap_or_default(),
-        "org.freedesktop.DBus.Error.UnknownObject"
-            | "org.freedesktop.DBus.Error.UnknownInterface"
-            | "org.freedesktop.DBus.Error.UnknownMethod"
-            | "org.freedesktop.DBus.Error.UnknownProperty"
-    )
-}
-
-/// The name of the D-Bus error an app answered with, if it answered.
-fn error_name(e: &zbus::Error) -> Option<String> {
-    use zbus::DBusError;
-    match e {
-        zbus::Error::MethodError(name, ..) => Some(name.to_string()),
-        zbus::Error::FDO(e) => Some(e.name().to_string()),
-        _ => None,
-    }
-}
-
-/// Tells hosts the items at `addresses` went.
-async fn unregister(connection: &Connection, addresses: Vec<String>) {
-    let Ok(emitter) = SignalEmitter::new(connection, WATCHER_PATH) else { return };
-    for address in addresses {
-        let _ = emitter.status_notifier_item_unregistered(&address).await;
-    }
-}
-
-async fn name_owner(connection: &Connection, name: &str) -> zbus::Result<String> {
-    let reply = connection.call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "GetNameOwner", &(name,)).await?;
-    reply.body().deserialize()
-}
-
-/// A string property of the item at `bus` and `path`, cut to [`MAX_TEXT_CHARS`].
-async fn item_text(connection: &Connection, bus: &str, path: &str, name: &str) -> zbus::Result<String> {
-    let reply = connection.call_method(Some(bus), path, Some(PROPERTIES), "Get", &(ITEM_INTERFACE, name)).await?;
-    let text: String = reply.body().deserialize::<OwnedVariant>()?.try_into()?;
-    Ok(text.chars().take(MAX_TEXT_CHARS).collect())
-}
-
-/// Whether the item at `bus` and `path` has `Activate`. libayatana's items
-/// (Spotify's, Steam's) only have a menu, and say so when introspected;
-/// an item that can't be introspected (Electron's) is taken to have it,
-/// and `Tray::send_activate` finds out otherwise.
-async fn can_activate(connection: &Connection, bus: &str, path: &str) -> bool {
-    let Ok(reply) = connection.call_method(Some(bus), path, Some(INTROSPECTABLE), "Introspect", &()).await else {
-        return true;
-    };
-    reply.body().deserialize::<String>().map_or(true, |xml| has_method(&xml, ITEM_INTERFACE, "Activate") != Some(false))
-}
-
-/// Whether the introspection data `xml` gives `interface` the method
-/// `method`; `None` when it doesn't list the interface.
-fn has_method(xml: &str, interface: &str, method: &str) -> Option<bool> {
-    let quoted = |name: &str| [format!("name=\"{name}\""), format!("name='{name}'")];
-    let start = quoted(interface).iter().filter_map(|attribute| xml.find(attribute.as_str())).min()?;
-    let body = &xml[start..];
-    let body = &body[..body.find("</interface>").unwrap_or(body.len())];
-    Some(body.split("<method").skip(1).any(|tag| {
-        let tag = &tag[..tag.find('>').unwrap_or(tag.len())];
-        quoted(method).iter().any(|attribute| tag.contains(attribute.as_str()))
-    }))
-}
-
-/// The watcher apps see on the bus.
-struct Watcher {
-    shared: Arc<Shared>,
-}
-
-#[interface(name = "org.kde.StatusNotifierWatcher")]
-impl Watcher {
-    async fn register_status_notifier_item(
-        &self,
-        service: &str,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> zbus::fdo::Result<()> {
-        let sender = header.sender().map(|sender| sender.to_string()).unwrap_or_default();
-        let (address, new) = self.shared.register(connection, &sender, service).await.map_err(|e| {
-            self.shared.logger.warn(LOG_SOURCE, &format!("refused a tray icon from {sender}: {e}"));
-            zbus::fdo::Error::InvalidArgs(e)
-        })?;
-        emitter.status_notifier_item_registered(&address).await?;
-        // Read once, by the first registration: an app registering again
-        // doesn't get another thread.
-        if !new {
-            return Ok(());
-        }
-        // On a thread of its own, so the app gets its answer first and a slow
-        // one holds up nobody else.
-        let shared = Arc::clone(&self.shared);
-        let connection = connection.clone();
-        std::thread::spawn(move || zbus::block_on(shared.read(&connection, &address)));
-        Ok(())
-    }
-
-    /// Hosts are welcome, but the watcher says there's one whatever they do.
-    async fn register_status_notifier_host(
-        &self,
-        _service: &str,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> zbus::fdo::Result<()> {
-        emitter.status_notifier_host_registered().await?;
-        Ok(())
-    }
-
-    #[zbus(property)]
-    fn registered_status_notifier_items(&self) -> Vec<String> {
-        self.shared.addresses()
-    }
-
-    /// Always: Nova's UI is the host, and it may still be starting.
-    #[zbus(property)]
-    fn is_status_notifier_host_registered(&self) -> bool {
-        true
-    }
-
-    #[zbus(property)]
-    fn protocol_version(&self) -> i32 {
-        0
-    }
-
-    #[zbus(signal)]
-    async fn status_notifier_item_registered(emitter: &SignalEmitter<'_>, service: &str) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn status_notifier_item_unregistered(emitter: &SignalEmitter<'_>, service: &str) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn status_notifier_host_registered(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
