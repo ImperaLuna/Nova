@@ -7,7 +7,6 @@
 
 use crate::app_icon::AppIcon;
 use crate::model::{self, Model};
-use crate::pieces::switch;
 use crate::tokens::ROW_ICON;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -17,7 +16,7 @@ use gpui::{
 use nova_look::tokens::{
     FONT_SIZE, FONT_SIZE_SMALL, LIST_ROW_HEIGHT, PAD, QUICK_SETTINGS_GAP, RADIUS_ROW, WEIGHT_LABEL,
 };
-use nova_look::{LookStyled, PageHeader, Theme};
+use nova_look::{LookStyled, PageHeader, Theme, ToggleSwitch};
 use nova_stage::Stage;
 
 /// The panel it is a page of.
@@ -119,6 +118,6 @@ impl SwitchRow {
                 lead.map(|lead| div().flex_none().size(ROW_ICON).flex().items_center().justify_center().child(lead)),
             )
             .child(div().flex_1().min_w_0().truncate().text_size(FONT_SIZE).font_weight(WEIGHT_LABEL).child(title))
-            .child(switch(on, cx))
+            .child(ToggleSwitch::new(on))
     }
 }

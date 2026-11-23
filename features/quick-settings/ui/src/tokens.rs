@@ -28,11 +28,10 @@ macro_rules! tokens {
 }
 
 tokens! {
-    /// The drawer: this wide against the screen's right edge, its pages
-    /// this far in from its edges (the gap between sections is
-    /// `nova_look`'s, which other features' pages keep too).
+    /// The drawer: this wide against the screen's right edge (its pages'
+    /// padding and the gap between sections are `nova_look`'s, which other
+    /// features' pages keep too).
     WIDTH: px = 368.0, "quickSettingsWidth";
-    PAD: px = 16.0, "quickSettingsPad";
     /// How far a page slides as pages swap, and how long it takes.
     PAGE_SLIDE: px = 28.0, "pageSlide";
     DURATION_PAGE: ms = 280, "durationPage";
