@@ -15,6 +15,8 @@
 //!   swatch.
 //! - [`TextField`]: a one-line text field ([`FieldEvent`] when it changes).
 //! - [`Segments`]: a row of tabs, one of them picked.
+//! - [`Spinner`]: the loading spinner, and the dashed ring of something
+//!   that isn't there.
 //! - [`Glass`]: the smoked glass pills and panels are made of, with its
 //!   edge and its shadow.
 //! - [`Shape`], [`set_blur_region`]: what a window draws, as the region
@@ -34,6 +36,7 @@ mod icon;
 pub mod motion;
 mod segments;
 mod shape;
+mod spinner;
 mod style;
 mod theme;
 pub mod tokens;
@@ -46,6 +49,7 @@ pub use glass::Glass;
 pub use icon::{Glyph, Icon, IconAssets};
 pub use segments::Segments;
 pub use shape::{Shape, region, set_blur_region};
+pub use spinner::Spinner;
 pub use style::{LookStyled, Touching};
 pub use theme::{Theme, mix};
 pub use wheel::Wheel;
