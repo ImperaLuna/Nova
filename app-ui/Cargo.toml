@@ -21,6 +21,7 @@
 #
 # Allowed workspace crates:
 # - nova-bar-api
+# - nova-clock-ui
 # - nova-daemon-info
 # - nova-desktop-info
 # - nova-look
@@ -41,6 +42,7 @@ publish.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 nova-bar-api.workspace = true
+nova-clock-ui.workspace = true
 nova-daemon-info.workspace = true
 nova-desktop-info.workspace = true
 nova-look.workspace = true
@@ -53,9 +55,7 @@ workspace = true
 
 [workspace]
 resolver = "3"
-# A glob that matches nothing is an error to cargo, so the first
-# `features/<id>/ui` crate adds "../features/*/ui".
-members = [".", "../framework-ui/*"]
+members = [".", "../framework-ui/*", "../features/*/ui"]
 
 [workspace.package]
 version = "0.1.0"
@@ -82,11 +82,17 @@ futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+# The local time, for the clock: chrono, which GPUI uses, is unmaintained
+# (RUSTSEC-2026-0543). The system's time zone from TZ or /etc/localtime.
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 
 # The UI side's shared parts (framework-ui/).
 nova-look = { path = "../framework-ui/look" }
 nova-stage = { path = "../framework-ui/stage" }
 nova-ui-client = { path = "../framework-ui/client" }
+
+# Each feature's ui, sorted by feature id.
+nova-clock-ui = { path = "../features/clock/ui" }
 
 # The daemon side's crates the UI side may use, by path: api and -info crates.
 nova-carrier = { path = "../framework/carrier" }
