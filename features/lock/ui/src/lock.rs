@@ -25,7 +25,7 @@ use gpui::{
 use nova_desktop_info::{Desktop, Event as DesktopEvent};
 use nova_lock_api::{Command, Event, TOPIC};
 use nova_stage::{Screen, Stage};
-use nova_ui_client::{Daemon, Live};
+use nova_ui_client::{Daemon, Live, Refusal};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -247,7 +247,11 @@ impl LockScreen {
         cx.spawn(async move |this, cx| {
             if let Err(refusal) = reported.await {
                 eprintln!("WARN nova-ui: report_unlocked failed: {refusal}");
-                let _ = this.update(cx, |lock, _| lock.unreported = true);
+                // Only with the link down: its next connection starts with
+                // novad's old word, which is what `asked` takes back. Any
+                // other "locked" is a lock asked for.
+                let link_down = matches!(refusal, Refusal::NotConnected | Refusal::WentAway);
+                let _ = this.update(cx, |lock, _| lock.unreported = link_down);
             }
         })
         .detach();
@@ -301,11 +305,12 @@ impl LockScreen {
             self.checked(&Verdict::Unchecked("PAM is still at an earlier check".into()), cx);
             return;
         }
-        let busy = Arc::clone(&self.pam_busy);
+        // Free again when the check ends, or never starts (its task
+        // dropped first).
+        let busy = Busy(Arc::clone(&self.pam_busy));
         let checked = cx.background_spawn(async move {
-            let verdict = pam::check(&user, password);
-            busy.store(false, Ordering::SeqCst);
-            verdict
+            let _busy = busy;
+            pam::check(&user, password)
         });
         self.check = Some(cx.spawn(async move |this, cx| {
             let mut too_long = cx.background_executor().timer(CHECK_TIMEOUT).fuse();
@@ -432,6 +437,15 @@ impl LockScreen {
             shaken: self.shaken,
             unlocking: self.unlocking,
         })
+    }
+}
+
+/// Marks PAM free when dropped.
+struct Busy(Arc<AtomicBool>);
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
     }
 }
 
