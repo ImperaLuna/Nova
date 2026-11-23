@@ -27,6 +27,7 @@
 # - nova-desktop-info
 # - nova-launcher-ui
 # - nova-look
+# - nova-media-ui
 # - nova-notifications-ui
 # - nova-screenshot-ui
 # - nova-stage
@@ -53,6 +54,7 @@ nova-daemon-info.workspace = true
 nova-desktop-info.workspace = true
 nova-launcher-ui.workspace = true
 nova-look.workspace = true
+nova-media-ui.workspace = true
 nova-notifications-ui.workspace = true
 nova-screenshot-ui.workspace = true
 nova-stage.workspace = true
@@ -109,6 +111,7 @@ nova-ui-client = { path = "../framework-ui/client" }
 nova-bar-ui = { path = "../features/bar/ui" }
 nova-clock-ui = { path = "../features/clock/ui" }
 nova-launcher-ui = { path = "../features/launcher/ui" }
+nova-media-ui = { path = "../features/media/ui" }
 nova-notifications-ui = { path = "../features/notifications/ui" }
 nova-screenshot-ui = { path = "../features/screenshot/ui" }
 nova-workspaces-ui = { path = "../features/workspaces/ui" }
@@ -120,6 +123,7 @@ nova-bar-api = { path = "../features/bar/api" }
 nova-daemon-info = { path = "../framework/daemon-info" }
 nova-desktop-info = { path = "../framework/desktop-info" }
 nova-launcher-api = { path = "../features/launcher/api" }
+nova-media-api = { path = "../features/media/api" }
 nova-nova-files-api = { path = "../features/nova-files/api" }
 nova-notifications-api = { path = "../features/notifications/api" }
 nova-peripherals-api = { path = "../features/peripherals/api" }
