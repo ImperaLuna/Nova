@@ -187,6 +187,8 @@ sample`). Every ui crate draws with it:
   `overflow_hidden`. A window draws at most 32 glasses with a shadow.
 - GPUI clips children to a rounded parent's box, not its corners: content
   that reaches the edge rounds itself with `fit_corners`.
+- Hover is GPUI's own `.hover()` and `on_hover`: both let go when the
+  pointer leaves the window (a fix in the fork, IMP-435).
 - Motion is `motion::ease`, `Eased` and `Spring`. Ask for the next frame
   only while a value hasn't settled.
 - An icon is `Icon::new(Glyph::NAME)`; a new glyph joins the list in

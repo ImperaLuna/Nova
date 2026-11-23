@@ -9,8 +9,8 @@ use crate::popups::{Heights, Popups, Reach};
 use crate::stack::Entry;
 use crate::tokens::{ACTION_HEIGHT, AVATAR, LINE_HEIGHT, PAD_BOTTOM, WIDTH};
 use gpui::{
-    AnyElement, App, AppContext, Context, DispatchPhase, IntoElement, MouseExitEvent, MouseMoveEvent, ParentElement,
-    Pixels, Render, Styled, Subscription, WeakEntity, Window, WindowHandle, canvas, div,
+    AnyElement, App, AppContext, Context, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, WeakEntity,
+    Window, WindowHandle, canvas, div,
     layer_shell::{Anchor, Layer},
     px, relative, size,
 };
@@ -92,10 +92,9 @@ impl PopupWindow {
     }
 
     /// Hands this frame's shapes to the compositor when they changed: it
-    /// blurs behind them, and clicks land on them alone. Follows the
-    /// pointer coming in and going out (see `Popups::pointer`).
+    /// blurs behind them, and clicks land on them alone.
     fn regions(&self) -> impl IntoElement {
-        let (shapes, sent, popups) = (self.shapes.clone(), self.sent.clone(), self.popups.clone());
+        let (shapes, sent) = (self.shapes.clone(), self.sent.clone());
         canvas(
             |_, _, _| {},
             move |_, (), window, _| {
@@ -105,19 +104,6 @@ impl PopupWindow {
                     window.set_input_region(Some(&region(&drawn)));
                     sent.replace(Some(drawn));
                 }
-                // Painted after the cards, so this runs before their hovers.
-                let entered = popups.clone();
-                window.on_mouse_event(move |_: &MouseMoveEvent, phase, _, cx| {
-                    if phase == DispatchPhase::Bubble {
-                        let _ = entered.update(cx, |popups, cx| popups.pointer(true, cx));
-                    }
-                });
-                let left = popups.clone();
-                window.on_mouse_event(move |_: &MouseExitEvent, phase, _, cx| {
-                    if phase == DispatchPhase::Bubble {
-                        let _ = left.update(cx, |popups, cx| popups.pointer(false, cx));
-                    }
-                });
             },
         )
         .absolute()
