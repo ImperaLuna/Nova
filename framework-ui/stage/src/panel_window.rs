@@ -31,12 +31,12 @@
 
 use crate::draw::{self, ESCAPE, Shapes, dismiss_outside};
 use crate::frames::FrameLog;
-use crate::geometry::edge_window;
+use crate::geometry::{edge_window, edge_window_from};
 use crate::item::Placement;
 use crate::screens::Screen;
 use crate::stage::Stage;
 use crate::tokens::{PANEL_NAMESPACE, PANEL_WINDOW_PARKED};
-use crate::view::{OffStripPanels, PanelItem, StageView};
+use crate::view::{OffStrip, OffStripPanels, PanelItem, StageView};
 use gpui::{
     AnyElement, App, AppContext, Context, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
     Pixels, Render, Size, Styled, WeakEntity, Window, WindowHandle, canvas, div,
@@ -162,13 +162,20 @@ struct Drawn {
 }
 
 /// The size a window needs to draw `panel`: its drawer and the room for
-/// its shadow, at the width it is heading for or the one it still has; or
-/// the screen.
-fn needs(panel: &PanelItem, screen: Size<Pixels>, now: Instant) -> Size<Pixels> {
+/// its shadow, at the width it is heading for or the one it still has, and
+/// the pill it grows out of or back into until it stands open; or the
+/// screen.
+fn needs(off_strip: &OffStrip, screen: Size<Pixels>, now: Instant) -> Size<Pixels> {
+    let panel = &off_strip.panel;
     match panel.spec.placement {
         Placement::WholeScreen => screen,
         Placement::RightEdge | Placement::Top => {
-            edge_window(px(panel.width.target().max(panel.width.value(now))), screen)
+            let width = px(panel.width.target().max(panel.width.value(now)));
+            let stands_open = panel.morph.target() > 0.0 && panel.morph.settled(now);
+            match off_strip.pill_box().filter(|_| !stands_open) {
+                Some((pill, _)) => edge_window_from(width, pill.left(), screen),
+                None => edge_window(width, screen),
+            }
         }
     }
 }
@@ -210,7 +217,7 @@ impl PanelWindow {
             drawn.moving |= panel.moving(now);
             drawn.handing_back |= panel.closed(now);
             drawn.covers.push(panel.cover.clone());
-            let needs = needs(panel, screen, now);
+            let needs = needs(off_strip, screen, now);
             let widest = drawn.needs.map_or(needs.width, |so_far| so_far.width.max(needs.width));
             drawn.needs = Some(size(widest, needs.height));
         }

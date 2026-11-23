@@ -116,6 +116,14 @@ pub fn edge_window(width: Pixels, screen: Size<Pixels>) -> Size<Pixels> {
     size((width + SHADOW_ROOM).ceil().min(screen.width), screen.height)
 }
 
+/// The size of the window for a drawer `width` wide while it grows out
+/// of, or back into, a pill whose left edge is at `pill_left`: wide enough
+/// for the pill too, when that is further from the edge than the drawer
+/// reaches.
+pub fn edge_window_from(width: Pixels, pill_left: Pixels, screen: Size<Pixels>) -> Size<Pixels> {
+    edge_window(width.max(screen.width - pill_left), screen)
+}
+
 /// The part of a screen below a stage of `stage_height` and left of the
 /// panels' window, which sits against the right edge and is `beside` wide
 /// (nothing while none of its panels is out): where the click catcher
@@ -228,6 +236,13 @@ mod tests {
         assert_eq!(edge_window(px(368.0), screen), size(px(408.0), px(1080.0)));
         assert_eq!(edge_window(px(367.5), screen).width, px(408.0), "whole pixels");
         assert_eq!(edge_window(px(3000.0), screen).width, px(1920.0), "never wider than the screen");
+    }
+
+    #[test]
+    fn a_drawer_s_window_holds_the_pill_it_grows_out_of() {
+        let screen = size(px(1920.0), px(1080.0));
+        assert_eq!(edge_window_from(px(368.0), px(1800.0), screen).width, px(408.0), "a pill inside it");
+        assert_eq!(edge_window_from(px(368.0), px(1400.0), screen).width, px(560.0), "one further left");
     }
 
     #[test]
