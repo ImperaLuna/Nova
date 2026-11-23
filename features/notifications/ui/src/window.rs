@@ -75,6 +75,9 @@ impl PopupWindow {
                 // pop-ups to learn it has none would commit a frame, on a
                 // screen that shows no card, each time they change.
                 let followed = popups.upgrade().map(|popups| cx.observe(&popups, Self::follow));
+                // Pop-ups that came while this window was opening are already
+                // waiting for it.
+                let shows = popups.upgrade().is_some_and(|popups| popups.read(cx).shows_on(screen.id));
                 Self {
                     screen,
                     popups,
@@ -83,7 +86,7 @@ impl PopupWindow {
                     sent: Rc::default(),
                     height: RESTING_HEIGHT,
                     resized: None,
-                    shows: false,
+                    shows,
                     countdown: None,
                     frames,
                     _followed: followed,
