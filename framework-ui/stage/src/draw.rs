@@ -19,9 +19,10 @@
 //! clock) redraws through GPUI like any view.
 
 use crate::geometry::{Align, between, covered, open_box, overlaps, radius_between};
+use crate::middle;
 use crate::stage::Stage;
 use crate::tokens::{PANEL_ENTER_RISE, PILL_FADE_OUT};
-use crate::view::{PanelItem, PillBox, PillItem, ROWS, StageView};
+use crate::view::{CENTER_ROW, PanelItem, PillBox, PillItem, ROWS, StageView};
 use gpui::{
     AnyElement, App, Bounds, Context, DispatchPhase, Div, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
     MouseDownEvent, MouseExitEvent, MouseMoveEvent, ParentElement, Pixels, Render, ScrollEvent, Styled, Window, canvas,
@@ -163,12 +164,20 @@ impl StageView {
         Some(glass.into_any_element())
     }
 
+    /// How much of `pill` shows: none under another pill's open panel, or
+    /// once its own panel has grown far enough. At none its content is
+    /// laid out but not drawn.
+    fn pill_opacity(&self, pill: &PillItem, now: Instant) -> f32 {
+        let grown = self.grown_out_of(pill, now);
+        pill.shown.value(now) * (1.0 - grown / PILL_FADE_OUT).clamp(0.0, 1.0)
+    }
+
     fn pill(&self, pill: &PillItem, now: Instant, cx: &mut Context<Self>) -> AnyElement {
         let grown = self.grown_out_of(pill, now);
         let panel_drawn = self.panel_items().any(|panel| !panel.closed(now));
         // Its panel's glass has taken its place.
         let replaced = grown > 0.0;
-        let opacity = pill.shown.value(now) * (1.0 - grown / PILL_FADE_OUT).clamp(0.0, 1.0);
+        let opacity = self.pill_opacity(pill, now);
         let shown = opacity > 0.0;
         let radius = BAR_HEIGHT / 2.0;
         let slot = if replaced { div() } else { Glass::new(radius).shadow(opacity).build(cx) };
@@ -193,20 +202,37 @@ impl StageView {
     }
 
     /// The bar: the left row from the left margin, the right row up to the
-    /// right margin, the center row in the middle of the screen. Nothing
-    /// while it is out of sight for a fullscreen window, so its pills take
-    /// no clicks and need no blur.
+    /// right margin, the center row in the middle of the screen, or with
+    /// the point a view marks (`middle.rs`) there. A pill with nothing to
+    /// show takes no room. Nothing while the bar is out of sight for a
+    /// fullscreen window, so its pills take no clicks and need no blur.
     fn rows(&self, now: Instant, cx: &mut Context<Self>) -> Option<Div> {
         if self.aside.gone(now) {
             return None;
         }
+        let middle_from_right = self.middle_from_right;
+        let screen_middle = self.screen.size.width / 2.0;
         let mut rows = ROWS.iter().zip(&self.rows).map(|((_, align), row)| {
-            let pills: Vec<AnyElement> = row.iter().map(|pill| self.pill(pill, now, cx)).collect();
+            let pills: Vec<AnyElement> = row
+                .iter()
+                .filter(|pill| {
+                    let present = pill.is_present();
+                    if !present {
+                        pill.bounds.set(None);
+                    }
+                    present
+                })
+                .map(|pill| self.pill(pill, now, cx))
+                .collect();
             let row = div().flex().items_center().gap(GAP).children(pills);
-            match align {
-                Align::Left => row.flex_1().justify_start(),
-                Align::Center => row.flex_none(),
-                Align::Right => row.flex_1().justify_end(),
+            match (align, middle_from_right) {
+                (Align::Left, _) => row.flex_1().justify_start(),
+                (Align::Center, None) => row.flex_none(),
+                // Its right edge that far right of the middle, in the bar.
+                (Align::Center, Some(from_right)) => {
+                    row.absolute().top_0().bottom_0().right(screen_middle - from_right - BAR_MARGIN)
+                }
+                (Align::Right, _) => row.flex_1().justify_end(),
             }
         });
         // Slid up with its shadow, so nothing of it shows at the top edge.
@@ -224,16 +250,51 @@ impl StageView {
         Some(bar.children(rows.by_ref()))
     }
 
+    /// Reads the point the last frame marked for the screen's middle, and
+    /// its distance from the center row's right edge then.
+    ///
+    /// While the center row's content isn't drawn (a panel grew out of it
+    /// or lies over it, or the bar stepped aside), nothing marks the middle: the row keeps its place,
+    /// so a panel closing into its pill lands where the pill comes back.
+    fn follow_middle(&mut self, window: &Window, cx: &mut App, now: Instant) {
+        let marked = middle::read(window, cx);
+        let drawn_before = self.center_drawn;
+        self.center_drawn = !self.aside.gone(now)
+            && self.rows[CENTER_ROW]
+                .iter()
+                .filter(|pill| pill.is_present())
+                .all(|pill| self.pill_opacity(pill, now) > 0.0);
+        if marked.is_none() && !drawn_before {
+            return;
+        }
+        let row_right = self.rows[CENTER_ROW]
+            .iter()
+            .filter(|pill| pill.is_present())
+            .filter_map(|pill| pill.bounds.get())
+            .map(|pill| pill.right())
+            .reduce(Pixels::max);
+        self.middle_from_right = match (marked, row_right) {
+            (Some(at), Some(right)) => Some(right - at),
+            _ => None,
+        };
+    }
+
     /// Hands this frame's shapes to the compositor, when they changed: it
     /// blurs behind them, and clicks land on them alone, or anywhere on the
     /// stage while a panel that a click outside closes is open.
     fn regions(&self) -> impl IntoElement {
         let (shapes, sent, catching) = (self.shapes.clone(), self.sent.clone(), self.catching);
+        // A row placed by a mark that is drawn this frame expects it again.
+        let placed_by_middle = self.middle_from_right.is_some() && self.center_drawn;
         let strip = self.aside.fullscreen();
         let width = self.screen.size.width;
         canvas(
             |_, _, _| {},
-            move |_, (), window, _| {
+            move |_, (), window, cx| {
+                if placed_by_middle && !middle::recorded(window, cx) {
+                    // What marked the middle is gone: center the row again.
+                    window.request_animation_frame();
+                }
                 let drawn = (shapes.take(), catching, strip);
                 if sent.borrow().as_ref() != Some(&drawn) {
                     set_blur_region(window, &drawn.0);
@@ -291,6 +352,7 @@ impl StageView {
 impl Render for StageView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
+        self.follow_middle(window, cx, now);
         self.give_way(now);
         self.rest_once_closed(window, cx, now);
         let moving = self.moving(now);

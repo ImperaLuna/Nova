@@ -19,7 +19,8 @@
 //!   edge and its shadow.
 //! - [`Shape`], [`set_blur_region`]: what a window draws, as the region
 //!   the compositor blurs behind and takes clicks on.
-//! - [`motion`]: the panel curve and the spring.
+//! - [`motion`]: the panel curve and the spring. [`Wheel`]: a mouse
+//!   wheel's notches.
 //! - [`ShellWindow`]: the options every shell window opens with. No other
 //!   crate builds `WindowOptions`.
 //!
@@ -36,6 +37,7 @@ mod shape;
 mod style;
 mod theme;
 pub mod tokens;
+mod wheel;
 mod window;
 
 pub use app_icon::AppIcon;
@@ -46,4 +48,5 @@ pub use segments::Segments;
 pub use shape::{Shape, region, set_blur_region};
 pub use style::{LookStyled, Touching};
 pub use theme::{Theme, mix};
+pub use wheel::Wheel;
 pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, NAMESPACE_PREFIX, ShellWindow};

@@ -5,7 +5,9 @@
 
 use crate::rules::PanelRules;
 use gpui::{AnyView, FocusHandle, Pixels, SharedString, Size};
-use nova_look::tokens::{BAR_GAP, RADIUS_PANEL};
+use nova_look::tokens::{BAR_GAP, PAD, RADIUS_PANEL};
+use std::cell::Cell;
+use std::rc::Rc;
 
 /// A pill in one of the bar's rows: glass as tall as the bar and as wide as
 /// its content.
@@ -13,6 +15,7 @@ pub struct Pill {
     pub(crate) content: AnyView,
     pub(crate) panel: Option<Panel>,
     pub(crate) opens_on_click: bool,
+    pub(crate) shown: Option<Shown>,
 }
 
 impl Pill {
@@ -20,7 +23,7 @@ impl Pill {
     /// lays itself out inside the pill (its padding, its gaps) and redraws
     /// by itself when what it shows changes.
     pub fn new(content: impl Into<AnyView>) -> Self {
-        Self { content: content.into(), panel: None, opens_on_click: true }
+        Self { content: content.into(), panel: None, opens_on_click: true, shown: None }
     }
 
     /// The panel this pill grows into. A click on the pill opens it, unless
@@ -36,6 +39,74 @@ impl Pill {
     pub fn opens_on_click(mut self, opens: bool) -> Self {
         self.opens_on_click = opens;
         self
+    }
+
+    /// For a pill that has nothing to show at times (the central pill with
+    /// the launcher, workspaces and clock all off): while `shown` says no,
+    /// the stage draws no glass for it, gives it no room in its row and no
+    /// region, and a panel that grows out of it rises into place instead.
+    /// The view sets it as what it shows changes, and redraws.
+    pub fn shown_while(mut self, shown: Shown) -> Self {
+        self.shown = Some(shown);
+        self
+    }
+}
+
+/// Whether a pill is shown, set by its own view ([`Pill::shown_while`]).
+/// Clones share the one flag.
+#[derive(Debug, Clone)]
+pub struct Shown(Rc<Cell<bool>>);
+
+impl Shown {
+    pub fn new(shown: bool) -> Self {
+        Self(Rc::new(Cell::new(shown)))
+    }
+
+    /// Returns whether it changed, so the view redraws (`cx.notify()`).
+    pub fn set(&self, shown: bool) -> bool {
+        self.0.replace(shown) != shown
+    }
+
+    pub fn get(&self) -> bool {
+        self.0.get()
+    }
+}
+
+/// A view for a host another feature draws (`central-pill.parts`,
+/// `right-pill.buttons`), and how far the host keeps it from its ends.
+/// `cx.new(View::new).into()` makes one with the default inset.
+pub struct Part {
+    pub(crate) view: AnyView,
+    pub(crate) inset: Pixels,
+}
+
+impl Part {
+    pub fn new(view: impl Into<AnyView>) -> Self {
+        Self { view: view.into(), inset: PAD }
+    }
+
+    /// How far its content sits from the host's end when it is the first
+    /// or the last part: [`PAD`] by default, as text wants; round cells
+    /// (the workspace numbers) sit closer, as far from the end as from the
+    /// pill's top.
+    pub fn inset(mut self, inset: Pixels) -> Self {
+        self.inset = inset;
+        self
+    }
+
+    pub fn view(&self) -> &AnyView {
+        &self.view
+    }
+
+    /// What [`Part::inset`] set.
+    pub fn end_inset(&self) -> Pixels {
+        self.inset
+    }
+}
+
+impl<V: gpui::Render> From<gpui::Entity<V>> for Part {
+    fn from(view: gpui::Entity<V>) -> Self {
+        Self::new(view)
     }
 }
 

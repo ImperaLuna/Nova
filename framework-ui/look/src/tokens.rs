@@ -212,6 +212,11 @@ tokens! {
 /// The room a glass's shadow needs around it.
 pub const SHADOW_ROOM: Pixels = px(40.0);
 
+/// How far the central pill's round cells (its search button, the
+/// workspace numbers) sit from the pill's ends: as far as from its top,
+/// `(BAR_HEIGHT - WORKSPACE_SIZE) / 2` (a test holds it so).
+pub const WORKSPACE_INSET: Pixels = px(5.0);
+
 /// The grid line icons are drawn on.
 pub const ICON_GRID: f32 = 24.0;
 
@@ -273,6 +278,8 @@ mod tests {
         assert_eq!(EASING, [0.2, 0.8, 0.2, 1.0]);
         assert_eq!(qml["shadowRoom"], "shadowBlur + shadowOffset");
         assert_eq!(SHADOW_ROOM, SHADOW_BLUR + SHADOW_OFFSET);
+        // CentralPill.qml's numbersInset.
+        assert_eq!(WORKSPACE_INSET, (BAR_HEIGHT - WORKSPACE_SIZE) / 2.0);
         assert_eq!(qml["fontSans"], format!("{FONT_SANS:?}"));
         assert_eq!(qml["fontMono"], format!("{FONT_MONO:?}"));
         assert_eq!(qml["fontDisplay"], format!("{FONT_DISPLAY:?}"));
