@@ -1,0 +1,37 @@
+# nova-tray-ui
+#
+# What the tray draws, with GPUI: the chevron and the icon strip it opens
+# in the right pill (view `tray.strip` in `right-pill.tray`), and an app's
+# menu under its icon (panel `tray-menu`). Ported from ui/tray and
+# ui/bar/RightPill.qml (IMP-439).
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-app-info
+# - nova-look
+# - nova-stage
+# - nova-tray-api
+# - nova-ui-client
+
+[package]
+name = "nova-tray-ui"
+description = "The system tray's UI for the GPUI program: its strip in the right pill and the apps' menus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-app-info.workspace = true
+nova-look.workspace = true
+nova-stage.workspace = true
+nova-tray-api.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

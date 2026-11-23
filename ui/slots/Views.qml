@@ -18,6 +18,7 @@ import "../notifications" as Notifications
 import "../power" as Power
 import "../quick_settings" as QuickSettings
 import "../quick_settings/slots" as QuickSettingsSlots
+import "../tray" as Tray
 import "../volume" as Volume
 import "../wallpaper" as Wallpaper
 
@@ -55,6 +56,11 @@ QtObject {
             "microphone.slider": "../quick_settings/slots/MicrophoneSliderSlot.qml",
             "peripherals.card": "../quick_settings/slots/DevicesCardSlot.qml",
             "tray.card": "../quick_settings/slots/TrayCardSlot.qml",
+            // The right pill draws the tray itself (right-pill.tray); the
+            // open tray and its menus are its panels, not the stage's.
+            "tray.strip": "../bar/RightPill.qml",
+            "tray.panel": "../tray/TrayPanelsSlot.qml",
+            "tray.menu": "../tray/TrayPanelsSlot.qml",
             "notifications.list": "../quick_settings/slots/NotificationListSlot.qml",
             "resources.card": "../quick_settings/slots/ResourcesCardSlot.qml",
             "sound.page": "../quick_settings/slots/SoundPageSlot.qml",

@@ -82,6 +82,8 @@ pub(crate) struct PanelItem {
     pub reveal: Reveal,
     pub width: Eased,
     pub height: Eased,
+    /// Its left edge once open, when a feature placed it ([`crate::Stage::place`]).
+    pub left: Option<Pixels>,
     /// Off the strip: whether the panels' window has it on screen. The
     /// pill it grows out of is on the strip, and two windows never draw in
     /// the same frame, so the pill stays until the panel is drawn over it,
@@ -100,6 +102,7 @@ impl PanelItem {
             reveal: Reveal::hidden(now),
             width: resizing(spec.size.width),
             height: resizing(spec.size.height),
+            left: None,
             cover: Rc::default(),
             spec,
         }
@@ -128,13 +131,18 @@ impl PanelItem {
         changed
     }
 
-    /// Whether it is closed and at rest: nothing of it is drawn.
+    /// Whether it is closed and at rest: nothing of it is drawn. One that
+    /// opens in place ([`Panel::in_place`]) is never drawn.
     pub fn closed(&self, now: Instant) -> bool {
-        self.morph.target() == 0.0 && self.morph.settled(now)
+        self.spec.in_place || (self.morph.target() == 0.0 && self.morph.settled(now))
     }
 
     pub fn moving(&self, now: Instant) -> bool {
-        !(self.morph.settled(now) && self.reveal.settled(now) && self.width.settled(now) && self.height.settled(now))
+        !self.spec.in_place
+            && !(self.morph.settled(now)
+                && self.reveal.settled(now)
+                && self.width.settled(now)
+                && self.height.settled(now))
     }
 
     /// How far down the screen it reaches once open: at the size it is
@@ -377,16 +385,20 @@ impl StageView {
         let held = Held { keyboard: panels.open.needs_keyboard(id, true), overlay };
         let catching = panels.open.catches_clicks();
         let beside = Hold { keyboard: panels.open.needs_keyboard(id, false), catching };
-        let targets: Vec<(bool, Option<Size<Pixels>>)> = self
+        let targets: Vec<(bool, Option<Size<Pixels>>, Option<Pixels>)> = self
             .panel_items()
-            .map(|panel| (panels.open.is_open(&panel.spec.name, id), panels.size(&panel.spec.name, id)))
+            .map(|panel| {
+                let name = &panel.spec.name;
+                (panels.open.is_open(name, id), panels.size(name, id), panels.place(name, id))
+            })
             .collect();
         // The field that gets the keyboard, in this window and in the one
         // beside it, and whether a panel drawn there heads elsewhere now.
         let (mut focus, mut beside_focus, mut beside_moved) = (None, None, false);
-        for (panel, (open, size)) in self.panel_items_mut().zip(targets) {
+        for (panel, (open, size, left)) in self.panel_items_mut().zip(targets) {
             let opened = open && panel.morph.target() == 0.0;
             let moved = panel.set_open(open, now) | size.is_some_and(|size| panel.set_size(size, now));
+            panel.left = left;
             beside_moved |= moved && !panel.on_strip();
             if opened && panel.spec.rules().closes_on_esc() {
                 let field = Some(panel.spec.focus.clone());

@@ -3108,6 +3108,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-tray-api"
+version = "0.1.0"
+dependencies = [
+ "nova-app-info",
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-tray-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-app-info",
+ "nova-look",
+ "nova-stage",
+ "nova-tray-api",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-ui"
 version = "0.1.0"
 dependencies = [
@@ -3126,6 +3147,7 @@ dependencies = [
  "nova-screenshot-ui",
  "nova-stage",
  "nova-theme-info",
+ "nova-tray-ui",
  "nova-ui-client",
  "nova-wallpaper-ui",
  "nova-workspaces-ui",

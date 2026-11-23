@@ -96,11 +96,11 @@ pub(crate) fn frame(
     let open_size = size(px(panel.width.value(now)), px(panel.height.value(now)));
     match (panel.spec.placement, from) {
         (Placement::Top, Some((pill, _))) => {
-            let open = open_box(from, open_size, panel.spec.top, screen.width);
+            let open = open_box(from, None, open_size, panel.spec.top, screen.width);
             PanelFrame::grown(pill, open, open, panel, now)
         }
         (Placement::Top, None) => {
-            let open = open_box(None, open_size, panel.spec.top, screen.width);
+            let open = open_box(None, panel.left, open_size, panel.spec.top, screen.width);
             let risen = PANEL_ENTER_RISE * (1.0 - progress);
             PanelFrame {
                 glass: Bounds { origin: point(open.left(), open.top() - risen), size: open.size },
@@ -141,7 +141,7 @@ impl StageView {
     fn give_way(&mut self, now: Instant) {
         let open: Vec<_> = self
             .panel_items()
-            .filter(|panel| panel.morph.target() > 0.0)
+            .filter(|panel| !panel.spec.in_place && panel.morph.target() > 0.0)
             .map(|panel| (self.panel_frame(panel, now).open, panel.from.clone()))
             .collect();
         for pill in self.rows.iter_mut().flat_map(|row| row.iter_mut()) {
