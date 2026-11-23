@@ -9,6 +9,7 @@
 //! the window's keyboard and layer, and the click catcher; rendering only
 //! reads where things are right now.
 
+use crate::aside::Aside;
 use crate::frames::FrameLog;
 use crate::geometry::{Align, stage_height};
 use crate::item::{Panel, Pill, Shown};
@@ -22,7 +23,7 @@ use crate::stage::Panels;
 use crate::tokens::STAGE_NAMESPACE;
 use gpui::{
     AnyView, AnyWindowHandle, App, AppContext, Bounds, Context, Entity, FocusHandle, Pixels, SharedString, Size,
-    Subscription, Window, WindowHandle,
+    Subscription, Task, Window, WindowHandle,
     layer_shell::{KeyboardInteractivity, Layer},
     px, size,
 };
@@ -152,12 +153,19 @@ pub(crate) struct StageView {
     held: Held,
     catcher: Option<AnyWindowHandle>,
     bar_room: Option<AnyWindowHandle>,
+    /// The bar stepping aside for a fullscreen window, and the wake-up for
+    /// what it has due next.
+    pub aside: Aside,
+    aside_wake: Option<Task<()>>,
+    /// Whether the bar's room was last told to keep its room.
+    room_kept: bool,
     _observers: Vec<Subscription>,
 }
 
-/// The glass and whether clicks were caught everywhere, as the compositor
-/// was last told. `None` before the first frame.
-pub(crate) type Sent = Option<(Vec<Shape>, bool)>;
+/// The glass, whether clicks were caught everywhere and whether the strip
+/// along the top edge took the pointer, as the compositor was last told.
+/// `None` before the first frame.
+pub(crate) type Sent = Option<(Vec<Shape>, bool, bool)>;
 
 /// What every screen's stage is opened with.
 pub(crate) struct Shared {
@@ -201,6 +209,9 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 held: Held::default(),
                 catcher: None,
                 bar_room: None,
+                aside: Aside::new(now),
+                aside_wake: None,
+                room_kept: true,
                 _observers: observers,
             };
             stage.sync_items(window, cx);
@@ -285,8 +296,14 @@ impl StageView {
         let id = self.screen.id;
         let panels = self.panels.read(cx);
         // Raised while a panel is open, and until the last one has closed
-        // all the way (`lower_once_closed`).
-        let overlay = panels.open.any_open(id) || self.held.overlay;
+        // all the way (`rest_once_closed`); and while the bar steps aside
+        // for a fullscreen window, so touching the top edge brings the pills
+        // back over it. Hyprland gives a Top layer under a focused
+        // fullscreen window no pixels and no pointer (IMP-182).
+        let has_bar = self.rows.iter().any(|row| !row.is_empty());
+        let fullscreen = has_bar && panels.fullscreen(&self.screen.name);
+        let any_open = panels.open.any_open(id);
+        let overlay = any_open || self.held.overlay || fullscreen;
         let held = Held { keyboard: panels.open.needs_keyboard(id), overlay };
         let catching = panels.open.catches_clicks();
         let targets: Vec<(bool, Option<Size<Pixels>>)> = self
@@ -318,6 +335,9 @@ impl StageView {
         if let Some(focus) = focus {
             window.focus(&focus.unwrap_or_else(|| self.focus.clone()), cx);
         }
+        self.aside.set_fullscreen(fullscreen, now);
+        self.aside.set_held(any_open, now);
+        self.follow_aside(window, cx);
 
         if catching != self.catching {
             self.catching = catching;
@@ -338,7 +358,7 @@ impl StageView {
     pub fn rest_once_closed(&mut self, window: &mut Window, cx: &mut App, now: Instant) {
         let drawn =
             self.panels.read(cx).open.any_open(self.screen.id) || self.panel_items().any(|panel| !panel.closed(now));
-        if drawn {
+        if drawn || self.aside.fullscreen() {
             return;
         }
         if self.held.overlay {
@@ -400,11 +420,36 @@ impl StageView {
         }
     }
 
+    /// Hands on what stepping aside changed: the bar's room, and a wake-up
+    /// for what is due next.
+    pub fn follow_aside(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        self.aside.advance(now);
+        let kept = self.aside.room_kept();
+        if kept != self.room_kept {
+            self.room_kept = kept;
+            let said = if kept { "bar space kept" } else { "bar space given to a fullscreen window" };
+            eprintln!("INFO nova-ui: {said} on {}", self.screen.name);
+            if let Some(room) = self.bar_room {
+                satellites::keep_bar_room(room, kept, cx);
+            }
+        }
+        self.aside_wake = self.aside.next_wake().map(|at| {
+            cx.spawn_in(window, async move |stage, cx| {
+                cx.background_executor().timer(at.saturating_duration_since(Instant::now())).await;
+                let _ = stage.update_in(cx, |stage, window, cx| {
+                    stage.follow_aside(window, cx);
+                    cx.notify();
+                });
+            })
+        });
+    }
+
     /// Keeps the bar's room while any of its rows has a pill.
     fn keep_bar_room(&mut self, cx: &mut App) {
         let has_bar = self.rows.iter().any(|row| !row.is_empty());
         if has_bar && self.bar_room.is_none() {
-            self.bar_room = satellites::open_bar_room(&self.screen, cx);
+            self.bar_room = satellites::open_bar_room(&self.screen, self.room_kept, cx);
         } else if !has_bar && let Some(room) = self.bar_room.take() {
             satellites::close(room, cx);
         }

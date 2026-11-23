@@ -2945,6 +2945,7 @@ dependencies = [
  "nova-bar-api",
  "nova-bar-ui",
  "nova-daemon-info",
+ "nova-desktop-info",
  "nova-look",
  "nova-stage",
  "nova-theme-info",

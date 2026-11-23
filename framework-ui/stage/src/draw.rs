@@ -7,6 +7,9 @@
 //! panel starts, its content fades out, and the panel's content, laid out
 //! at its open size and clipped to the glass, fades in once there is room.
 //! A pill an open panel lies over fades away, since glass is see-through.
+//! While the bar steps aside for a fullscreen window (`crate::aside`) its
+//! rows slide up out of sight and fade, and only a strip along the top edge
+//! takes the pointer, which brings them back.
 //!
 //! No feature tells the compositor where anything is. Every glass records
 //! its box while the frame is laid out, and the frame's last element hands
@@ -22,9 +25,10 @@ use crate::tokens::{PANEL_ENTER_RISE, PILL_FADE_OUT};
 use crate::view::{CENTER_ROW, PanelItem, PillBox, PillItem, ROWS, StageView};
 use gpui::{
     AnyElement, App, Bounds, Context, DispatchPhase, Div, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Render, ScrollEvent, Styled, Window, canvas, div, point, px, size,
+    MouseDownEvent, MouseExitEvent, MouseMoveEvent, ParentElement, Pixels, Render, ScrollEvent, Styled, Window, canvas,
+    div, point, px, size,
 };
-use nova_look::tokens::{BAR_GAP, BAR_HEIGHT, BAR_MARGIN, GAP};
+use nova_look::tokens::{BAR_GAP, BAR_HEIGHT, BAR_MARGIN, GAP, REVEAL_STRIP, SHADOW_ROOM};
 use nova_look::{Glass, LookStyled, Shape, region, set_blur_region};
 use std::rc::Rc;
 use std::time::Instant;
@@ -93,7 +97,8 @@ impl StageView {
     }
 
     pub(crate) fn moving(&self, now: Instant) -> bool {
-        self.panel_items().any(|panel| panel.moving(now))
+        self.aside.moving(now)
+            || self.panel_items().any(|panel| panel.moving(now))
             || self.rows.iter().flat_map(|row| row.iter()).any(|pill| !pill.shown.settled(now))
     }
 
@@ -199,8 +204,12 @@ impl StageView {
     /// The bar: the left row from the left margin, the right row up to the
     /// right margin, the center row in the middle of the screen, or with
     /// the point a view marks (`middle.rs`) there. A pill with nothing to
-    /// show takes no room.
-    fn rows(&self, now: Instant, cx: &mut Context<Self>) -> Div {
+    /// show takes no room. Nothing while the bar is out of sight for a
+    /// fullscreen window, so its pills take no clicks and need no blur.
+    fn rows(&self, now: Instant, cx: &mut Context<Self>) -> Option<Div> {
+        if self.aside.gone(now) {
+            return None;
+        }
         let middle_from_right = self.middle_from_right;
         let screen_middle = self.screen.size.width / 2.0;
         let mut rows = ROWS.iter().zip(&self.rows).map(|((_, align), row)| {
@@ -226,23 +235,35 @@ impl StageView {
                 (Align::Right, _) => row.flex_1().justify_end(),
             }
         });
-        let bar = div().absolute().top(BAR_GAP).left(BAR_MARGIN).right(BAR_MARGIN).h(BAR_HEIGHT).flex().items_center();
-        bar.children(rows.by_ref())
+        // Slid up with its shadow, so nothing of it shows at the top edge.
+        let slid = self.aside.slid(now);
+        let above = (BAR_GAP + BAR_HEIGHT + SHADOW_ROOM) * slid;
+        let bar = div()
+            .absolute()
+            .top(BAR_GAP - above)
+            .left(BAR_MARGIN)
+            .right(BAR_MARGIN)
+            .h(BAR_HEIGHT)
+            .flex()
+            .items_center()
+            .opacity(1.0 - slid);
+        Some(bar.children(rows.by_ref()))
     }
 
     /// Reads the point the last frame marked for the screen's middle, and
     /// its distance from the center row's right edge then.
     ///
-    /// While the center row's content isn't drawn (a panel grew out of it,
-    /// or lies over it), nothing marks the middle: the row keeps its place,
+    /// While the center row's content isn't drawn (a panel grew out of it
+    /// or lies over it, or the bar stepped aside), nothing marks the middle: the row keeps its place,
     /// so a panel closing into its pill lands where the pill comes back.
     fn follow_middle(&mut self, window: &Window, cx: &mut App, now: Instant) {
         let marked = middle::read(window, cx);
         let drawn_before = self.center_drawn;
-        self.center_drawn = self.rows[CENTER_ROW]
-            .iter()
-            .filter(|pill| pill.is_present())
-            .all(|pill| self.pill_opacity(pill, now) > 0.0);
+        self.center_drawn = !self.aside.gone(now)
+            && self.rows[CENTER_ROW]
+                .iter()
+                .filter(|pill| pill.is_present())
+                .all(|pill| self.pill_opacity(pill, now) > 0.0);
         if marked.is_none() && !drawn_before {
             return;
         }
@@ -265,6 +286,8 @@ impl StageView {
         let (shapes, sent, catching) = (self.shapes.clone(), self.sent.clone(), self.catching);
         // A row placed by a mark that is drawn this frame expects it again.
         let placed_by_middle = self.middle_from_right.is_some() && self.center_drawn;
+        let strip = self.aside.fullscreen();
+        let width = self.screen.size.width;
         canvas(
             |_, _, _| {},
             move |_, (), window, cx| {
@@ -272,10 +295,13 @@ impl StageView {
                     // What marked the middle is gone: center the row again.
                     window.request_animation_frame();
                 }
-                let drawn = (shapes.take(), catching);
+                let drawn = (shapes.take(), catching, strip);
                 if sent.borrow().as_ref() != Some(&drawn) {
                     set_blur_region(window, &drawn.0);
-                    let clicks = region(&drawn.0);
+                    let mut clicks = region(&drawn.0);
+                    if strip {
+                        clicks.push(Bounds { origin: point(px(0.0), px(0.0)), size: size(width, REVEAL_STRIP) });
+                    }
                     window.set_input_region(if catching { None } else { Some(&clicks) });
                     sent.replace(Some(drawn.clone()));
                 }
@@ -308,6 +334,21 @@ fn dismiss_outside(shapes: Vec<Shape>, window: &mut Window) {
     });
 }
 
+impl StageView {
+    /// The pointer came onto the stage or left it: over a fullscreen window
+    /// that brings the pills back, or lets them go again.
+    fn hover(&mut self, hovered: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.aside.hovered() == hovered {
+            return;
+        }
+        self.aside.set_hovered(hovered, Instant::now());
+        if self.aside.fullscreen() {
+            self.follow_aside(window, cx);
+            cx.notify();
+        }
+    }
+}
+
 impl Render for StageView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
@@ -330,13 +371,19 @@ impl Render for StageView {
             .size_full()
             .body_text(cx)
             .track_focus(&self.focus)
+            // On the strip along the top edge or a pill: the window takes
+            // the pointer nowhere else. Not `on_hover`, which works from
+            // where the pointer last was, and that stays inside the window
+            // after it left.
+            .on_mouse_move(cx.listener(|stage, _: &MouseMoveEvent, window, cx| stage.hover(true, window, cx)))
+            .on_mouse_exit(cx.listener(|stage, _: &MouseExitEvent, window, cx| stage.hover(false, window, cx)))
             .on_key_down(cx.listener(|_, event: &KeyDownEvent, _, cx| {
                 if event.keystroke.key == ESCAPE {
                     Stage::dismiss(cx);
                 }
             }))
             .children(panels)
-            .child(self.rows(now, cx))
+            .children(self.rows(now, cx))
             .child(self.regions())
     }
 }

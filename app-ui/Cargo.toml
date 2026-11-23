@@ -23,6 +23,7 @@
 # - nova-bar-api
 # - nova-bar-ui
 # - nova-daemon-info
+# - nova-desktop-info
 # - nova-look
 # - nova-stage
 # - nova-theme-info
@@ -43,6 +44,7 @@ gpui_platform.workspace = true
 nova-bar-api.workspace = true
 nova-bar-ui.workspace = true
 nova-daemon-info.workspace = true
+nova-desktop-info.workspace = true
 nova-look.workspace = true
 nova-stage.workspace = true
 nova-theme-info.workspace = true
