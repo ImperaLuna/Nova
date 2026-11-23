@@ -170,6 +170,16 @@ tokens! {
     PILL_BUTTON_GAP: px = 2.0, "pillButtonGap";
     /// A list row with a second line under its name (`crate::ListRow`).
     LIST_ROW_HEIGHT: px = 46.0, "powerRowHeight";
+    /// A tab against the right screen edge, halfway down (the power
+    /// menu): its corners, the concave corners that join it to the edge,
+    /// and the nub it grows out of.
+    EDGE_TAB_RADIUS: px = 27.0, "edgeTabRadius";
+    EDGE_TAB_FILLET: px = 22.0, "edgeTabFillet";
+    EDGE_TAB_NUB: px = 40.0, "edgeTabNub";
+    /// The line that drains along the bottom of what waits for a second
+    /// click (a power menu row, a screenshot's card), on the accent.
+    DRAIN_HEIGHT: px = 3.0, "drainHeight";
+    DRAIN_OPACITY: ratio = 0.55, "drainOpacity";
     /// The padding inside a menu and a card that holds a list (a tray
     /// app's menu, the Devices and Tray cards).
     MENU_PAD: px = 6.0, "menuPad";

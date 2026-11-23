@@ -98,7 +98,7 @@ pub(crate) struct PanelItem {
 impl PanelItem {
     fn new(spec: Panel, own_pill: Option<&SharedString>, now: Instant) -> Self {
         let resizing = |length: Pixels| Eased::lasting(f32::from(length), DURATION_RESIZE, now);
-        let grows = spec.placement != Placement::WholeScreen;
+        let grows = matches!(spec.placement, Placement::Top | Placement::RightEdge);
         Self {
             from: spec.from.clone().or_else(|| own_pill.cloned()).filter(|_| grows),
             morph: Eased::at(0.0, now),

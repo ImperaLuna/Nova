@@ -50,11 +50,12 @@ pub struct Glass {
     radius: Pixels,
     tint_opacity: f32,
     shadow: f32,
+    rim_cut: Pixels,
 }
 
 impl Glass {
     pub fn new(radius: Pixels) -> Self {
-        Self { radius, tint_opacity: GLASS_OPACITY, shadow: 1.0 }
+        Self { radius, tint_opacity: GLASS_OPACITY, shadow: 1.0, rim_cut: px(0.0) }
     }
 
     /// How much of the glass is its tint (0..1), for glass that must be
@@ -72,10 +73,18 @@ impl Glass {
         self
     }
 
+    /// Stops its edge this far short of its right side, for glass whose
+    /// outline runs on into something drawn beside it (the power menu's
+    /// tab into its fillets).
+    pub fn rim_cut(mut self, cut: Pixels) -> Self {
+        self.rim_cut = cut.max(px(0.0));
+        self
+    }
+
     /// The glass as an element to size, place and fill.
     pub fn build(self, cx: &App) -> Div {
         let theme = Theme::of(cx);
-        let Self { radius, tint_opacity, shadow } = self;
+        let Self { radius, tint_opacity, shadow, rim_cut } = self;
         let inner_radius = (radius - GLASS_EDGE_WIDTH).max(px(0.0));
         let highlight = theme.glass_highlight();
         let fade = |from: Hsla, to: Hsla| {
@@ -88,8 +97,14 @@ impl Glass {
         let glass = div().rounded(radius).bg(theme.glass_tint.alpha(tint_opacity));
         let glass =
             if shadow > 0.0 { glass.child(shadow_under(radius, theme.shadow().opacity(shadow))) } else { glass };
-        glass
-            // The outline, then the light line just inside it.
+        // The outline, then the light line just inside it, cut short of the
+        // right side by `rim_cut`.
+        let edge = div()
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .left_0()
+            .right(-rim_cut)
             .child(
                 div().absolute().inset_0().rounded(radius).border(GLASS_EDGE_WIDTH).border_color(theme.glass_outline()),
             )
@@ -100,14 +115,21 @@ impl Glass {
                     .rounded(inner_radius)
                     .border(GLASS_EDGE_WIDTH)
                     .border_color(theme.glass_inner_line()),
-            )
+            );
+        let edge = if rim_cut > px(0.0) {
+            div().absolute().top_0().bottom_0().left_0().right(rim_cut).overflow_hidden().child(edge)
+        } else {
+            edge
+        };
+        glass
+            .child(edge)
             // The highlight along the top, between the corners' curves.
             .child(
                 div()
                     .absolute()
                     .top(GLASS_EDGE_WIDTH)
                     .left(radius * GLASS_HIGHLIGHT_INSET)
-                    .right(radius * GLASS_HIGHLIGHT_INSET)
+                    .right(radius * GLASS_HIGHLIGHT_INSET + rim_cut)
                     .h(GLASS_EDGE_WIDTH)
                     .flex()
                     .child(fade(highlight.alpha(0.0), highlight))
