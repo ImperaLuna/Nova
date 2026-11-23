@@ -147,6 +147,7 @@ nova-media-api = { path = "../features/media/api" }
 nova-nova-files-api = { path = "../features/nova-files/api" }
 nova-notifications-api = { path = "../features/notifications/api" }
 nova-peripherals-api = { path = "../features/peripherals/api" }
+nova-recording-api = { path = "../features/recording/api" }
 nova-screenshot-api = { path = "../features/screenshot/api" }
 nova-sound-api = { path = "../features/sound/api" }
 nova-test-support = { path = "../framework/test-support" }
