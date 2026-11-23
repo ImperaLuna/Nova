@@ -266,10 +266,9 @@ impl MediaPill {
                 move |bounds, _, window, _| {
                     let shows = on_screen(bounds, window);
                     // Back in sight: one frame to start its own frames again.
-                    if shows && !seen.replace(shows) {
+                    if !seen.replace(shows) && shows {
                         window.request_animation_frame();
                     }
-                    seen.set(shows);
                     paint_equalizer(&bars, bounds, bar_color, window);
                 },
             )
