@@ -54,7 +54,7 @@ impl StageView {
         let progress = panel.morph.value(now);
         let open_size = size(px(panel.width.value(now)), px(panel.height.value(now)));
         let from = panel.from.as_ref().and_then(|view| self.pill_box(view));
-        let open = open_box(from, open_size, panel.spec.top, self.screen.size.width);
+        let open = open_box(from, panel.left, open_size, panel.spec.top, self.screen.size.width);
         match from {
             Some((pill, _)) => {
                 let glass = between(pill, open, progress);
@@ -85,7 +85,7 @@ impl StageView {
     fn give_way(&mut self, now: Instant) {
         let open: Vec<_> = self
             .panel_items()
-            .filter(|panel| panel.morph.target() > 0.0)
+            .filter(|panel| !panel.spec.in_place && panel.morph.target() > 0.0)
             .map(|panel| (self.panel_frame(panel, now).open, panel.from.clone()))
             .collect();
         for pill in self.rows.iter_mut().flat_map(|row| row.iter_mut()) {

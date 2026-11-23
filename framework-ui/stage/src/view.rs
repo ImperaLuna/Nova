@@ -76,6 +76,8 @@ pub(crate) struct PanelItem {
     pub reveal: Reveal,
     pub width: Eased,
     pub height: Eased,
+    /// Its left edge once open, when a feature placed it ([`crate::Stage::place`]).
+    pub left: Option<Pixels>,
 }
 
 impl PanelItem {
@@ -87,6 +89,7 @@ impl PanelItem {
             reveal: Reveal::hidden(now),
             width: resizing(spec.size.width),
             height: resizing(spec.size.height),
+            left: None,
             spec,
         }
     }
@@ -101,13 +104,18 @@ impl PanelItem {
         self.height.set_target(f32::from(size.height), now);
     }
 
-    /// Whether it is closed and at rest: nothing of it is drawn.
+    /// Whether it is closed and at rest: nothing of it is drawn. One that
+    /// opens in place ([`Panel::in_place`]) is never drawn.
     pub fn closed(&self, now: Instant) -> bool {
-        self.morph.target() == 0.0 && self.morph.settled(now)
+        self.spec.in_place || (self.morph.target() == 0.0 && self.morph.settled(now))
     }
 
     pub fn moving(&self, now: Instant) -> bool {
-        !(self.morph.settled(now) && self.reveal.settled(now) && self.width.settled(now) && self.height.settled(now))
+        !self.spec.in_place
+            && !(self.morph.settled(now)
+                && self.reveal.settled(now)
+                && self.width.settled(now)
+                && self.height.settled(now))
     }
 
     /// How far down the screen it reaches once open: at the size it is
@@ -306,17 +314,21 @@ impl StageView {
         let overlay = any_open || self.held.overlay || fullscreen;
         let held = Held { keyboard: panels.open.needs_keyboard(id), overlay };
         let catching = panels.open.catches_clicks();
-        let targets: Vec<(bool, Option<Size<Pixels>>)> = self
+        let targets: Vec<(bool, Option<Size<Pixels>>, Option<Pixels>)> = self
             .panel_items()
-            .map(|panel| (panels.open.is_open(&panel.spec.name, id), panels.size(&panel.spec.name, id)))
+            .map(|panel| {
+                let name = &panel.spec.name;
+                (panels.open.is_open(name, id), panels.size(name, id), panels.place(name, id))
+            })
             .collect();
         let mut focus = None;
-        for (panel, (open, size)) in self.panel_items_mut().zip(targets) {
+        for (panel, (open, size, left)) in self.panel_items_mut().zip(targets) {
             let opened = open && panel.morph.target() == 0.0;
             panel.set_open(open, now);
             if let Some(size) = size {
                 panel.set_size(size, now);
             }
+            panel.left = left;
             if opened && panel.spec.rules().closes_on_esc() {
                 focus = Some(panel.spec.focus.clone());
             }

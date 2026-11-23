@@ -78,11 +78,12 @@ impl Shown {
 pub struct Part {
     pub(crate) view: AnyView,
     pub(crate) inset: Pixels,
+    pub(crate) shown: Option<Shown>,
 }
 
 impl Part {
     pub fn new(view: impl Into<AnyView>) -> Self {
-        Self { view: view.into(), inset: PAD }
+        Self { view: view.into(), inset: PAD, shown: None }
     }
 
     /// How far its content sits from the host's end when it is the first
@@ -92,6 +93,20 @@ impl Part {
     pub fn inset(mut self, inset: Pixels) -> Self {
         self.inset = inset;
         self
+    }
+
+    /// For a part that has nothing to show at times (the tray with no app
+    /// in it): while `shown` says no, its host leaves it out, as the stage
+    /// does a pill ([`Pill::shown_while`]). The view sets it as what it
+    /// shows changes, and redraws.
+    pub fn shown_while(mut self, shown: Shown) -> Self {
+        self.shown = Some(shown);
+        self
+    }
+
+    /// Whether it has something to show now.
+    pub fn is_shown(&self) -> bool {
+        self.shown.as_ref().is_none_or(Shown::get)
     }
 
     pub fn view(&self) -> &AnyView {
@@ -123,6 +138,7 @@ pub struct Panel {
     pub(crate) exclusive: bool,
     pub(crate) wants_keyboard: bool,
     pub(crate) closes_on_click_outside: bool,
+    pub(crate) in_place: bool,
 }
 
 impl Panel {
@@ -143,6 +159,7 @@ impl Panel {
             exclusive: true,
             wants_keyboard: false,
             closes_on_click_outside: true,
+            in_place: false,
         }
     }
 
@@ -185,6 +202,17 @@ impl Panel {
     /// `false` for a panel that Esc and a click outside leave open.
     pub fn closes_on_click_outside(mut self, closes: bool) -> Self {
         self.closes_on_click_outside = closes;
+        self
+    }
+
+    /// For something that opens inside the view that has it rather than as
+    /// glass of its own (the tray, which widens the right pill): the stage
+    /// keeps it open or closed by the same rules (Esc, a click outside,
+    /// another panel opening) and holds the keyboard meanwhile, but draws
+    /// nothing for it. The view draws its open look while
+    /// [`crate::Stage::is_open`] says so; its `size` and `content` go unused.
+    pub fn in_place(mut self) -> Self {
+        self.in_place = true;
         self
     }
 

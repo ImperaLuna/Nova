@@ -256,7 +256,7 @@ nova_stage::panel("launcher.panel", cx, |screen, cx| {
 ```
 
 A part: a view for a host another feature draws (`central-pill.parts`,
-`right-pill.buttons`, `quick-settings.tiles`). The host's owner keeps a
+`right-pill.buttons`, `right-pill.tray`, `quick-settings.tiles`). The host's owner keeps a
 `Parts` per screen, calls `sync` when `Stage::slots` notifies and draws
 `views()` in slot order:
 
@@ -274,6 +274,18 @@ let parts = Parts::new("central-pill.parts", screen, cx);
 A part draws its content only, edge to edge: the host adds what goes
 between parts (the central pill's dividers) and keeps each end
 `Part::inset` from the first and last part (`PAD` by default).
+
+A part with nothing to show sets `Part::shown_while(shown)` false and the
+host leaves it out (the tray's strip in `right-pill.tray` while no app is
+in the tray); the host reads `Part::is_shown` each time it draws.
+
+A panel drawn where it stands: `Panel::in_place()` is a panel the stage
+opens, closes on Esc, a click outside or another panel opening, and
+reports through `Stage::is_open`, but never draws: a part draws its open
+look in place (the tray opening inside the right pill, `features/tray/ui`).
+`Stage::place(name, screen, left)` sets a panel's left edge across the
+screen before it opens, kept inside the bar's margins, for one that drops
+below the thing clicked (the tray's menu below an app's icon).
 
 An overlay (host `shell.overlays`): something with windows of its own over
 the screens, like pop-ups or the volume capsule. `build` runs once while
