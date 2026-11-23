@@ -497,6 +497,8 @@
                 assert
                   config.xdg.portal.config.niri ? "org.freedesktop.impl.portal.FileChooser"
                   && config.xdg.portal.config.niri.default == "gnome;gtk";
+                # Hyprland's rules where hyprland.lua can require them.
+                assert config.environment.etc ? "xdg/nova/hyprland.lua";
                 pkgs.lib.concatLines (map (package: package.name) config.environment.systemPackages);
             in
             pkgs.writeText "nova-nix-modules" (
@@ -615,12 +617,15 @@
             touch $out
           '';
 
-          # The rules `nova setup` writes for Hyprland, against this Hyprland.
-          # It refuses to start as root, which a sandboxed build may look like.
+          # The rules `nova setup` writes for Hyprland, in both of its config
+          # formats, against this Hyprland. It refuses to start as root,
+          # which a sandboxed build may look like.
           hyprland-rules = pkgs.runCommand "nova-hyprland-rules" { nativeBuildInputs = [ pkgs.hyprland ]; } ''
             export XDG_RUNTIME_DIR=$TMPDIR
-            Hyprland --i-am-really-stupid --verify-config -c ${./packaging/compositor/hyprland.conf} | tee log
-            grep -qx "config ok" log
+            for rules in ${./packaging/compositor/hyprland.conf} ${./packaging/compositor/hyprland.lua}; do
+              Hyprland --i-am-really-stupid --verify-config -c $rules | tee log
+              grep -qx "config ok" log
+            done
             touch $out
           '';
 
