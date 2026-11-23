@@ -9,6 +9,7 @@
 # - serde
 # - toml
 # - unicode-segmentation
+# - yeslogic-fontconfig-sys
 #
 # Allowed workspace crates:
 # - nova-theme-info
@@ -29,6 +30,8 @@ nova-theme-info.workspace = true
 serde.workspace = true
 toml.workspace = true
 unicode-segmentation.workspace = true
+# Which face a font token draws with, matched as Qt matches it (family.rs).
+yeslogic-fontconfig-sys.workspace = true
 
 [lints]
 workspace = true
