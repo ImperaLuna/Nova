@@ -255,6 +255,26 @@ nova_stage::panel("launcher.panel", cx, |screen, cx| {
 });
 ```
 
+A panel off the top strip: `.placement(...)` on either kind of panel.
+`Placement::RightEdge` is a drawer as tall as the screen and `size.width`
+wide, against the right edge (quick settings); `Placement::WholeScreen`
+covers the screen with no glass and fades in, and its view handles its own
+clicks (the wallpaper picker):
+
+```rust
+nova_stage::panel("quick-settings.panel", cx, |_screen, cx| {
+    let drawer = Panel::new("quick-settings", size(DRAWER_WIDTH, px(0.0)), cx.new(QuickSettings::new));
+    drawer.from("right-pill.pill").placement(Placement::RightEdge)
+});
+```
+
+The stage draws such a panel in a second window per screen
+(`panel_window.rs`), which it opens parked when the feature becomes ready,
+so the top strip's window stays as tall as its tallest panel. Everything
+else on this page holds unchanged, with one addition: the panel's view is
+an entity of its own that no pill's `render` reads (GPUI hands a view's
+window callbacks the window that read it last).
+
 A part: a view for a host another feature draws (`central-pill.parts`,
 `right-pill.buttons`, `right-pill.tray`, `quick-settings.tiles`). The host's owner keeps a
 `Parts` per screen, calls `sync` when `Stage::slots` notifies and draws
@@ -322,6 +342,9 @@ frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
 - The contract's flags are on `Panel`: `.exclusive(false)` to stay open
   beside the others, `.closes_on_click_outside(false)`, `.takes_typing`,
   `.top` and `.radius` for a panel that isn't the usual shape.
+  `.covers_screen()` is a panel over the whole screen that draws all of
+  it (the wallpaper carousel): no glass and no blur, every click on that
+  screen is its own, and it fades with the morph.
 - A panel changes size only with `Stage::resize(name, screen, size, cx)`,
   open or not; an open one eases there. The view never sizes its own glass.
 - A view redraws by itself (`cx.notify()` when what it shows changed) and
@@ -342,10 +365,11 @@ frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
   never another feature's ui (rule F4): what one draws inside another
   comes in as a part.
 
-`nova-ui --demo` puts three test pills and two test panels on the stage
-with no feature ported (`app-ui/src/demo.rs`, a short worked example of
-all of the above but parts); `--demo-toggles <n>` toggles one
-`n` times and quits.
+`nova-ui --demo` puts test pills and test panels on the stage with no
+feature ported, one for each placement (`app-ui/src/demo.rs`, a short
+worked example of all of the above but parts); `--demo-toggles <n>`
+toggles one `n` times and quits, and `--demo-panel <name>` says which
+(`demo`, `demo-edge`, `demo-whole`).
 
 **3. The files a port touches.** `features/launcher/ui` is the worked
 example: read it beside `ui/launcher/*.qml` first. A port draws what the
@@ -415,8 +439,8 @@ the pure module and the tokens, and the rest is seen.
   `wf-recorder` for the recording. Three things there are the tools, not
   the port: `swaymsg` needs `SWAYSOCK`; the first key of each `wtype`
   call is lost (lead with `-k Shift_L`); clicks and the wheel from
-  `wlrctl` never reach nova-ui, so say in the PR that they wait for a
-  real pointer.
+  `wlrctl` reach nova-ui only through a niri nested in that sway (run
+  nova-ui on niri's display), never on sway itself.
 - Today's look for the comparison: a small `.qml` that loads the
   feature's component with canned data, run by `qmlscene` with
   `QT_QPA_PLATFORM=offscreen` and `grabToImage`. Name no property `data`

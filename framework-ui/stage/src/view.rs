@@ -8,12 +8,17 @@
 //! what it says into targets (a panel's morph heads for open or closed),
 //! the window's keyboard and layer, and the click catcher; rendering only
 //! reads where things are right now.
+//!
+//! A panel placed off the strip (`Placement`) is kept here like any other,
+//! and drawn by the window beside this one (`crate::panel_window`), which
+//! this view opens while it has such a panel and tells what to hold.
 
 use crate::aside::Aside;
 use crate::frames::FrameLog;
 use crate::geometry::{Align, stage_height};
-use crate::item::{Panel, Pill, Shown};
+use crate::item::{Panel, Pill, Placement, Shown};
 use crate::kept::Kept;
+use crate::panel_window::{self, Hold, PanelWindow, Told};
 use crate::registry;
 use crate::reveal::Reveal;
 use crate::satellites;
@@ -67,6 +72,7 @@ impl PillItem {
 }
 
 /// A panel on the stage, a pill's own or one from `stage.panels`.
+#[derive(Clone)]
 pub(crate) struct PanelItem {
     pub spec: Panel,
     /// The view id of the pill it grows out of.
@@ -78,30 +84,51 @@ pub(crate) struct PanelItem {
     pub height: Eased,
     /// Its left edge once open, when a feature placed it ([`crate::Stage::place`]).
     pub left: Option<Pixels>,
+    /// Off the strip: whether the panels' window has it on screen. The
+    /// pill it grows out of is on the strip, and two windows never draw in
+    /// the same frame, so the pill stays until the panel is drawn over it,
+    /// and the panel stays, closed, until the pill is drawn again
+    /// (`covering` in today's shell).
+    pub cover: Rc<Cell<bool>>,
 }
 
 impl PanelItem {
     fn new(spec: Panel, own_pill: Option<&SharedString>, now: Instant) -> Self {
         let resizing = |length: Pixels| Eased::lasting(f32::from(length), DURATION_RESIZE, now);
+        let grows = spec.placement != Placement::WholeScreen;
         Self {
-            from: spec.from.clone().or_else(|| own_pill.cloned()),
+            from: spec.from.clone().or_else(|| own_pill.cloned()).filter(|_| grows),
             morph: Eased::at(0.0, now),
             reveal: Reveal::hidden(now),
             width: resizing(spec.size.width),
             height: resizing(spec.size.height),
             left: None,
+            cover: Rc::default(),
             spec,
         }
     }
 
-    fn set_open(&mut self, open: bool, now: Instant) {
-        self.reveal.set_open(open, self.morph.value(now), now);
-        self.morph.set_target(if open { 1.0 } else { 0.0 }, now);
+    /// Whether the strip draws it; the panels' window draws the others.
+    pub fn on_strip(&self) -> bool {
+        self.spec.placement.on_strip()
     }
 
-    fn set_size(&mut self, size: Size<Pixels>, now: Instant) {
-        self.width.set_target(f32::from(size.width), now);
-        self.height.set_target(f32::from(size.height), now);
+    /// Returns whether that turned it round.
+    fn set_open(&mut self, open: bool, now: Instant) -> bool {
+        let target = if open { 1.0 } else { 0.0 };
+        let turned = self.morph.target() != target;
+        self.reveal.set_open(open, self.morph.value(now), now);
+        self.morph.set_target(target, now);
+        turned
+    }
+
+    /// Returns whether it heads for another size now.
+    fn set_size(&mut self, size: Size<Pixels>, now: Instant) -> bool {
+        let (width, height) = (f32::from(size.width), f32::from(size.height));
+        let changed = self.width.target() != width || self.height.target() != height;
+        self.width.set_target(width, now);
+        self.height.set_target(height, now);
+        changed
     }
 
     /// Whether it is closed and at rest: nothing of it is drawn. One that
@@ -125,6 +152,31 @@ impl PanelItem {
     }
 }
 
+/// A panel placed off the strip as the panels' window draws it: where it
+/// is heading since the stage last followed the shared state, and the
+/// pill it grows out of (its box, whether it is there, the way its row
+/// keeps).
+pub(crate) struct OffStrip {
+    pub panel: PanelItem,
+    pub pill: Option<(PillBox, Option<Shown>, Align)>,
+}
+
+impl OffStrip {
+    /// Where its pill is, like `StageView::pill_box`.
+    pub fn pill_box(&self) -> Option<(Bounds<Pixels>, Align)> {
+        let (bounds, present, align) = self.pill.as_ref()?;
+        let there = present.as_ref().is_none_or(Shown::get);
+        bounds.get().filter(|_| there).map(|bounds| (bounds, *align))
+    }
+}
+
+/// The panels placed off the strip, which the stage's view writes and the
+/// panels' window reads. Not the view itself: GPUI counts a view read
+/// while a window draws as that window's, and hands the view's callbacks
+/// that window from then on (`App::current_window_by_entity`), so the
+/// stage would resize the panels' window in place of its own.
+pub(crate) type OffStripPanels = Rc<RefCell<Vec<OffStrip>>>;
+
 /// What the window was last told to be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct Held {
@@ -143,6 +195,9 @@ pub(crate) struct StageView {
     /// The glass drawn in the frame under way, and what the compositor was
     /// last told of it (`draw.rs`).
     pub shapes: Rc<RefCell<Vec<Shape>>>,
+    /// What panels that cover the screen drew in the frame under way: it
+    /// takes clicks, but has no glass to blur behind.
+    pub covers: Rc<RefCell<Vec<Shape>>>,
     pub sent: Rc<RefCell<Sent>>,
     /// Whether every screen takes clicks everywhere right now.
     pub catching: bool,
@@ -159,6 +214,17 @@ pub(crate) struct StageView {
     /// The window's height, shared with the click catcher below it.
     height: Rc<Cell<Pixels>>,
     held: Held,
+    /// The window beside this one for the panels placed off the strip,
+    /// while this screen has one; what it was last told to hold; and how
+    /// wide it is on screen (nothing while none of its panels is out),
+    /// which it says here for this window and the click catcher to leave
+    /// it its clicks.
+    pub panel_window: Option<WindowHandle<PanelWindow>>,
+    panel_window_due: bool,
+    beside_held: Hold,
+    pub beside: Rc<Cell<Pixels>>,
+    /// The panels that window draws, as of the last `follow_panels`.
+    off_strip: OffStripPanels,
     catcher: Option<AnyWindowHandle>,
     bar_room: Option<AnyWindowHandle>,
     /// The bar stepping aside for a fullscreen window, and the wake-up for
@@ -170,10 +236,11 @@ pub(crate) struct StageView {
     _observers: Vec<Subscription>,
 }
 
-/// The glass, whether clicks were caught everywhere and whether the strip
-/// along the top edge took the pointer, as the compositor was last told.
-/// `None` before the first frame.
-pub(crate) type Sent = Option<(Vec<Shape>, bool, bool)>;
+/// The glass, what covers the screen, whether clicks were caught everywhere, whether the strip
+/// along the top edge took the pointer and how wide the panels' window
+/// beside was, as the compositor was last told. `None` before the first
+/// frame.
+pub(crate) type Sent = Option<(Vec<Shape>, Vec<Shape>, bool, bool, Pixels)>;
 
 /// What every screen's stage is opened with.
 pub(crate) struct Shared {
@@ -207,6 +274,7 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 rows: Default::default(),
                 standalone: Kept::default(),
                 shapes: Rc::default(),
+                covers: Rc::default(),
                 sent: Rc::default(),
                 catching: false,
                 focus: cx.focus_handle(),
@@ -215,6 +283,11 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 center_drawn: true,
                 height: Rc::new(Cell::new(height)),
                 held: Held::default(),
+                panel_window: None,
+                panel_window_due: false,
+                beside_held: Hold::default(),
+                beside: Rc::default(),
+                off_strip: Rc::default(),
                 catcher: None,
                 bar_room: None,
                 aside: Aside::new(now),
@@ -289,6 +362,7 @@ impl StageView {
                 cx.notify();
             }
         });
+        self.keep_panel_window(cx);
         self.follow_panels(window, cx);
         // A stage that lost the panel it was sized for gets shorter again.
         self.fit(window, cx, true);
@@ -312,8 +386,9 @@ impl StageView {
         let fullscreen = has_bar && panels.fullscreen(&self.screen.name);
         let any_open = panels.open.any_open(id);
         let overlay = any_open || self.held.overlay || fullscreen;
-        let held = Held { keyboard: panels.open.needs_keyboard(id), overlay };
+        let held = Held { keyboard: panels.open.needs_keyboard(id, true), overlay };
         let catching = panels.open.catches_clicks();
+        let beside = Hold { keyboard: panels.open.needs_keyboard(id, false), catching };
         let targets: Vec<(bool, Option<Size<Pixels>>, Option<Pixels>)> = self
             .panel_items()
             .map(|panel| {
@@ -321,18 +396,21 @@ impl StageView {
                 (panels.open.is_open(name, id), panels.size(name, id), panels.place(name, id))
             })
             .collect();
-        let mut focus = None;
+        // The field that gets the keyboard, in this window and in the one
+        // beside it, and whether a panel drawn there heads elsewhere now.
+        let (mut focus, mut beside_focus, mut beside_moved) = (None, None, false);
         for (panel, (open, size, left)) in self.panel_items_mut().zip(targets) {
             let opened = open && panel.morph.target() == 0.0;
-            panel.set_open(open, now);
-            if let Some(size) = size {
-                panel.set_size(size, now);
-            }
+            let moved = panel.set_open(open, now) | size.is_some_and(|size| panel.set_size(size, now));
             panel.left = left;
+            beside_moved |= moved && !panel.on_strip();
             if opened && panel.spec.rules().closes_on_esc() {
-                focus = Some(panel.spec.focus.clone());
+                let field = Some(panel.spec.focus.clone());
+                if panel.on_strip() { focus = field } else { beside_focus = field }
             }
         }
+        self.publish_off_strip();
+        self.tell_panel_window(beside, beside_focus, beside_moved, cx);
 
         if held.keyboard != self.held.keyboard {
             let keyboard = if held.keyboard { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
@@ -406,11 +484,118 @@ impl StageView {
         if self.moving(Instant::now()) {
             return true;
         }
-        self.catcher = satellites::open_catcher(&self.screen, self.height.clone(), cx);
+        self.catcher = satellites::open_catcher(&self.screen, self.height.clone(), self.beside.clone(), cx);
         false
     }
 
-    /// Makes the window as tall as the tallest panel drawn on it reaches,
+    /// Writes the panels placed off the strip where the panels' window
+    /// reads them (`OffStripPanels`).
+    fn publish_off_strip(&self) {
+        let pill_of = |panel: &PanelItem| {
+            let view = panel.from.as_ref()?;
+            self.rows.iter().zip(ROWS).find_map(|(row, (_, align))| {
+                let pill = row.iter().find(|pill| pill.view == *view)?;
+                Some((pill.bounds.clone(), pill.present.clone(), align))
+            })
+        };
+        let off_strip = self.panel_items().filter(|panel| !panel.on_strip());
+        *self.off_strip.borrow_mut() =
+            off_strip.map(|panel| OffStrip { panel: panel.clone(), pill: pill_of(panel) }).collect();
+    }
+
+    fn wants_panel_window(&self) -> bool {
+        self.panel_items().any(|panel| !panel.on_strip())
+    }
+
+    /// Keeps the window for the panels placed off the strip while this
+    /// screen has such a panel. It is opened here, when a feature becomes
+    /// ready, and kept: a new window holds every window's frames up for a
+    /// moment, which must never be the start of a panel's morph. It opens
+    /// once this update is over: a window draws its first frame as it
+    /// opens, and tells this view when it changes size.
+    fn keep_panel_window(&mut self, cx: &mut Context<Self>) {
+        if !self.wants_panel_window() {
+            self.close_panel_window(cx);
+        } else if self.panel_window.is_none() && !self.panel_window_due {
+            self.panel_window_due = true;
+            let (screen, beside, frames) = (self.screen.clone(), self.beside.clone(), self.frames.is_some());
+            let (stage, panels) = (cx.weak_entity(), self.off_strip.clone());
+            cx.defer(move |cx| {
+                let shared = panel_window::Shared { stage: stage.clone(), panels, beside };
+                let opened = panel_window::open(&screen, shared, frames, cx);
+                let kept =
+                    stage.update(cx, |stage, cx| stage.panel_window_opened(opened, &screen, cx)).unwrap_or(false);
+                if let Some(window) = opened.filter(|_| !kept) {
+                    satellites::close(window.into(), cx);
+                }
+            });
+        }
+    }
+
+    /// Takes the window opened for the panels off the strip, and tells it
+    /// what is open already. Returns whether it is kept: not when the
+    /// panels it was for left meanwhile, or the screen changed again.
+    fn panel_window_opened(
+        &mut self,
+        opened: Option<WindowHandle<PanelWindow>>,
+        screen: &Screen,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        self.panel_window_due = false;
+        if screen.size != self.screen.size {
+            // Opened for the screen as it was: one for what it is now.
+            self.keep_panel_window(cx);
+            return false;
+        }
+        if !self.wants_panel_window() || self.panel_window.is_some() {
+            return false;
+        }
+        self.panel_window = opened;
+        self.beside_held = Hold::default();
+        let panels = self.panels.read(cx);
+        let id = self.screen.id;
+        let hold = Hold { keyboard: panels.open.needs_keyboard(id, false), catching: panels.open.catches_clicks() };
+        let open_there = |panel: &&PanelItem| !panel.on_strip() && panel.morph.target() > 0.0;
+        let focus = self.panel_items().find(open_there).map(|panel| panel.spec.focus.clone());
+        self.tell_panel_window(hold, focus.filter(|_| hold.keyboard), true, cx);
+        true
+    }
+
+    fn close_panel_window(&mut self, cx: &mut App) {
+        if let Some(window) = self.panel_window.take() {
+            satellites::close(window.into(), cx);
+            self.beside.set(px(0.0));
+        }
+    }
+
+    /// Tells the panels' window what to hold, which field gets the keyboard
+    /// (`focus`, for a panel that opened there), and to draw again when
+    /// one of its panels heads elsewhere (`moved`).
+    fn tell_panel_window(&mut self, hold: Hold, focus: Option<Option<FocusHandle>>, moved: bool, cx: &mut App) {
+        let Some(panels) = self.panel_window else {
+            return;
+        };
+        if hold == self.beside_held && focus.is_none() && !moved {
+            return;
+        }
+        self.beside_held = hold;
+        let told = Told { hold, focus, moved };
+        let _ = panels.update(cx, |panels, window, cx| panels.follow(told, window, cx));
+    }
+
+    /// The panels' window changed its size, or drew a panel for the first
+    /// time: the click regions here and the click catcher's leave it its
+    /// own, and a pill it drew over steps aside.
+    pub fn panel_window_changed(&mut self, cx: &mut Context<Self>) {
+        if let Some(catcher) = self.catcher {
+            let _ = catcher.update(cx, |_, window, _| window.refresh());
+        }
+        cx.notify();
+    }
+
+    /// Makes the window as tall as the tallest panel drawn on it reaches
+    /// (one placed off the strip is drawn in the window beside, and never
+    /// makes this one taller),
     /// and as short as the bar with none: a compositor's work behind the
     /// stage grows with the surface. It grows at once, before the panel
     /// does; it shrinks only when `may_shrink`, once nothing is drawn or
@@ -418,8 +603,10 @@ impl StageView {
     /// resize in between.
     fn fit(&mut self, window: &mut Window, cx: &mut App, may_shrink: bool) {
         let now = Instant::now();
-        let drawn = self.panel_items().filter(|panel| !panel.closed(now));
-        let wanted = stage_height(drawn.map(|panel| panel.reach(now)));
+        let drawn = self.panel_items().filter(|panel| panel.on_strip() && !panel.closed(now));
+        let screen_height = self.screen.size.height;
+        let reaches = drawn.map(|panel| if panel.spec.covers_screen { screen_height } else { panel.reach(now) });
+        let wanted = within_screen(stage_height(reaches), screen_height);
         let height = self.height.get();
         if wanted == height || (wanted < height && !may_shrink) {
             return;
@@ -484,6 +671,7 @@ impl StageView {
             self.catch_once_settled(window, cx);
         }
         self.keep_bar_room(cx);
+        self.keep_panel_window(cx);
         if self.frames.is_some() {
             self.frames = Some(FrameLog::new(self.screen.name.to_string(), self.screen.refresh, Instant::now()));
         }
@@ -495,5 +683,13 @@ impl StageView {
         for window in [self.catcher.take(), self.bar_room.take()].into_iter().flatten() {
             satellites::close(window, cx);
         }
+        self.close_panel_window(cx);
     }
+}
+
+/// A stage `height` tall, but never taller than its screen (a panel near
+/// the bottom gives up its shadow's room there). A screen that says no
+/// height gets what was asked.
+fn within_screen(height: Pixels, screen_height: Pixels) -> Pixels {
+    if screen_height > px(0.0) { height.min(screen_height.floor()) } else { height }
 }

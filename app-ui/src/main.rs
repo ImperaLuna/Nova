@@ -57,7 +57,8 @@ fn main() -> ExitCode {
         let extra_slots = if args.demo { demo::slots(cx) } else { Vec::new() };
         Stage::start(StageOptions { extra_slots, log_frames: args.frames }, cx);
         if let Some(times) = args.demo_toggles {
-            demo::toggle_by_itself(times, cx);
+            let panel = args.demo_panel.unwrap_or_else(|| demo::CENTER_PANEL.into());
+            demo::toggle_by_itself(panel, times, cx);
         }
     });
     ExitCode::SUCCESS
@@ -75,6 +76,7 @@ fn register_features(cx: &mut App) {
     nova_notifications_ui::register(cx);
     nova_screenshot_ui::register(cx);
     nova_tray_ui::register(cx);
+    nova_wallpaper_ui::register(cx);
     nova_workspaces_ui::register(cx);
 }
 

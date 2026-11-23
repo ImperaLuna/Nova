@@ -2,8 +2,9 @@
 //! anything.
 //!
 //! - The click catcher: while a panel that closes on a click outside is
-//!   open, on any screen, it covers the screen below the stage and a click
-//!   or a scroll on it closes the panel. The stage is only a strip across
+//!   open, on any screen, it covers the screen below the stage (and beside
+//!   the panels' window, `crate::panel_window`) and a click or a scroll on it closes
+//!   the panel. The stage is only a strip across
 //!   the top, so without it a click further down would go to the window
 //!   there. It sits on the overlay layer, over a fullscreen window too.
 //! - The bar's room: an empty surface that reserves the bar's height at
@@ -37,26 +38,35 @@ struct Catcher {
     screen: Size<Pixels>,
     /// How tall the stage above is, which takes its own clicks.
     stage_height: Rc<Cell<Pixels>>,
+    /// How wide the panels' window against the right edge is, which takes
+    /// its own too; nothing while none of its panels is out.
+    beside: Rc<Cell<Pixels>>,
 }
 
 impl Render for Catcher {
     fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         set_blur_region(window, &[]);
-        window.set_input_region(Some(&[below_stage(self.stage_height.get(), self.screen)]));
+        window.set_input_region(Some(&[below_stage(self.stage_height.get(), self.beside.get(), self.screen)]));
         div().size_full().on_any_mouse_down(|_, _, cx| Stage::dismiss(cx)).on_scroll(|_, _, cx| Stage::dismiss(cx))
     }
 }
 
 /// Opens the click catcher on `screen`, under a stage that says how tall it
-/// is through `stage_height`.
-pub(crate) fn open_catcher(screen: &Screen, stage_height: Rc<Cell<Pixels>>, cx: &mut App) -> Option<AnyWindowHandle> {
+/// is through `stage_height` and beside the panels' window, which says how
+/// wide it is through `beside`.
+pub(crate) fn open_catcher(
+    screen: &Screen,
+    stage_height: Rc<Cell<Pixels>>,
+    beside: Rc<Cell<Pixels>>,
+    cx: &mut App,
+) -> Option<AnyWindowHandle> {
     let mut shell = ShellWindow::new(screen.id, screen.size);
     shell.layer = Layer::Overlay;
     shell.anchor = Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT;
     shell.namespace = CATCHER_NAMESPACE;
     let size = screen.size;
     opened(
-        cx.open_window(shell.options(), move |_, cx| cx.new(|_| Catcher { screen: size, stage_height })),
+        cx.open_window(shell.options(), move |_, cx| cx.new(|_| Catcher { screen: size, stage_height, beside })),
         "click catcher",
     )
 }

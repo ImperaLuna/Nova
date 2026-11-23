@@ -1,6 +1,7 @@
 //! Where things are on the stage: a panel's open box from its pill, the box
-//! between the two while it grows, how tall the stage must be, and whether
-//! a point is on something drawn. Plain numbers, tested alone.
+//! between the two while it grows, how tall the stage must be, the same for
+//! a drawer against the right edge and its window, and whether a point is
+//! on something drawn. Plain numbers, in screen coordinates, tested alone.
 
 use gpui::{Bounds, Pixels, Point, Size, point, px, size};
 use nova_look::Shape;
@@ -92,11 +93,55 @@ pub fn covered(shapes: &[Shape], at: Point<Pixels>) -> bool {
     })
 }
 
-/// The part of a screen below a stage of `stage_height`: where the click
-/// catcher takes clicks, the stage itself taking those above.
-pub fn below_stage(stage_height: Pixels, screen: Size<Pixels>) -> Bounds<Pixels> {
+/// Where a drawer against the right edge is once open: `width` wide, top
+/// to bottom. Its content fills this.
+pub fn edge_box(width: Pixels, screen: Size<Pixels>) -> Bounds<Pixels> {
+    Bounds { origin: point(screen.width - width, px(0.0)), size: size(width, screen.height) }
+}
+
+/// The glass of a drawer that is open at `open`: its right corners
+/// `radius` past the screen's edge, so only the left ones are round.
+pub fn past_edge(open: Bounds<Pixels>, radius: Pixels) -> Bounds<Pixels> {
+    Bounds { origin: open.origin, size: size(open.size.width + radius, open.size.height) }
+}
+
+/// What a drawer grows out of when its pill isn't on screen: the right end
+/// of the bar's row, nothing wide. `QuickSettings.qml`'s `pill` in today's
+/// shell.
+pub fn edge_origin(screen_width: Pixels) -> Bounds<Pixels> {
+    Bounds { origin: point(screen_width - BAR_MARGIN, BAR_GAP), size: size(px(0.0), BAR_HEIGHT) }
+}
+
+/// The size of the window a drawer `width` wide is drawn in: the drawer and
+/// the room its shadow needs beside it, within the screen. In whole pixels.
+pub fn edge_window(width: Pixels, screen: Size<Pixels>) -> Size<Pixels> {
+    size((width + SHADOW_ROOM).ceil().min(screen.width), screen.height)
+}
+
+/// The size of the window for a drawer `width` wide while it grows out
+/// of, or back into, a pill whose left edge is at `pill_left`: wide enough
+/// for the pill too, when that is further from the edge than the drawer
+/// reaches.
+pub fn edge_window_from(width: Pixels, pill_left: Pixels, screen: Size<Pixels>) -> Size<Pixels> {
+    edge_window(width.max(screen.width - pill_left), screen)
+}
+
+/// The part of a screen below a stage of `stage_height` and left of the
+/// panels' window, which sits against the right edge and is `beside` wide
+/// (nothing while none of its panels is out): where the click catcher
+/// takes clicks, those two taking their own.
+pub fn below_stage(stage_height: Pixels, beside: Pixels, screen: Size<Pixels>) -> Bounds<Pixels> {
     let height = (screen.height - stage_height).max(px(0.0));
-    Bounds { origin: point(px(0.0), stage_height), size: size(screen.width, height) }
+    let width = (screen.width - beside).max(px(0.0));
+    Bounds { origin: point(px(0.0), stage_height), size: size(width, height) }
+}
+
+/// The part of a stage `stage_height` tall left of the panels' window:
+/// where the stage takes every click while a panel a click outside closes
+/// is open, that window taking those on itself.
+pub fn left_of_panels(stage_height: Pixels, beside: Pixels, screen_width: Pixels) -> Bounds<Pixels> {
+    let width = (screen_width - beside).max(px(0.0));
+    Bounds { origin: point(px(0.0), px(0.0)), size: size(width, stage_height) }
 }
 
 #[cfg(test)]
@@ -183,7 +228,40 @@ mod tests {
     #[test]
     fn the_catcher_takes_what_the_stage_does_not() {
         let screen = size(px(1920.0), px(1080.0));
-        assert_eq!(below_stage(px(80.0), screen), rect(0.0, 80.0, 1920.0, 1000.0));
-        assert_eq!(below_stage(px(2000.0), screen).size.height, px(0.0));
+        assert_eq!(below_stage(px(80.0), px(0.0), screen), rect(0.0, 80.0, 1920.0, 1000.0));
+        assert_eq!(below_stage(px(2000.0), px(0.0), screen).size.height, px(0.0));
+    }
+
+    #[test]
+    fn a_drawer_is_flush_with_the_right_edge_top_to_bottom() {
+        let screen = size(px(1920.0), px(1080.0));
+        let open = edge_box(px(368.0), screen);
+        assert_eq!(open, rect(1552.0, 0.0, 368.0, 1080.0));
+        assert_eq!(past_edge(open, px(24.0)), rect(1552.0, 0.0, 392.0, 1080.0), "its right corners off screen");
+        assert_eq!(edge_origin(px(1920.0)), rect(1912.0, 4.0, 0.0, 36.0));
+    }
+
+    #[test]
+    fn a_drawer_s_window_holds_it_and_its_shadow_and_no_more() {
+        let screen = size(px(1920.0), px(1080.0));
+        assert_eq!(edge_window(px(368.0), screen), size(px(408.0), px(1080.0)));
+        assert_eq!(edge_window(px(367.5), screen).width, px(408.0), "whole pixels");
+        assert_eq!(edge_window(px(3000.0), screen).width, px(1920.0), "never wider than the screen");
+    }
+
+    #[test]
+    fn a_drawer_s_window_holds_the_pill_it_grows_out_of() {
+        let screen = size(px(1920.0), px(1080.0));
+        assert_eq!(edge_window_from(px(368.0), px(1800.0), screen).width, px(408.0), "a pill inside it");
+        assert_eq!(edge_window_from(px(368.0), px(1400.0), screen).width, px(560.0), "one further left");
+    }
+
+    #[test]
+    fn the_panels_window_takes_its_own_clicks() {
+        let screen = size(px(1920.0), px(1080.0));
+        assert_eq!(below_stage(px(80.0), px(408.0), screen), rect(0.0, 80.0, 1512.0, 1000.0));
+        assert_eq!(left_of_panels(px(80.0), px(408.0), px(1920.0)), rect(0.0, 0.0, 1512.0, 80.0));
+        assert_eq!(left_of_panels(px(80.0), px(0.0), px(1920.0)), rect(0.0, 0.0, 1920.0, 80.0));
+        assert_eq!(left_of_panels(px(80.0), px(1920.0), px(1920.0)).size.width, px(0.0), "under a panel over it all");
     }
 }

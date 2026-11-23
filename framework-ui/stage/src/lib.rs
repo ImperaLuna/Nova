@@ -33,7 +33,7 @@
 //! ([`Stage::toggle`] and friends open them from code).
 //!
 //! - [`Pill`], [`Panel`], [`Part`]: what a feature hands over, with the
-//!   contract's flags; [`Shown`] hides a pill with nothing to show, and
+//!   contract's flags and a panel's [`Placement`]; [`Shown`] hides a pill with nothing to show, and
 //!   [`middle`] keeps one thing of the center row at the screen's middle.
 //! - [`pill`], [`panel`], [`part`], [`overlay`]: registering a view by its
 //!   id. [`Parts`] shows the views of a host a feature draws itself.
@@ -42,7 +42,9 @@
 //!   no event for one that comes or goes).
 //! - [`Slots`]: which views the ready features' slots ask for.
 //! - `rules`, `geometry`, `reveal`, `kept`, `aside`: the logic without drawing,
-//!   each tested alone. `view` and `draw` are one screen's stage.
+//!   each tested alone. `view` and `draw` are one screen's stage,
+//!   `panel_window` the window beside it for the panels placed off the top
+//!   strip ([`Placement`]), and `satellites` the windows that draw nothing.
 
 mod aside;
 mod draw;
@@ -51,6 +53,7 @@ mod geometry;
 mod item;
 mod kept;
 mod middle;
+mod panel_window;
 mod registry;
 mod reveal;
 mod rules;
@@ -62,7 +65,7 @@ mod tokens;
 mod view;
 
 pub use frames::FrameLog;
-pub use item::{Panel, Part, Pill, Shown};
+pub use item::{Panel, Part, Pill, Placement, Shown};
 pub use middle::middle;
 pub use registry::{Parts, overlay, panel, part, pill};
 pub use screens::{Screen, Screens};
