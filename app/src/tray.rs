@@ -36,6 +36,20 @@ pub fn answer(daemon: &Daemon, _caller: &Caller, command: &Command) -> Answer {
         }
         Command::ActivateTrayItem { address } => activate_item(daemon, address),
         Command::TrayMenuPicked { address } => menu_picked(daemon, address),
+        Command::SecondaryActivateTrayItem { address } => {
+            let tray = daemon.module::<Tray>();
+            let address = address.clone();
+            Answer::later(move || done(tray.and_then(|tray| tray.secondary_activate(&address))))
+        }
+        Command::TrayMenu { address, id } => {
+            let tray = daemon.module::<Tray>();
+            let (address, id) = (address.clone(), *id);
+            Answer::later(move || match tray.and_then(|tray| tray.menu_level(&address, id)) {
+                Ok(level) => Outcome::Result(serde_json::to_value(level).unwrap_or_default()),
+                Err(e) => Outcome::Error(e),
+            })
+        }
+        Command::RunTrayMenuEntry { address, id, revision } => run_menu_entry(daemon, address, *id, *revision),
     }
 }
 
@@ -124,6 +138,18 @@ fn menu_picked(daemon: &Daemon, address: &str) -> Answer {
     Answer::Now(Outcome::Result(serde_json::Value::Null))
 }
 
+/// Entry `id` of the menu of the tray item at `address` was picked in the
+/// GPUI UI, which has no menu of its own to run it: notes the app's
+/// windows as `menu_picked` does, then clicks the entry.
+fn run_menu_entry(daemon: &Daemon, address: &str, id: i32, revision: u32) -> Answer {
+    if let Answer::Now(Outcome::Error(e)) = menu_picked(daemon, address) {
+        return Answer::Now(Outcome::Error(e));
+    }
+    let tray = daemon.module::<Tray>();
+    let address = address.to_owned();
+    Answer::later(move || done(tray.and_then(|tray| tray.run_menu_entry(&address, id, revision))))
+}
+
 /// Started before the UI, which settings start ahead of, so apps it
 /// autostarts find the watcher. No options.
 impl nova_modules::Module for Tray {
@@ -135,7 +161,7 @@ impl nova_modules::Module for Tray {
     type Config = ();
 
     fn sources(env: &crate::modules::Env) -> Sources {
-        Sources::new(&env.args.state_dir)
+        Sources::new(&env.args.state_dir, env.runtime_dir, Arc::clone(env.icons))
     }
 
     fn config(_: &crate::config::Config) {}

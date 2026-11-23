@@ -267,6 +267,13 @@ fn tray_request() -> impl Strategy<Value = nova_carrier::Request<nova_tray_api::
         (".*", any::<bool>()).prop_map(|(id, hidden)| Command::HideTrayApp { id, hidden }),
         ".*".prop_map(|address| Command::ActivateTrayItem { address }),
         ".*".prop_map(|address| Command::TrayMenuPicked { address }),
+        ".*".prop_map(|address| Command::SecondaryActivateTrayItem { address }),
+        (".*", any::<i32>()).prop_map(|(address, id)| Command::TrayMenu { address, id }),
+        (".*", any::<i32>(), any::<u32>()).prop_map(|(address, id, revision)| Command::RunTrayMenuEntry {
+            address,
+            id,
+            revision
+        }),
     ];
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
