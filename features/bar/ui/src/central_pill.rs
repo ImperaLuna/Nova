@@ -69,6 +69,12 @@ impl CentralPill {
                 pill.changed(cx);
             }));
         }
+        // A part came or went (`Part::shown_while`).
+        observers.push(Shown::observe(cx, |pill, cx| {
+            if pill.parts.shown_changed() {
+                cx.notify();
+            }
+        }));
         let pill = Self {
             screen: screen.clone(),
             parts: Parts::new(PARTS, screen, cx),
@@ -78,7 +84,7 @@ impl CentralPill {
             wheel: Wheel::default(),
             _observers: observers,
         };
-        pill.shown.set(pill.has_content(cx));
+        pill.shown.set(pill.has_content(cx), cx);
         pill
     }
 
@@ -99,7 +105,7 @@ impl CentralPill {
 
     /// The panels or the parts changed.
     fn changed(&mut self, cx: &mut Context<Self>) {
-        self.shown.set(self.has_content(cx));
+        self.shown.set(self.has_content(cx), cx);
         cx.notify();
     }
 

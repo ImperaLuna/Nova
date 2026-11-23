@@ -201,7 +201,7 @@ impl NowPlaying {
         let shown = self.media(cx).and_then(logic::shown);
         let out = logic::out(shown, self.lingered) || self.open;
         if out {
-            self.shown.set(true);
+            self.shown.set(true, cx);
         }
         self.out.set_target(if out { 1.0 } else { 0.0 }, Instant::now());
         self.follow_timers(cx);
@@ -220,7 +220,7 @@ impl NowPlaying {
     /// Returns whether it did, so the pill asks for one more frame: a
     /// change made while drawing redraws nothing by itself.
     pub fn hide_once_away(&mut self, now: Instant, cx: &mut Context<Self>) -> bool {
-        let hidden = self.out.target() == 0.0 && self.out.settled(now) && self.shown.set(false);
+        let hidden = self.out.target() == 0.0 && self.out.settled(now) && self.shown.set(false, cx);
         if hidden {
             self.follow_timers(cx);
         }

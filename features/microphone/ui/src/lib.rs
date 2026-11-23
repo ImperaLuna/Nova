@@ -46,12 +46,9 @@ impl Mic {
     fn new(cx: &mut Context<Self>) -> Self {
         let sound = Live::follow(TOPIC, cx, |Event::Sound(sound)| Some(sound));
         let followed = cx.observe(&sound, |mic, _, cx| {
-            if let Some(shown) = &mic.slider {
-                // The drawer doesn't draw it while hidden, so it wouldn't
-                // see this view's notify.
-                if shown.set(!recorders(mic.sound.read(cx).get()).is_empty()) {
-                    cx.refresh_windows();
-                }
+            if let Some(shown) = mic.slider.clone() {
+                // The drawer redraws when this shows or hides the slider.
+                shown.set(!recorders(mic.sound.read(cx).get()).is_empty(), cx);
             }
             cx.notify();
         });

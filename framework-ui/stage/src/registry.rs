@@ -96,12 +96,15 @@ pub struct Parts {
     /// `None` before the stage started: there are no slots to fill yet.
     slots: Option<Entity<Slots>>,
     views: Kept<Part>,
+    /// Which parts were shown when [`Parts::shown_changed`] last looked.
+    seen: Vec<bool>,
 }
 
 impl Parts {
     /// The parts of `host` on `screen`, built right away.
     pub fn new(host: &'static str, screen: &Screen, cx: &mut App) -> Self {
-        let mut parts = Self { host, screen: screen.clone(), slots: Stage::slots(cx), views: Kept::default() };
+        let mut parts =
+            Self { host, screen: screen.clone(), slots: Stage::slots(cx), views: Kept::default(), seen: Vec::new() };
         parts.sync(cx);
         parts
     }
@@ -111,9 +114,22 @@ impl Parts {
     pub fn sync(&mut self, cx: &mut App) -> bool {
         let wanted = self.slots.as_ref().map(|slots| slots.read(cx).for_host(self.host, cx)).unwrap_or_default();
         let (host, screen) = (self.host, &self.screen);
-        self.views.sync(&wanted, |view| {
+        let changed = self.views.sync(&wanted, |view| {
             build(view, host, cx, |registry| registry.parts.get(view), |build, cx| build(screen, cx))
-        })
+        });
+        self.shown_changed();
+        changed
+    }
+
+    /// Whether a part came or went ([`crate::Part::shown_while`]) since
+    /// this last looked. A part isn't drawn while hidden, so its own
+    /// redraw doesn't reach the host: the host calls this from
+    /// [`crate::Shown::observe`] and redraws when it says so.
+    pub fn shown_changed(&mut self) -> bool {
+        let now: Vec<bool> = self.views.iter().map(Part::is_shown).collect();
+        let changed = now != self.seen;
+        self.seen = now;
+        changed
     }
 
     pub fn views(&self) -> impl Iterator<Item = &AnyView> {

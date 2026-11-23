@@ -57,6 +57,9 @@ pub(crate) struct PillItem {
     pub opens_on_click: bool,
     /// Whether its view has something to show (`Pill::shown_while`).
     pub present: Option<Shown>,
+    /// What `present` said when the stage last looked
+    /// (`StageView::follow_shown`).
+    pub seen_present: bool,
     /// Where it was laid out in the last frame, in the window.
     pub bounds: PillBox,
     /// 1 shown, 0 hidden under an open panel.
@@ -262,6 +265,7 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 cx.observe_in(&slots, window, |stage: &mut StageView, _, window, cx| stage.sync_items(window, cx)),
                 cx.observe_in(&panels, window, |stage: &mut StageView, _, window, cx| stage.follow_panels(window, cx)),
                 cx.observe_in(&screens, window, StageView::follow_screen),
+                Shown::observe(cx, StageView::follow_shown),
             ];
             let frames = log_frames.then(|| FrameLog::new(screen.name.to_string(), screen.refresh, now));
             let mut stage = StageView {
@@ -340,6 +344,7 @@ impl StageView {
                     view: view.clone(),
                     content,
                     opens_on_click,
+                    seen_present: shown.as_ref().is_none_or(Shown::get),
                     present: shown,
                     bounds: Rc::default(),
                     shown: Eased::lasting(1.0, DURATION_FAST, now),
@@ -364,6 +369,22 @@ impl StageView {
         self.fit(window, cx, true);
         self.keep_bar_room(cx);
         cx.notify();
+    }
+
+    /// A pill's view shows or hides it ([`Shown::set`]), on any screen. The
+    /// view isn't drawn while hidden, so its own redraw doesn't reach this
+    /// window: this one redraws when one of its pills comes or goes, and
+    /// at rest draws nothing for any other flag.
+    fn follow_shown(&mut self, cx: &mut Context<Self>) {
+        let mut changed = false;
+        for pill in self.rows.iter_mut().flat_map(|row| row.iter_mut()) {
+            let present = pill.is_present();
+            changed |= present != pill.seen_present;
+            pill.seen_present = present;
+        }
+        if changed {
+            cx.notify();
+        }
     }
 
     /// Follows the shared state: each panel heads for open or closed and
