@@ -1,0 +1,40 @@
+# nova-bar-ui
+#
+# The bar's two pill frames on the GPUI stage: the central pill (view
+# `central-pill`, its search button and the parts of
+# `central-pill.parts`, like the clock and the workspace numbers) and the
+# right pill (view `right-pill`, the buttons of `right-pill.buttons`).
+# Ported from ui/central_pill and ui/bar (IMP-398).
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-bar-api
+# - nova-desktop-info
+# - nova-look
+# - nova-stage
+# - nova-ui-client
+# - nova-workspaces-api
+
+[package]
+name = "nova-bar-ui"
+description = "The bar's central and right pills for the GPUI program"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-bar-api.workspace = true
+nova-desktop-info.workspace = true
+nova-look.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+nova-workspaces-api.workspace = true
+
+[lints]
+workspace = true

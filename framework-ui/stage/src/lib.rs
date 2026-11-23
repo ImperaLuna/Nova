@@ -32,8 +32,9 @@
 //! is open and closes panels on Esc and a click outside
 //! ([`Stage::toggle`] and friends open them from code).
 //!
-//! - [`Pill`], [`Panel`]: what a feature hands over, with the contract's
-//!   flags.
+//! - [`Pill`], [`Panel`], [`Part`]: what a feature hands over, with the
+//!   contract's flags; [`Shown`] hides a pill with nothing to show, and
+//!   [`middle`] keeps one thing of the center row at the screen's middle.
 //! - [`pill`], [`panel`], [`part`], [`overlay`]: registering a view by its
 //!   id. [`Parts`] shows the views of a host a feature draws itself.
 //! - [`Stage`]: starting it, and opening, closing and resizing panels.
@@ -49,6 +50,7 @@ mod frames;
 mod geometry;
 mod item;
 mod kept;
+mod middle;
 mod registry;
 mod reveal;
 mod rules;
@@ -60,7 +62,8 @@ mod tokens;
 mod view;
 
 pub use frames::FrameLog;
-pub use item::{Panel, Pill};
+pub use item::{Panel, Part, Pill, Shown};
+pub use middle::middle;
 pub use registry::{Parts, overlay, panel, part, pill};
 pub use screens::{Screen, Screens};
 pub use slots::{HOST_BAR_CENTER, HOST_BAR_LEFT, HOST_BAR_RIGHT, HOST_SHELL_OVERLAYS, HOST_STAGE_PANELS, Slots};

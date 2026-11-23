@@ -14,7 +14,9 @@ use crate::rules::{OpenPanels, PanelRules};
 use crate::screens::Screens;
 use crate::slots::{HOST_SHELL_OVERLAYS, Slots};
 use crate::view::{self, Shared, StageView};
-use gpui::{App, AppContext, DisplayId, Entity, Global, Pixels, SharedString, Size, Subscription, WindowHandle};
+use gpui::{
+    App, AppContext, Context, DisplayId, Entity, Global, Pixels, SharedString, Size, Subscription, WindowHandle,
+};
 use nova_daemon_info::Slot;
 use std::any::Any;
 use std::collections::HashMap;
@@ -52,12 +54,17 @@ impl Panels {
     }
 
     /// `screen`'s stage has these panels now. One that left closes.
-    /// Returns whether anything open changed.
+    /// Returns whether anything open, or the panels there, changed.
     pub fn know(&mut self, screen: DisplayId, panels: Vec<PanelRules>) -> bool {
         let closed = self.open.retain(|on, open| on != screen || panels.iter().any(|panel| panel.name == open.name));
         self.sizes.retain(|(on, name), _| *on != screen || panels.iter().any(|panel| panel.name == *name));
-        self.known.insert(screen, panels);
-        closed
+        let names = |list: &[PanelRules]| list.iter().map(|panel| panel.name.clone()).collect::<Vec<_>>();
+        let before = self.known.insert(screen, panels.clone());
+        closed || before.is_none_or(|before| names(&before) != names(&panels))
+    }
+
+    fn has(&self, name: &str, screen: DisplayId) -> bool {
+        self.known.get(&screen).is_some_and(|panels| panels.iter().any(|panel| panel.name.as_ref() == name))
     }
 
     /// Forgets the screens not in `here`, with what was open on them.
@@ -143,6 +150,24 @@ impl Stage {
     /// Esc, or a click outside: closes every panel that closes on it.
     pub fn dismiss(cx: &mut App) {
         change(cx, |panels| panels.open.dismiss());
+    }
+
+    /// Whether `screen`'s stage has the panel called `name`: its feature
+    /// is ready and its ui registered it. A button that opens a panel shows
+    /// only then (the central pill's search button and the launcher).
+    pub fn has_panel(name: &str, screen: DisplayId, cx: &App) -> bool {
+        cx.try_global::<StageState>().is_some_and(|state| state.panels.read(cx).has(name, screen))
+    }
+
+    /// Calls `changed` whenever a panel opens or closes, or the panels a
+    /// screen has change, for as long as the subscription is kept. `None`
+    /// before the stage started.
+    pub fn observe_panels<V: 'static>(
+        cx: &mut Context<V>,
+        mut changed: impl FnMut(&mut V, &mut Context<V>) + 'static,
+    ) -> Option<Subscription> {
+        let panels = cx.try_global::<StageState>()?.panels.clone();
+        Some(cx.observe(&panels, move |view, _, cx| changed(view, cx)))
     }
 
     pub fn is_open(name: &str, screen: DisplayId, cx: &App) -> bool {
@@ -291,12 +316,15 @@ mod tests {
     #[test]
     fn a_panel_whose_feature_turned_off_closes() {
         let mut panels = Panels::default();
-        assert!(!panels.know(left(), vec![panel("launcher"), panel("power")]));
+        assert!(panels.know(left(), vec![panel("launcher"), panel("power")]), "new panels are a change");
+        assert!(!panels.know(left(), vec![panel("launcher"), panel("power")]), "the same ones are not");
+        assert!(panels.has("launcher", left()));
         let launcher = panels.rules("launcher", left()).unwrap();
         panels.open.open(launcher, left());
         assert!(panels.know(left(), vec![panel("power")]));
         assert!(!panels.open.is_open("launcher", left()));
         assert_eq!(panels.rules("launcher", left()), None);
+        assert!(!panels.has("launcher", left()));
     }
 
     #[test]

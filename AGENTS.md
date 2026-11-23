@@ -251,9 +251,17 @@ A part: a view for a host another feature draws (`central-pill.parts`,
 ```rust
 // features/clock/ui
 nova_stage::part("clock.time", cx, |_screen, cx| cx.new(ClockTime::new).into());
+// features/workspaces/ui: round cells sit closer to the pill's ends than text
+nova_stage::part("workspaces.list", cx, |screen, cx| {
+    Part::new(cx.new(|cx| WorkspaceList::new(screen, cx))).inset(WORKSPACE_INSET)
+});
 // features/bar/ui, in the central pill's view
 let parts = Parts::new("central-pill.parts", screen, cx);
 ```
+
+A part draws its content only, edge to edge: the host adds what goes
+between parts (the central pill's dividers) and keeps each end
+`Part::inset` from the first and last part (`PAD` by default).
 
 An overlay (host `shell.overlays`): something with windows of its own over
 the screens, like pop-ups or the volume capsule. `build` runs once while
@@ -293,6 +301,12 @@ frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
   --frames` logs the frames each screen's stage drew: nothing for a shell
   at rest, one a second for a clock that shows seconds, and for each
   motion how many of its frames came late.
+- A pill that has nothing to show at times passes a `Shown` with
+  `Pill::shown_while` and sets it as that changes: hidden, it takes no
+  room and no region, and a panel from it rises into place instead.
+- The bar's center row is centered, unless a view in it wraps one thing in
+  `nova_stage::middle(...)` (the clock part's time): then that thing's
+  middle is the screen's middle, and the row grows to the left of it.
 - A `Screen` gives a view its screen's `id` (for `Stage` calls), `name`
   (the output name novad's messages use), `size` and `refresh`.
 - A feature's ui uses its own api crate and other features' api crates,
