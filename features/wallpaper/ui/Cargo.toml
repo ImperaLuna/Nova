@@ -2,12 +2,13 @@
 #
 # What the wallpaper feature draws, with GPUI: the carousel over the whole
 # screen that picks an image from the wallpaper folder, for every screen or
-# one, and its preview on the other screens.
+# one, and its preview on the other screens. `image` decodes the folder's
+# images at the size of a card or a screen, off the main thread (GPUI
+# already builds it, with these formats).
 #
 # Allowed outside crates:
 # - gpui
-# - image (decodes the folder's images at the size of a card or a screen,
-#   off the main thread; GPUI already builds it with these formats)
+# - image
 #
 # Allowed workspace crates:
 # - nova-desktop-info
