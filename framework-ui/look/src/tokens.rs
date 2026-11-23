@@ -105,6 +105,9 @@ tokens! {
     DIVIDER_WIDTH: px = 1.0, "dividerWidth";
     /// Small marks, like a "wants attention" dot.
     DOT_SIZE: px = 4.0, "dotSize";
+    /// While the bar steps aside for a fullscreen window: the strip along
+    /// the top edge that brings it back when the pointer touches it.
+    REVEAL_STRIP: px = 2.0, "revealStrip";
     /// A label beside an icon sits this far right, to line up optically
     /// with the icon's edge.
     LABEL_NUDGE: px = 1.0, "labelNudge";
@@ -182,6 +185,9 @@ tokens! {
     DURATION_COLOR: ms = 200, "durationColor";
     /// Something changing size as its content changes.
     DURATION_RESIZE: ms = 180, "durationResize";
+    /// The bar stays this long after the pointer leaves it over a
+    /// fullscreen window.
+    DURATION_PEEK_LINGER: ms = 400, "durationPeekLinger";
     /// One turn of a loading spinner.
     DURATION_SPIN: ms = 1000, "durationSpin";
     /// When a panel's content starts to show, as a share of its morph, and
