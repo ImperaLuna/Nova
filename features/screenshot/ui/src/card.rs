@@ -108,6 +108,13 @@ impl CardWindow {
         }
     }
 
+    pub fn set_screen(&mut self, screen: &Screen, cx: &mut Context<Self>) {
+        if self.screen.size != screen.size {
+            self.screen = screen.clone();
+            cx.notify();
+        }
+    }
+
     fn show(&mut self, shown: bool, window: &mut Window) {
         if shown == self.shown {
             return;

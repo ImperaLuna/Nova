@@ -3,13 +3,18 @@
 //! `ui/theme/Tokens.qml`, under the names the test below lists: change a
 //! value in both.
 
-use gpui::{Pixels, px};
+use gpui::{Hsla, Pixels, black, px};
 use std::time::Duration;
 
 /// The dim over the frozen screens outside the region (black at this
 /// opacity), and the region's outline.
 pub const VEIL_OPACITY: f32 = 0.45;
 pub const OUTLINE: Pixels = px(1.5);
+
+/// The veil: black in every theme, as it dims a picture of the screen.
+pub fn veil() -> Hsla {
+    black().opacity(VEIL_OPACITY)
+}
 /// Smaller than this either way is a click, not a region.
 pub const MIN_DRAG: Pixels = px(4.0);
 /// The toolbar at the top, where the central pill is, and its buttons.

@@ -14,13 +14,12 @@
 
 use crate::capture::{Capture, Frame};
 use crate::pick::{around, is_click, region, size_label, to_pixels, under_region};
-use crate::tokens::{BADGE_HEIGHT, MIN_DRAG, OUTLINE, VEIL_OPACITY};
+use crate::tokens::{BADGE_HEIGHT, MIN_DRAG, OUTLINE, veil};
 use crate::toolbar::{Ask, Layout, Look, toolbar};
 use gpui::{
     AnyElement, App, AppContext, Bounds, Context, CursorStyle, FocusHandle, InteractiveElement, IntoElement,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
-    RenderImage, StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, WindowHandle, bounds, div, hsla,
-    img,
+    RenderImage, StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, WindowHandle, bounds, div, img,
     layer_shell::{Anchor, KeyboardInteractivity, Layer},
     point, px, size,
 };
@@ -100,6 +99,17 @@ impl PickerWindow {
         }
     }
 
+    /// The screen changed size or scale: an open pick covers it anew.
+    pub fn set_screen(&mut self, screen: &Screen, window: &mut Window, cx: &mut Context<Self>) {
+        if self.screen.size != screen.size {
+            self.screen = screen.clone();
+            if self.shown {
+                window.resize(screen.size);
+            }
+            cx.notify();
+        }
+    }
+
     /// Covers the screen and takes the keyboard while a pick is open, and
     /// gives both back after.
     fn show(&mut self, shown: bool, now: Instant, window: &mut Window, cx: &mut Context<Self>) {
@@ -109,6 +119,7 @@ impl PickerWindow {
         self.shown = shown;
         self.region = None;
         self.from = None;
+        self.hovered = false;
         if shown {
             window.resize(self.screen.size);
             window.set_input_region(None);
@@ -262,7 +273,7 @@ impl Render for PickerWindow {
             CaptureMode::Region => self.region,
         };
         let theme = Theme::of(cx);
-        let veil = hsla(0.0, 0.0, 0.0, VEIL_OPACITY);
+        let veil = veil();
         let pieces = around(clear.unwrap_or_default(), screen);
         let mut root = div()
             .id("picker")

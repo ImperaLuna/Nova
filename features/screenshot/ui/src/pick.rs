@@ -62,7 +62,7 @@ pub fn under_region(region: Bounds<Pixels>, item: Size<Pixels>, screen: Size<Pix
     let x = (region.origin.x + region.size.width - item.width).max(px(0.0));
     let bottom = region.origin.y + region.size.height;
     let below = bottom + gap;
-    let y = if below + item.height <= screen.height { below } else { bottom - item.height - gap };
+    let y = if below + item.height <= screen.height { below } else { (bottom - item.height - gap).max(px(0.0)) };
     point(x, y)
 }
 
@@ -109,6 +109,11 @@ impl Countdown {
             (false, None) => self.since = Some(now),
             _ => {}
         }
+    }
+
+    /// The pointer holds it.
+    pub fn held(&self) -> bool {
+        self.since.is_none()
     }
 
     /// The share of its time left, 1 to 0.
@@ -209,6 +214,7 @@ mod tests {
         countdown.set_held(true, start + Duration::from_secs(3));
         assert!(!countdown.running(start + Duration::from_secs(60)));
         assert!((countdown.remaining(start + Duration::from_secs(60)) - 0.5).abs() < 1e-4);
+        assert!(countdown.held());
         countdown.set_held(false, start + Duration::from_secs(60));
         assert!(countdown.running(start + Duration::from_secs(62)));
         assert_eq!(countdown.remaining(start + Duration::from_secs(63)), 0.0);

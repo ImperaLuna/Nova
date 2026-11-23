@@ -81,6 +81,12 @@ impl Capture {
             });
             let desktop = Live::follow(nova_desktop_info::TOPIC, cx, |DesktopEvent::Compositor(desktop)| Some(desktop));
             let mut followed = vec![events, cx.on_release(|capture: &mut Self, cx| capture.close(cx))];
+            // A pick doesn't outlive novad: the next one knows nothing of it.
+            if let Some(connection) = Daemon::connection(cx) {
+                followed.push(cx.observe(&connection, |capture: &mut Self, connection, cx| {
+                    capture.follow_connection(connection.read(cx).is_connected(), cx);
+                }));
+            }
             if let Some(screens) = Stage::screens(cx) {
                 followed.push(cx.observe(&screens, |capture: &mut Self, _, cx| {
                     capture.failed.clear();
@@ -105,6 +111,14 @@ impl Capture {
         });
         capture.update(cx, |capture, cx| capture.sync_windows(cx));
         capture
+    }
+
+    /// novad went away: an open pick ends with it.
+    fn follow_connection(&mut self, connected: bool, cx: &mut Context<Self>) {
+        if !connected && self.frames.is_some() {
+            self.generation += 1;
+            self.drop_frames(cx);
+        }
     }
 
     fn take(&mut self, event: Event, cx: &mut Context<Self>) {
@@ -145,6 +159,12 @@ impl Capture {
             let _ = capture.update(cx, |capture, cx| {
                 if capture.generation != generation {
                     drop_images(frames.into_iter().map(|frame| frame.image), cx);
+                    return;
+                }
+                if frames.is_empty() {
+                    // Nothing to pick on: novad's pick ends rather than
+                    // stay open with no picker to close it.
+                    Daemon::send(Command::CancelCapture, cx);
                     return;
                 }
                 capture.frames = Some(frames);
@@ -215,18 +235,21 @@ impl Capture {
     /// out replaces it in place, with its full time.
     fn show_card(&mut self, shot: SavedScreenshot, cx: &mut Context<Self>) {
         let now = Instant::now();
-        let kept = self.card.take().filter(|card| card.slide.target() > 0.0);
+        let old = self.card.take();
+        if let Some(thumb) = old.as_ref().and_then(|card| card.thumb.clone()) {
+            drop_images([thumb], cx);
+        }
+        let kept = old.filter(|card| card.slide.target() > 0.0);
         let screen = match &kept {
             Some(card) => Some(card.screen),
             None => self.focused_screen(cx),
         };
-        let slide = kept.as_ref().map_or_else(|| Eased::lasting(0.0, DURATION_PANEL, now), |card| card.slide);
-        if let Some(thumb) = kept.and_then(|card| card.thumb) {
-            drop_images([thumb], cx);
-        }
         let Some(screen) = screen else { return };
-        let mut card =
-            Card { shot: shot.clone(), screen, thumb: None, countdown: Countdown::start(CARD_TIME, now), slide };
+        let slide = kept.as_ref().map_or_else(|| Eased::lasting(0.0, DURATION_PANEL, now), |card| card.slide);
+        let mut countdown = Countdown::start(CARD_TIME, now);
+        // Still under the pointer, which no hover change will say again.
+        countdown.set_held(kept.is_some_and(|card| card.countdown.held()), now);
+        let mut card = Card { shot: shot.clone(), screen, thumb: None, countdown, slide };
         card.slide.set_target(1.0, now);
         self.card = Some(card);
         self.read_thumb(shot, cx);
@@ -342,8 +365,28 @@ impl Capture {
         let Some(screens) = Stage::screens(cx) else { return };
         let here = screens.read(cx).list().to_vec();
         let kept = |screen: &DisplayId| here.iter().any(|kept| kept.id == *screen);
-        keep_windows(&mut self.pickers, kept, cx);
-        keep_windows(&mut self.cards, kept, cx);
+        // A screen keeps its two windows together: one lost, both go and
+        // open again.
+        let both = |screen: &DisplayId,
+                    pickers: &[(DisplayId, WindowHandle<PickerWindow>)],
+                    cards: &[(DisplayId, WindowHandle<CardWindow>)],
+                    cx: &mut App| {
+            pickers.iter().any(|(id, window)| id == screen && window.update(cx, |_, _, _| ()).is_ok())
+                && cards.iter().any(|(id, window)| id == screen && window.update(cx, |_, _, _| ()).is_ok())
+        };
+        let whole: Vec<DisplayId> =
+            here.iter().map(|screen| screen.id).filter(|screen| both(screen, &self.pickers, &self.cards, cx)).collect();
+        keep_windows(&mut self.pickers, |screen| whole.contains(screen), cx);
+        keep_windows(&mut self.cards, |screen| whole.contains(screen), cx);
+        // A screen that changed size or scale: its windows follow.
+        for screen in &here {
+            if let Some((_, window)) = self.pickers.iter().find(|(id, _)| *id == screen.id) {
+                let _ = window.update(cx, |picker, window, cx| picker.set_screen(screen, window, cx));
+            }
+            if let Some((_, window)) = self.cards.iter().find(|(id, _)| *id == screen.id) {
+                let _ = window.update(cx, |card, _, cx| card.set_screen(screen, cx));
+            }
+        }
         if self.card.as_ref().is_some_and(|card| !kept(&card.screen)) {
             // Its screen left: it goes with it.
             if let Some(thumb) = self.card.take().and_then(|card| card.thumb) {
