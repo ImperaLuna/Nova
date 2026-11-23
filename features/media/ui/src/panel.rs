@@ -49,12 +49,14 @@ pub struct MediaPanel {
 
 impl MediaPanel {
     pub fn new(model: Entity<NowPlaying>, cx: &mut Context<Self>) -> Self {
-        cx.observe(&model, |panel, _, cx| {
-            // The player's next word on where it is ends a held position.
-            if !panel.pressing {
-                panel.held = None;
+        cx.observe(&model, |_, _, cx| cx.notify()).detach();
+        // The players' next word ends a held position; the model's own
+        // redraws (the time ticking) don't.
+        let feed = model.read(cx).feed().clone();
+        cx.observe(&feed, |panel, _, cx| {
+            if !panel.pressing && panel.held.take().is_some() {
+                cx.notify();
             }
-            cx.notify();
         })
         .detach();
         Self { model, held: None, pressing: false, let_go: None, line: Rc::default() }

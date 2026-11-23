@@ -112,6 +112,11 @@ impl NowPlaying {
         self.current.as_ref()
     }
 
+    /// novad's media, for whoever waits on the players' own word.
+    pub fn feed(&self) -> &Entity<Live<Media>> {
+        &self.media
+    }
+
     pub fn playing(&self) -> bool {
         logic::playing(self.current())
     }
