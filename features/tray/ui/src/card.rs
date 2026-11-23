@@ -22,7 +22,7 @@ use nova_look::{AppIcon, CardTitle, Theme};
 use nova_stage::{Screen, Shown, Stage};
 use nova_tray_api::{Command, Event, TOPIC, Tray};
 use nova_ui_client::{Daemon, Live};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -41,6 +41,9 @@ pub struct Card {
     menu_at: Point<Pixels>,
     /// Each icon's middle in the window, as it was last drawn.
     middles: Rc<RefCell<HashMap<String, Point<Pixels>>>>,
+    /// The card's own box in the window, as it was last drawn: the menu
+    /// stays within its width, as the drawer's pages are.
+    bounds: Rc<Cell<Bounds<Pixels>>>,
     _followed: Vec<Subscription>,
 }
 
@@ -64,6 +67,7 @@ impl Card {
             menu,
             menu_at: Point::default(),
             middles: Rc::default(),
+            bounds: Rc::default(),
             _followed: followed,
         };
         card.read(cx);
@@ -145,8 +149,10 @@ impl Card {
             return None;
         }
         let theme = Theme::of(cx);
-        let at = self.menu_at + point(Pixels::ZERO, TRAY_GRID_CELL / 2.0 + MENU_GAP);
         let width = self.menu.read(cx).size().width;
+        let card = self.bounds.get();
+        let left = (self.menu_at.x - width / 2.0).min(card.right() - width).max(card.left());
+        let at = point(left, self.menu_at.y + TRAY_GRID_CELL / 2.0 + MENU_GAP);
         let menu = self.menu.clone();
         let boxed = div()
             .id("tray-card-menu")
@@ -157,13 +163,7 @@ impl Card {
             .border_color(theme.outline())
             .on_mouse_down_out(move |_, _, cx| menu.update(cx, |menu, cx| menu.dismiss(cx)))
             .child(self.menu.clone());
-        Some(deferred(
-            anchored()
-                .anchor(Anchor::TopLeft)
-                .position(at - point(width / 2.0, Pixels::ZERO))
-                .snap_to_window_with_margin(PAD)
-                .child(boxed),
-        ))
+        Some(deferred(anchored().anchor(Anchor::TopLeft).position(at).snap_to_window_with_margin(PAD).child(boxed)))
     }
 }
 
@@ -186,11 +186,16 @@ impl Render for Card {
             rows.push(div().flex().gap(TRAY_GRID_GAP).children(row));
         }
         let most = TRAY_GRID_CELL * TRAY_GRID_MAX_ROWS as f32 + TRAY_GRID_GAP * (TRAY_GRID_MAX_ROWS - 1) as f32;
+        let bounds = self.bounds.clone();
+        let record =
+            canvas(move |drawn: Bounds<Pixels>, _, _| bounds.set(drawn), |_, (), _, _| {}).absolute().inset_0();
         div()
+            .relative()
             .w_full()
             .flex()
             .flex_col()
             .gap(GAP)
+            .child(record)
             .child(
                 div().flex().justify_between().child(CardTitle::new("Tray")).child(CardTitle::new(apps_count(count))),
             )

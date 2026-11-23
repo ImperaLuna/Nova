@@ -8,6 +8,10 @@
 //! novad reads the menu and runs its entries (`tray_menu`,
 //! `run_tray_menu_entry`): the stage owns the glass, the drop in, Esc and
 //! a click outside.
+//!
+//! The tray card in quick settings draws the same menu inside the drawer
+//! (`TrayMenu::in_drawer`): there the card places it and dismisses it, and
+//! an entry that ran closes quick settings too.
 
 use crate::model::{self, Entry};
 use crate::strip::TRAY;
