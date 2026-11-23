@@ -2,6 +2,8 @@ use std::ffi::{CString, c_char, c_int, c_uint, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
+// NVML instead of running nvidia-smi: with driver 595.104.02 and glibc 2.44 nvidia-smi crashed in the dynamic loader:
+// https://linear.app/imperaluna/issue/IMP-104
 const LIBRARY: &str = "libnvidia-ml.so.1";
 const NIXOS_DRIVER_DIR: &str = "/run/opengl-driver/lib";
 const SUCCESS: c_int = 0;

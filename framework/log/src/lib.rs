@@ -76,6 +76,7 @@ impl Logger {
             }
             state.write(entry);
         }
+        // Published under the lock, so a subscriber never misses or repeats an entry between backlog and feed: https://linear.app/imperaluna/issue/IMP-8
         self.hub.publish(&Logs { backlog: false, entries }.event());
     }
 

@@ -202,6 +202,8 @@ pub(crate) fn panel(
         .w(frame.glass.size.width)
         .h(frame.glass.size.height)
         .opacity(frame.opacity)
+        // The compositor's blur can't fade: a fading panel keeps no shape, or an empty frosted box stays and takes clicks:
+        // https://linear.app/imperaluna/issue/IMP-57
         .child(record(shapes, frame.radius, !fades_out(panel, frame), None))
         .child(div().absolute().inset_0().overflow_hidden().child(content))
         .children(fillets(frame, origin, shapes))
@@ -389,6 +391,8 @@ impl StageView {
 pub(crate) fn dismiss_outside(shapes: Vec<Shape>, window: &mut Window) {
     let shapes = Rc::new(shapes);
     let on_scroll = shapes.clone();
+    // Hyprland sends a surface that holds the keyboard the clicks of every screen, outside the window too:
+    // https://linear.app/imperaluna/issue/IMP-396
     window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
         if phase == DispatchPhase::Bubble && !covered(&shapes, event.position) {
             Stage::dismiss(cx);

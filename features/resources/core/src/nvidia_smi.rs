@@ -43,6 +43,8 @@ impl NvidiaSmi {
 }
 
 impl Drop for NvidiaSmi {
+    // A driver stuck in the kernel can keep even a killed nvidia-smi from exiting, and this runs with resources' state locked:
+    // https://linear.app/imperaluna/issue/IMP-82
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();

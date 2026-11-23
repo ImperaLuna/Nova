@@ -64,6 +64,8 @@ pub(crate) fn open(
     let Shared { stage, panels, beside } = shared;
     let screen_size = screen.size;
     let mut shell = ShellWindow::new(screen.id, parked());
+    // Hyprland ignored a change of layer before a surface's first frame, so the layer is set from the start:
+    // https://linear.app/imperaluna/issue/IMP-427
     shell.layer = Layer::Overlay;
     shell.anchor = Anchor::TOP | Anchor::RIGHT;
     shell.namespace = PANEL_NAMESPACE;

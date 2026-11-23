@@ -63,6 +63,7 @@ pub fn fade(id: impl Into<ElementId>, target: f32, duration: Duration, window: &
 }
 
 #[derive(Clone)]
+// GPUI tells `on_hover` after a frame is drawn, so the next frame reads what it said: https://linear.app/imperaluna/issue/IMP-440
 pub struct Hovered(Entity<bool>);
 
 impl Hovered {

@@ -49,6 +49,7 @@ impl Stop {
     }
 
     pub fn poll(&self, cx: &Context<'_>) -> Poll<()> {
+        // The waker is stored before the check, so a stop in between still wakes this task: https://linear.app/imperaluna/issue/IMP-75
         let mut wakers = lock(&self.wakers);
         if !wakers.iter().any(|waker| waker.will_wake(cx.waker())) {
             wakers.push(cx.waker().clone());

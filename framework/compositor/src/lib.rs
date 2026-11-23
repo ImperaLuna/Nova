@@ -97,6 +97,7 @@ impl Compositor {
         desktop.as_ref()?.outputs.iter().find(|output| output.focused).map(|output| output.name.clone())
     }
 
+    // The listener runs with the desktop locked, so it must not call back into the compositor: https://linear.app/imperaluna/issue/IMP-168
     pub fn on_outputs(&self, listener: impl Fn(Vec<String>) + Send + 'static) {
         let desktop = lock(&self.desktop);
         if let Some(desktop) = &*desktop {
