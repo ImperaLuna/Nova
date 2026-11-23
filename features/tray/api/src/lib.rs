@@ -7,8 +7,7 @@
 //! changes its icon or status. The work is `nova-tray`
 //! (`features/tray/core`).
 //!
-//! Today's Quickshell UI is a tray host of its own and reads each item's
-//! icon and menu from the bus; the GPUI UI reads them here: an item's
+//! The UI reads each item's icon and menu here, not from the bus: an item's
 //! [`TrayItem::icon`] and [`TrayItem::attention`], and its menu one level
 //! at a time with `tray_menu` ([`TrayMenuLevel`]).
 
@@ -77,9 +76,7 @@ pub struct Tray {
     pub hidden: Vec<String>,
 }
 
-/// One app's tray icon. Today's Quickshell UI draws it through its own
-/// tray host and finds it there by `id` and `title`; the GPUI UI draws
-/// [`TrayItem::icon`].
+/// One app's tray icon. The UI draws [`TrayItem::icon`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrayItem {
     /// Where it lives on the session bus: `<bus name>/<object path>`, as

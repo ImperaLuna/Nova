@@ -1,7 +1,6 @@
-//! `network.tile`: the network tile, once novad has sent the network's
-//! state. Lit while a link is up or coming up; a click anywhere on it opens
-//! the network page, where its switches are. `NetworkTile.qml` in today's
-//! shell.
+//! `network.tile`: the network tile, once novad has sent the network's state.
+//! Lit while a link is up or coming up; a click anywhere on it opens the
+//! network page, where its switches are.
 
 use crate::{PAGE, QUICK_SETTINGS, logic};
 use gpui::{Context, Entity, IntoElement, Render, Subscription, Window};

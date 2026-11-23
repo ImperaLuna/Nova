@@ -1,5 +1,4 @@
-//! Nova's loading spinner: an arc going round a ring. `Spinner.qml` in
-//! today's shell.
+//! Nova's loading spinner: an arc going round a ring.
 //!
 //! The same ring, dashed and with no arc, marks something that isn't there
 //! (the AI usage pill of a tool with no numbers). The spinner asks for no

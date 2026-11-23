@@ -1,5 +1,5 @@
 //! What the pill and the panel work out from novad's `media` event, with
-//! no drawing in it: `ui/media/media.js` in today's shell. novad picks the
+//! no drawing in it. novad picks the
 //! player to show and checks what it sends; this only finds it, moves its
 //! position on while it plays, turns numbers into text, and times the
 //! title's scroll and the equalizer's steps.
@@ -162,10 +162,10 @@ pub fn marquee_rest_left(elapsed: Duration, over: f32, speed: f32, rest: Duratio
     (elapsed >= resting_from).then(|| (resting_from + rest).saturating_sub(elapsed))
 }
 
-/// How much of a scrolled title shows at `x` in its box (0..`room`), when
-/// its text is `over` px longer than the box and scrolled by `offset`: it
-/// fades out over `fade` at an end where more text lies beyond, and not
-/// where its own start or end is in view. `fade.frag` in today's shell.
+/// How much of a scrolled title shows at `x` in its box (0..`room`), when its
+/// text is `over` px longer than the box and scrolled by `offset`: it fades out
+/// over `fade` at an end where more text lies beyond, and not where its own
+/// start or end is in view.
 pub fn fade_at(x: f32, room: f32, over: f32, offset: f32, fade: f32) -> f32 {
     if over <= 0.0 {
         return 1.0;

@@ -1,10 +1,8 @@
-//! What the microphone feature draws, with GPUI, in quick settings: the
-//! tile that mutes the mic (`quick-settings.tiles` slot `microphone.tile`
-//! of `features/microphone/feature.toml`) and the mic's slider, only while
-//! an app records from it, named after those apps
-//! (`quick-settings.sliders` slot `microphone.slider`).
-//! `MicrophoneTileSlot.qml` and `MicrophoneSliderSlot.qml` in
-//! `ui/quick_settings/slots` in today's shell.
+//! What the microphone feature draws, with GPUI, in quick settings: the tile
+//! that mutes the mic (`quick-settings.tiles` slot `microphone.tile` of
+//! `features/microphone/feature.toml`) and the mic's slider, only while an app
+//! records from it, named after those apps (`quick-settings.sliders` slot
+//! `microphone.slider`).
 //!
 //! The feature has no work of its own in novad: both follow the sound
 //! feature's `sound` topic, the input in use and who records from it, and
@@ -72,7 +70,7 @@ fn recorders(sound: Option<&Sound>) -> &[String] {
 }
 
 /// "Discord is using the mic", "Discord and OBS are using the mic", or ""
-/// when no app records (`quick_settings.js` `recordingText`).
+/// when no app records.
 fn recording_text(names: &[String]) -> String {
     match names {
         [] => String::new(),

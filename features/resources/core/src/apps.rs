@@ -11,8 +11,7 @@ use std::path::Path;
 /// Programs whose end would end the session, by name: no End for them.
 const SESSION_PROGRAMS: [&str; 4] = ["niri", "Hyprland", "sway", "systemd"];
 
-/// Nova's own app: novad and the UI it runs, whatever programs they are
-/// (the UI is Quickshell).
+/// Nova's own app: novad and the UI it runs, whatever programs they are.
 pub const NOVA_KEY: &str = "nova";
 const NOVA_NAME: &str = "Nova";
 

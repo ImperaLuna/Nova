@@ -1,10 +1,9 @@
-//! `bluetooth.pairing`: a pairing question while the Bluetooth page isn't
-//! there to ask it (a phone pairing with this computer, or a device you
-//! started pairing before closing quick settings). A card on the overlay
-//! layer under the right pill of the screen that had focus when the
-//! question came, like the notifications' pop-ups, taking no space, and
-//! the keyboard only when clicked (a PIN to type). It goes once the
-//! question is answered or over. `PairingPopup.qml` in today's shell.
+//! `bluetooth.pairing`: a pairing question while the Bluetooth page isn't there
+//! to ask it (a phone pairing with this computer, or a device you started
+//! pairing before closing quick settings). A card on the overlay layer under
+//! the right pill of the screen that had focus when the question came, like the
+//! notifications' pop-ups, taking no space, and the keyboard only when clicked
+//! (a PIN to type). It goes once the question is answered or over.
 //!
 //! Each screen has a window of its own, opened once when the overlay
 //! starts (opening one stalls every window's frames) and only as big as

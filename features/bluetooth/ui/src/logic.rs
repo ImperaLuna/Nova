@@ -1,7 +1,6 @@
-//! What `ui/quick_settings/bluetooth.js` worked out, with no GPUI drawing
-//! in it: a device's icon and section, what a click does on it, what its
-//! row says while novad works on it, and what a pairing question asks,
-//! shows and takes.
+//! What the Bluetooth views work out, with no GPUI drawing in it: a device's
+//! icon and section, what a click does on it, what its row says while novad
+//! works on it, and what a pairing question asks, shows and takes.
 
 use nova_bluetooth_api::{BluetoothDevice, BluetoothKind, BluetoothStatus, PairingAsk};
 use nova_look::Glyph;

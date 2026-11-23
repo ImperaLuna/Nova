@@ -1,7 +1,7 @@
 //! A host's views, kept across changes of its slots: when the features
 //! change, a view whose slot stays is the same view as before (with its
 //! state, like an open panel), a new slot's view is built, and a view
-//! whose slot left is dropped. `slots.js`'s `sync` in today's shell.
+//! whose slot left is dropped.
 
 use gpui::SharedString;
 

@@ -2,7 +2,7 @@
 //! (a bluetooth event's `pairing`) shows under the device's row on the
 //! Bluetooth page, and on the pop-up while the page isn't open: what it
 //! asks, the code to compare or type there, or a field for a PIN, and the
-//! buttons. `PairingPrompt.qml` and the page's `Card` in today's shell.
+//! buttons.
 //!
 //! The PIN field is its owner's (the page keeps what was typed while rows
 //! move), and so is giving it the focus.

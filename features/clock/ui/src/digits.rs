@@ -1,6 +1,6 @@
-//! The time's characters and how each one rolls: a digit that changed rolls
-//! its old self up and out and the new one in from below, on the panel
-//! curve; one that stayed doesn't move. `RollingDigit` in today's shell.
+//! The time's characters and how each one rolls: a digit that changed rolls its
+//! old self up and out and the new one in from below, on the panel curve; one
+//! that stayed doesn't move.
 
 use nova_look::motion::Eased;
 use std::time::Instant;

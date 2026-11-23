@@ -1,11 +1,9 @@
 //! Quick settings' notifications (`notifications.list`): a heading with how
-//! many there are, Clear all, the do not disturb bell and the settings
-//! gear; then the notifications grouped by app, the app with the newest
-//! first. An app with two or more is a stack (its newest, with the edges of
-//! the rest under it and "+N"), which a click opens in place, with Show
-//! less and Clear. With none, "All caught up".
-//! `ui/quick_settings/NotificationList.qml` and `ui/notifications/
-//! NotificationRow.qml` in today's shell.
+//! many there are, Clear all, the do not disturb bell and the settings gear;
+//! then the notifications grouped by app, the app with the newest first. An app
+//! with two or more is a stack (its newest, with the edges of the rest under it
+//! and "+N"), which a click opens in place, with Show less and Clear. With
+//! none, "All caught up".
 //!
 //! Quick settings draws it (port 17 onwards); until then `nova-ui --demo`
 //! shows it in a panel of its own.

@@ -1,8 +1,7 @@
-//! What the wallpaper feature draws, with GPUI: the stage's `wallpaper`
-//! panel (`stage.panels` slot `wallpaper.carousel` of
-//! `features/wallpaper/feature.toml`), the carousel over the whole screen
-//! that picks an image from the wallpaper folder. `ui/wallpaper` in
-//! today's shell, which stays the spec until it is removed.
+//! What the wallpaper feature draws, with GPUI: the stage's `wallpaper` panel
+//! (`stage.panels` slot `wallpaper.carousel` of
+//! `features/wallpaper/feature.toml`), the carousel over the whole screen that
+//! picks an image from the wallpaper folder.
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `carousel`: the panel's view, one per screen: its state, its keys,

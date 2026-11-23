@@ -2,8 +2,7 @@
 //! waves, crossed out while muted, struck through with no output,
 //! headphones with solid cups, the Bluetooth rune or a monitor (HDMI or
 //! DisplayPort audio). Quick settings' sound slider draws it, and the
-//! volume capsule will. `ui/volume/VolumeIcon.qml` and `volume.js`'s
-//! `icon` in today's shell.
+//! volume capsule will.
 
 use crate::{Glyph, Icon};
 

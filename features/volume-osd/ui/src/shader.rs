@@ -90,10 +90,9 @@ fn params(look: &Look, motion: &LiquidMotion, colors: &Colors, scale: f32) -> [f
     params
 }
 
-/// A color as Qt Quick hands one to a shader: premultiplied by its alpha.
-/// The shader premultiplies again (`pm`), as it did in today's shell, so a
-/// see-through color (the glass, the muted liquid) comes out as dark as it
-/// does there.
+/// A color premultiplied by its alpha. The shader premultiplies again
+/// (`pm`), so a see-through color (the glass, the muted liquid) comes out
+/// darker, as the capsule's look was tuned.
 fn rgba(color: Hsla) -> [f32; 4] {
     let Rgba { r, g, b, a } = Rgba::from(color);
     [r * a, g * a, b * a, a]

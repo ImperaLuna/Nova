@@ -1,6 +1,5 @@
 //! One screen's power menu: what it asks novad, when it runs an action and
-//! how tall it is. `ui/power/PowerMenu.qml` and `service/PowerService.qml`
-//! in today's shell; `crate::draw` draws it.
+//! how tall it is; `crate::draw` draws it.
 //!
 //! Each time it opens it starts on Lock and asks novad what can run now
 //! and when the system booted, and while open it counts the uptime's

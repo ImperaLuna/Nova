@@ -1,11 +1,10 @@
 //! The bar stepping aside for a fullscreen window, on one screen: while the
-//! workspace it shows has a window over the whole screen, the pills slide
-//! up out of sight, then the bar's room is given back, so the windows
-//! beside the fullscreen one get the full height. When that ends the room
-//! comes back first, then the pills, so they never land on a window.
-//! Meanwhile the pointer touching the top edge brings the pills back over
-//! the window (they stay a moment after it leaves), and they stay while a
-//! panel is open on the screen. `Bar.qml` in today's shell.
+//! workspace it shows has a window over the whole screen, the pills slide up
+//! out of sight, then the bar's room is given back, so the windows beside the
+//! fullscreen one get the full height. When that ends the room comes back
+//! first, then the pills, so they never land on a window. Meanwhile the pointer
+//! touching the top edge brings the pills back over the window (they stay a
+//! moment after it leaves), and they stay while a panel is open on the screen.
 //!
 //! Plain state over time, tested alone: the stage tells it what happened
 //! and when, asks it where the pills are, and wakes it at

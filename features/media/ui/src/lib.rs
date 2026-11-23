@@ -1,14 +1,13 @@
-//! What the media feature draws, with GPUI: the now-playing pill in the
-//! bar's left row (`bar.left` slot `media.pill` of
-//! `features/media/feature.toml`) and the panel it grows into. `ui/media`
-//! in today's shell, which stays the spec until it is removed.
+//! What the media feature draws, with GPUI: the now-playing pill in the bar's
+//! left row (`bar.left` slot `media.pill` of `features/media/feature.toml`) and
+//! the panel it grows into.
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `model`: one screen's shared state: novad's players, the pill being
 //!   out, the panel open, the timers, and what it asks novad.
 //! - `pill`, `panel`: the two views, which only draw.
 //! - `art`: the app's icon and the cover, or a music note.
-//! - `logic`: what `media.js` worked out (positions, times, the chips, the
+//! - `logic`: what the views work out (positions, times, the chips, the
 //!   title's scroll and fade), tested alone.
 //! - `equalizer`: the equalizer's heights easing between steps, and the
 //!   smooth outline through them, tested alone.

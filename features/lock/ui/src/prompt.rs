@@ -1,7 +1,6 @@
 //! What the lock screen's prompt works out without drawing: which key does
-//! what, the characters typed so far, how many dots fit, where a shake has
-//! the field, and what a failed check says. `Authenticator.qml` and
-//! `LockPrompt.qml` in today's shell.
+//! what, the characters typed so far, how many dots fit, where a shake has the
+//! field, and what a failed check says.
 
 use crate::tokens::{DOT_GAP, DOT_SIZE, FIELD_WIDTH, SHAKE, SHAKE_SWINGS};
 use gpui::Pixels;
@@ -147,7 +146,7 @@ pub fn dots(typed: usize) -> usize {
 }
 
 /// How far along something that started at `since` and takes `lasting` is
-/// at `now`, from 0 to 1, at an even pace (a QML animation's default).
+/// at `now`, from 0 to 1, at an even pace.
 pub fn progress(since: Instant, lasting: Duration, now: Instant) -> f32 {
     if lasting.is_zero() {
         return 1.0;

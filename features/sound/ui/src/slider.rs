@@ -1,5 +1,5 @@
 //! `sound.slider`: the volume of the output in use, in quick settings; its
-//! arrow opens the Sound page. `SoundSliderSlot.qml` in today's shell.
+//! arrow opens the Sound page.
 
 use crate::logic::{self, output_kind};
 use crate::{PAGE, QUICK_SETTINGS};

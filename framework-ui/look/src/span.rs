@@ -1,8 +1,7 @@
-//! Spans of time as people read them, for everything that shows one (the
-//! uptime in quick settings and the power menu, the time left on an AI
-//! usage limit): "3d 2h", "2h 14m", "45m". `ui/text/duration.js` in today's
-//! shell. Callers round to whole minutes their own way (a countdown up, an
-//! uptime down).
+//! Spans of time as people read them, for everything that shows one (the uptime
+//! in quick settings and the power menu, the time left on an AI usage limit):
+//! "3d 2h", "2h 14m", "45m". Callers round to whole minutes their own way (a
+//! countdown up, an uptime down).
 
 const MINUTE_SECONDS: i64 = 60;
 const HOUR_MINUTES: i64 = 60;

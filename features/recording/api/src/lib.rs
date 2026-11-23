@@ -72,7 +72,7 @@ impl Published for Event {
 }
 
 /// A rectangle in the compositor's layout, in logical pixels: where
-/// outputs sit side by side (`screen.x` and `screen.y` in Quickshell).
+/// outputs sit side by side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LayoutRect {

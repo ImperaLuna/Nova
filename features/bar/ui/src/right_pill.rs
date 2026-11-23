@@ -1,8 +1,8 @@
-//! The right pill's frame (view `right-pill` in `bar.right`), ported from
-//! `ui/bar/RightPill.qml`: the tray of `right-pill.tray` while some app
-//! sits in it, a divider, then the buttons of `right-pill.buttons` (quick
-//! settings, power) left to right by their slot order, a button's inset
-//! from the pill's ends. The stage leaves it out while it has neither.
+//! The right pill's frame (view `right-pill` in `bar.right`): the tray of
+//! `right-pill.tray` while some app sits in it, a divider, then the buttons of
+//! `right-pill.buttons` (quick settings, power) left to right by their slot
+//! order, a button's inset from the pill's ends. The stage leaves it out while
+//! it has neither.
 
 use gpui::{App, AppContext, Context, IntoElement, ParentElement, Render, Styled, Subscription, Window, div};
 use nova_look::Theme;

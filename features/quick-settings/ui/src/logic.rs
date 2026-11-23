@@ -1,7 +1,6 @@
-//! What `quick_settings.js` and the drawer's QML worked out, with no GPUI
-//! drawing in it: the greeting, which logo, the button's badge,
-//! when each section shows as the drawer opens, and where a page sits as
-//! pages swap.
+//! What the drawer works out, with no GPUI drawing in it: the greeting, which
+//! logo, the button's badge, when each section shows as the drawer opens, and
+//! where a page sits as pages swap.
 
 use crate::tokens::{BADGE_MAX, DURATION_PAGE, PAGE_SLIDE, REVEAL_FIRST, REVEAL_RISE, REVEAL_STAGGER};
 use gpui::{Pixels, px};
@@ -84,7 +83,7 @@ pub fn badge(unread: usize, do_not_disturb: bool, open: bool) -> Option<Badge> {
 
 /// How far the `order`th section of the first page has come in (0 to 1)
 /// `since` the drawer started to open: it waits its turn, a share of the
-/// morph, then eases in over a morph's time (`Reveal.qml`).
+/// morph, then eases in over a morph's time.
 pub fn section_shown(order: usize, since: Duration) -> f32 {
     let delay = DURATION_PANEL.mul_f32(REVEAL_FIRST + REVEAL_STAGGER * order as f32);
     let along = since.saturating_sub(delay).as_secs_f32() / DURATION_PANEL.as_secs_f32();

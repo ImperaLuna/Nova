@@ -1,7 +1,6 @@
-//! The lock: it asks the compositor for the session lock when novad says
-//! so, keeps a lock surface on every screen while it holds, takes the keys
-//! typed on any of them, checks the password and unlocks. `LockScreen.qml`,
-//! `Authenticator.qml` and `LockService.qml` in today's shell.
+//! The lock: it asks the compositor for the session lock when novad says so,
+//! keeps a lock surface on every screen while it holds, takes the keys typed on
+//! any of them, checks the password and unlocks.
 //!
 //! The password typed so far lives here, shared by every screen, so
 //! whichever surface the compositor sends the keys to types into it. Each
@@ -30,7 +29,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-/// Where the user's name comes from, as in today's shell.
+/// Where the user's name comes from.
 const USER_VARS: [&str; 2] = ["USER", "LOGNAME"];
 /// PAM gets this long to answer; a check that hangs must not lock the user
 /// out with a spinner.

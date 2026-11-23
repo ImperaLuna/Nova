@@ -1,5 +1,5 @@
-//! What the power menu's clicks and keys pick, apart from drawing it, with
-//! no GPUI in it. `ui/power/PowerChoice.qml` in today's shell.
+//! What the power menu's clicks and keys pick, apart from drawing it, with no
+//! GPUI in it.
 //!
 //! One row is selected at a time; it follows the pointer and the arrow
 //! keys and starts on Lock, the harmless one. Lock and suspend run at once.

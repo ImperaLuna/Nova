@@ -22,8 +22,7 @@ pub const STRETCH_SPEED: f32 = 6.0;
 pub const OVERSHOOT: f32 = 0.08;
 /// How long it stays out after the last change.
 pub const HOLD: Duration = Duration::from_millis(1500);
-/// How far a press moves before it's a drag, not a click: Qt's
-/// `startDragDistance`, which today's shell takes from the platform.
+/// How far a press moves before it's a drag, not a click.
 pub const DRAG_DISTANCE: Pixels = px(10.0);
 /// Its window while nothing is out: as small as the compositor takes.
 pub const RESTING: Pixels = px(1.0);

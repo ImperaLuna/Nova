@@ -1,6 +1,5 @@
-//! A card turned about its upright middle line and seen in perspective, as
-//! Qt Quick draws today's cards (`Rotation` about the y axis in
-//! `WallpaperCarousel.qml`): the side turned away gets smaller, the side
+//! A card turned about its upright middle line and seen in perspective:
+//! the side turned away gets smaller, the side
 //! turned to you bigger. Only numbers here: where a point of the card
 //! lands, which point of the card is under a point of the screen, and the
 //! box the turned card fills. `card.wgsl` draws it with the same sums.

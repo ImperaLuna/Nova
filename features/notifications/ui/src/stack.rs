@@ -1,14 +1,13 @@
-//! The pop-ups' stack without drawing, so it is tested alone: newest on
-//! top, each in a slot of its own, at most [`SHOWN`] at once; the rest wait
-//! under a "+N" chip and come up as room frees. A new one grows out of the
-//! quick settings button and, when its time runs out, folds back into it;
-//! one that's clicked, dismissed or closed elsewhere slides away. A new one
-//! waits, taking no room, until whoever draws the stack opens it
-//! ([`Stack::open_arrivals`]): the window grows first, so no motion starts
-//! with a resize. Several opened at once take their slots in one move, then
-//! open into them top to bottom, [`STAGGER`] apart. The same notification
-//! again (progress) updates its pop-up.
-//! `ui/notifications/NotificationStack.qml` in today's shell.
+//! The pop-ups' stack without drawing, so it is tested alone: newest on top,
+//! each in a slot of its own, at most [`SHOWN`] at once; the rest wait under a
+//! "+N" chip and come up as room frees. A new one grows out of the quick
+//! settings button and, when its time runs out, folds back into it; one that's
+//! clicked, dismissed or closed elsewhere slides away. A new one waits, taking
+//! no room, until whoever draws the stack opens it ([`Stack::open_arrivals`]):
+//! the window grows first, so no motion starts with a resize. Several opened at
+//! once take their slots in one move, then open into them top to bottom,
+//! [`STAGGER`] apart. The same notification again (progress) updates its
+//! pop-up.
 
 use crate::logic;
 use crate::tokens::{SHOWN, STAGGER, TIMEOUT};

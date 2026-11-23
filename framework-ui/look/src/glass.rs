@@ -39,7 +39,7 @@ use gpui::{
 };
 
 const SHADOW_SHADER: &str = include_str!("glass_shadow.wgsl");
-/// A blur of radius r, as CSS and QML count it, is a Gaussian of sigma r/2.
+/// A blur of radius r, as CSS counts it, is a Gaussian of sigma r/2.
 const SIGMA_PER_BLUR_RADIUS: f32 = 0.5;
 /// A gradient that runs left to right, in CSS degrees.
 const TO_THE_RIGHT: f32 = 90.0;

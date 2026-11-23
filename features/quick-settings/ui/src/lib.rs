@@ -1,9 +1,7 @@
 //! What quick settings draws, with GPUI: its button on the right pill
-//! (`right-pill.buttons` slot `quick-settings.button`) and the drawer it
-//! opens against the screen's right edge (`stage.panels` slot
-//! `quick-settings.panel` of `features/quick-settings/feature.toml`).
-//! `ui/quick_settings` in today's shell, which stays the spec until it is
-//! removed.
+//! (`right-pill.buttons` slot `quick-settings.button`) and the drawer it opens
+//! against the screen's right edge (`stage.panels` slot `quick-settings.panel`
+//! of `features/quick-settings/feature.toml`).
 //!
 //! The drawer draws its header and hosts what other features put in it,
 //! by their slots: `quick-settings.tiles`, `.sliders`, `.cards`, `.fill`,
@@ -18,7 +16,7 @@
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `button`: the button and its badge.
 //! - `drawer`: one screen's drawer, its hosts and motions; `draw` draws it.
-//! - `logic`: what `quick_settings.js` worked out, tested alone.
+//! - `logic`: what the drawer works out, tested alone.
 //! - `tokens`: the feature's own sizes.
 
 mod button;

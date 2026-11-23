@@ -1,8 +1,7 @@
 //! What the power menu draws, with GPUI: its button on the right pill
 //! (`right-pill.buttons` slot `power.button`) and the menu it opens, a tab
 //! against the right screen edge, halfway down (`stage.panels` slot
-//! `power.menu` of `features/power/feature.toml`). `ui/power` in today's
-//! shell, which stays the spec until it is removed.
+//! `power.menu` of `features/power/feature.toml`).
 //!
 //! The menu asks novad what it can do each time it opens (`power_options`)
 //! and has it run an action (`power`): lock (the lock screen, as `nova
@@ -14,8 +13,7 @@
 //! - `button`: the button on the right pill.
 //! - `menu`: one screen's menu, what it asks novad and when; `draw` draws
 //!   it.
-//! - `choice`: what its clicks and keys pick (`PowerChoice.qml`), tested
-//!   alone.
+//! - `choice`: what its clicks and keys pick, tested alone.
 //! - `tokens`: the feature's own sizes.
 
 mod button;

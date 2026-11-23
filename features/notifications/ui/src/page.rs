@@ -1,6 +1,5 @@
-//! The notifications' settings page (`notifications.page`): do not
-//! disturb, and a switch per app that has sent one (off mutes it).
-//! `ui/quick_settings/NotificationSettingsPage.qml` in today's shell.
+//! The notifications' settings page (`notifications.page`): do not disturb, and
+//! a switch per app that has sent one (off mutes it).
 //!
 //! Quick settings draws it; the list's gear opens it and its back button
 //! goes home (`Stage::show_page`).

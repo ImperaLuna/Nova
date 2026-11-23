@@ -1,9 +1,8 @@
-//! The motion behind the capsule, with no GPUI in it (`LiquidMotion.qml`
-//! in today's shell): springs for how far it's out and for the liquid's
-//! level, and the liquid's reaction to both. Sliding sideways tilts the
-//! surface (it lags the glass); a level change makes it slosh and sends
-//! more specks up. Whoever draws it steps it once a frame, and only while
-//! it is shown, so a hidden one costs nothing.
+//! The motion behind the capsule, with no GPUI in it: springs for how far it's
+//! out and for the liquid's level, and the liquid's reaction to both. Sliding
+//! sideways tilts the surface (it lags the glass); a level change makes it
+//! slosh and sends more specks up. Whoever draws it steps it once a frame, and
+//! only while it is shown, so a hidden one costs nothing.
 
 use crate::tokens::{
     FIZZ, FIZZ_PACE, FRAME_MAX, GONE, IDLE_WAVE, LEVEL, SLIDE, SLOSH_DECAY, SLOSH_GAIN, SLOSH_MAX, TILT, TILT_GAIN,

@@ -1,6 +1,5 @@
-//! One resource ring: a track, an arc from twelve o'clock filled to its
-//! value, the reading inside and its name under it. `Ring.qml` in today's
-//! shell.
+//! One resource ring: a track, an arc from twelve o'clock filled to its value,
+//! the reading inside and its name under it.
 
 use crate::tokens::{RING_SIZE, RING_STROKE};
 use gpui::{

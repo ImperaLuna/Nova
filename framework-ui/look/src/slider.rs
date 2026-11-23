@@ -1,9 +1,8 @@
-//! A thick slider: a round icon button beside the track (a click on it
-//! mutes), the track filled only up to the value with a label and the
-//! percent on it, and an arrow button after it that opens a page. Drag or
-//! click the track to set it. Quick settings' volume and mic sliders and
-//! the Sound page's app rows. `ui/quick_settings/QsSlider.qml` in today's
-//! shell.
+//! A thick slider: a round icon button beside the track (a click on it mutes),
+//! the track filled only up to the value with a label and the percent on it,
+//! and an arrow button after it that opens a page. Drag or click the track to
+//! set it. Quick settings' volume and mic sliders and the Sound page's app
+//! rows.
 //!
 //! It keeps one thing of its own, by its id: while the pointer holds it,
 //! the value under the pointer. The value set comes back from novad a

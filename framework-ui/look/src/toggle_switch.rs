@@ -1,6 +1,6 @@
 //! An on/off switch: the accent while on, a quiet track while off, its knob
 //! across at the side it is on. It only shows; the row it sits in takes the
-//! click. `ui/notifications/ToggleSwitch.qml` in today's shell.
+//! click.
 //!
 //! The knob slides when it flips: its owner keeps where it is
 //! ([`crate::motion::Eased`] over `DURATION_COLOR`) and passes it with

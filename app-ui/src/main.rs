@@ -1,6 +1,5 @@
-//! `nova-ui`: the program that draws Nova's UI with GPUI. novad runs it in
-//! place of Quickshell when `features.toml` says `ui = "gpui"`, hands it
-//! the socket (`NOVA_SOCKET`) and restarts it when it exits
+//! `nova-ui`: the program that draws Nova's UI with GPUI. novad runs it,
+//! hands it the socket (`NOVA_SOCKET`) and restarts it when it exits
 //! (`app/src/supervisor.rs`).
 //!
 //! It starts GPUI with the look kit's icons as its assets, connects to

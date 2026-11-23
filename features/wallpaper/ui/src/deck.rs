@@ -1,7 +1,6 @@
 //! The carousel's deck without any drawing: which image is picked, where
 //! every card sits around it, what each screen would show, and the
-//! `set_wallpaper` calls that keep the picks. Today's `carousel.js` and the
-//! state `WallpaperCarousel.qml` keeps, tested alone.
+//! `set_wallpaper` calls that keep the picks, tested alone.
 //!
 //! The deck loops: past the last image comes the first again. Its position
 //! is a number that runs on without wrapping (each step adds or takes one),

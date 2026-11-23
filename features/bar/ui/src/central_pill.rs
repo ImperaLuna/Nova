@@ -1,5 +1,4 @@
-//! The central pill (view `central-pill` in `bar.center`), ported from
-//! `ui/central_pill/CentralPill.qml` and `CentralPillSlot.qml`.
+//! The central pill (view `central-pill` in `bar.center`).
 //!
 //! Left to right: the search button while the launcher is ready, then the
 //! parts of `central-pill.parts` in slot order (the workspace numbers, the

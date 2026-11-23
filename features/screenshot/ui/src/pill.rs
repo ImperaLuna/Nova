@@ -1,8 +1,7 @@
 //! The recording pill (`recording.pill`, host `bar.right`), left of the
 //! right pill while a recording runs: a red dot and how long it has
 //! recorded. The pointer on it shows pause (when the recorder can) and
-//! stop; a click anywhere else on it stops too. `ui/capture/RecordingPill.qml`
-//! and `RecordingPillSlot.qml` in today's shell; the stage draws its glass.
+//! stop; a click anywhere else on it stops too. The stage draws its glass.
 
 use crate::pick::clock;
 use crate::tokens::RECORD_DOT;

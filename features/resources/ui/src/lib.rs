@@ -1,9 +1,7 @@
-//! What the resources feature draws, with GPUI, in quick settings: the card
-//! of rings at the drawer's foot (`quick-settings.foot` slot
-//! `resources.card` of `features/resources/feature.toml`) and the page it
-//! opens (`quick-settings.pages` slot `resources.page`).
-//! `ResourcesCard.qml` and `ResourcesPage.qml` in `ui/quick_settings` in
-//! today's shell, which stay the spec until it is removed.
+//! What the resources feature draws, with GPUI, in quick settings: the card of
+//! rings at the drawer's foot (`quick-settings.foot` slot `resources.card` of
+//! `features/resources/feature.toml`) and the page it opens
+//! (`quick-settings.pages` slot `resources.page`).
 //!
 //! novad samples the machine only while some connection watches
 //! (`watch_resources`): this program watches while any screen's drawer
@@ -12,7 +10,7 @@
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `card` (with `ring`), `page` (with `graph`): the two views.
-//! - `logic`: what the QML and its `.js` worked out, tested alone.
+//! - `logic`: what the card and page work out, tested alone.
 //! - `tokens`: the feature's own sizes.
 
 mod card;

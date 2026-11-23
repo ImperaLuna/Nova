@@ -1,8 +1,7 @@
 //! The folder's images as the carousel draws them: each decoded off the
 //! main thread at the size it is drawn, never the file's, and cut to fill
 //! that box as awww fills a screen. A card costs a picture the size of a
-//! card, a preview one the size of the screen. Today's QML does the same
-//! with `Image.sourceSize` and `PreserveAspectCrop`.
+//! card, a preview one the size of the screen.
 //!
 //! [`Pictures`] keeps the few it was last asked for and lets the others go,
 //! from the GPU's atlas too, so stepping through a big folder holds only

@@ -1,11 +1,9 @@
 //! What the Bluetooth feature draws, with GPUI: the Bluetooth tile in quick
 //! settings (`quick-settings.tiles` slot `bluetooth.tile` of
 //! `features/bluetooth/feature.toml`), the Bluetooth page it opens
-//! (`quick-settings.pages` slot `bluetooth.page`), and the pop-up that asks
-//! a pairing question while the page isn't open (`shell.overlays` slot
-//! `bluetooth.pairing`). `BluetoothTile.qml`, `BluetoothPage.qml`,
-//! `PairingPrompt.qml` and `PairingPopup.qml` in `ui/quick_settings` in
-//! today's shell, which stay the spec until it is removed.
+//! (`quick-settings.pages` slot `bluetooth.page`), and the pop-up that asks a
+//! pairing question while the page isn't open (`shell.overlays` slot
+//! `bluetooth.pairing`).
 //!
 //! All of them follow novad's `bluetooth` topic and act with the Bluetooth
 //! feature's commands; novad does the work (one connect pairs, trusts and
@@ -15,7 +13,7 @@
 //! - `tile`, `page` (drawn by `draw`) and `pairing`: the views.
 //! - `prompt`: a pairing question and the cards under a row, which the
 //!   page and the pop-up share.
-//! - `logic`: what `bluetooth.js` worked out, tested alone.
+//! - `logic`: what the views work out, tested alone.
 //! - `tokens`: their own sizes.
 
 mod draw;

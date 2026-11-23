@@ -1,5 +1,5 @@
 //! The now-playing pill's content: the app's icon, the title, the artist
-//! and the equalizer (`NowPlaying.qml`'s face). The stage draws the glass
+//! and the equalizer. The stage draws the glass
 //! around it and opens the panel on a click.
 //!
 //! It slides out from nothing and back (its width eases with `out`), and

@@ -1,7 +1,6 @@
 //! The tools' own marks, filled in one color: the brands' 24x24 glyphs from
 //! LobeHub's icon set (@lobehub/icons-static-svg, MIT), Anthropic's for
-//! Claude and Codex's own, as `ui/ai_usage/ProviderLogo.qml` draws them
-//! (a test holds the paths equal).
+//! Claude and Codex's own.
 //!
 //! The look kit's icons are line drawings; these are solid shapes with
 //! holes (even-odd), so each is a small SVG picture of its own, made in the

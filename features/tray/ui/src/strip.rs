@@ -1,5 +1,5 @@
-//! The tray in the right pill (view `tray.strip`, host `right-pill.tray`),
-//! ported from `ui/bar/RightPill.qml`: a chevron while some app sits in the
+//! The tray in the right pill (view `tray.strip`, host `right-pill.tray`):
+//! a chevron while some app sits in the
 //! tray, which opens it in place. The pill grows to the left and the apps'
 //! icons pop in, at most `TRAY_VISIBLE` of them, the rest a wheel scroll
 //! away with a "+N" on each side for those out of sight.
@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-/// The panel the open tray is, as today's shell calls it.
+/// The panel the open tray is.
 pub const TRAY: &str = "tray";
 
 /// A button's top in the bar, so it sits in the middle.

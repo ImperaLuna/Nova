@@ -1,6 +1,5 @@
-//! How tall the panel is for what it shows: `contentHeight` in
-//! `ui/ai_usage/AiUsage.qml`, from the same tokens. No drawing; the one
-//! thing only drawing knows, how many lines a hint wraps to, comes in.
+//! How tall the panel is for what it shows, from its tokens. No drawing; the
+//! one thing only drawing knows, how many lines a hint wraps to, comes in.
 
 use crate::usage::Summary;
 use gpui::{Pixels, px};
@@ -18,8 +17,8 @@ pub fn body_line() -> Pixels {
     FONT_SIZE * LINE_HEIGHT
 }
 
-/// Things stacked `GAP` apart, as a QML Column lays them: empty ones take
-/// no room and no gap.
+/// Things stacked `GAP` apart, as a column lays them: empty ones take no
+/// room and no gap.
 fn stacked(heights: &[Pixels], gap: Pixels) -> Pixels {
     let shown: Vec<Pixels> = heights.iter().copied().filter(|height| *height > px(0.0)).collect();
     let gaps = gap * shown.len().saturating_sub(1) as f32;

@@ -1,15 +1,14 @@
-//! The window beside a screen's stage for the panels placed off the top
-//! strip (`Placement`): a drawer or a tab against the right edge, a panel
-//! over the whole screen. On the strip they would make the stage's window as tall
-//! as the screen for as long as their feature is on. `PanelSurface.qml` in
-//! today's shell.
+//! The window beside a screen's stage for the panels placed off the top strip
+//! (`Placement`): a drawer or a tab against the right edge, a panel over the
+//! whole screen. On the strip they would make the stage's window as tall as the
+//! screen for as long as their feature is on.
 //!
 //! It opens with the stage, just before the stage's own window, and stays
 //! as long as the stage: a new window holds every window's frames up for
 //! a moment, which must never be the start of a panel's morph, and
 //! compositors stack windows of one layer by when they opened (niri does),
-//! so the strip opened after it stays over it, as today's shell's stage
-//! stays over its PanelSurfaces: the bar over the wallpaper carousel.
+//! so the strip opened after it stays over it: the bar over the wallpaper
+//! carousel.
 //! While none of its panels is out it is parked, one pixel in the screen's top right
 //! corner with nothing to blur and no clicks to take, and draws no frames.
 //! When one opens it grows to what that panel draws (and its shadow), and

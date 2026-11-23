@@ -1,12 +1,10 @@
 //! The card a saved screenshot or recording lands in, in the bottom right
-//! corner of the screen that had focus: the shot (or the recording's
-//! length), that it was saved, where it went, and Open, Folder and Delete.
-//! A recording that didn't start, or ended without a frame, shows here
-//! too: why, with Try again and Open log, for longer. A line along the
-//! bottom drains over its time and the card leaves when it runs out; the
-//! pointer on the card holds it. It slides in from the edge, and out
-//! before it goes.
-//! `ui/capture/ShotCardWindow.qml` and `ShotCard.qml` in today's shell.
+//! corner of the screen that had focus: the shot (or the recording's length),
+//! that it was saved, where it went, and Open, Folder and Delete. A recording
+//! that didn't start, or ended without a frame, shows here too: why, with Try
+//! again and Open log, for longer. A line along the bottom drains over its time
+//! and the card leaves when it runs out; the pointer on the card holds it. It
+//! slides in from the edge, and out before it goes.
 //!
 //! Its own window on each screen, on the overlay layer like the volume
 //! capsule, so it shows over fullscreen windows too: one pixel big while

@@ -1,6 +1,5 @@
 //! A card's small uppercase heading, like "Resources" or "Nearby".
-//! `ui/quick_settings/CardTitle.qml` in today's shell, without its wider
-//! letter spacing: GPUI's text has none.
+//! Drawn without wider letter spacing: GPUI's text has none.
 
 use crate::Theme;
 use crate::tokens::FONT_SIZE_SMALL;

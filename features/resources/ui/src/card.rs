@@ -1,8 +1,7 @@
-//! `resources.card`: CPU, memory, GPU and the CPU's temperature as rings at
-//! the drawer's foot, a dash for a reading novad doesn't have. A click
-//! opens the resources page. The rings fill once the drawer has grown most
-//! of the way, and empty with it as it closes. `ResourcesCard.qml` in
-//! today's shell.
+//! `resources.card`: CPU, memory, GPU and the CPU's temperature as rings at the
+//! drawer's foot, a dash for a reading novad doesn't have. A click opens the
+//! resources page. The rings fill once the drawer has grown most of the way,
+//! and empty with it as it closes.
 //!
 //! The card is drawn whenever the drawer is, so it also decides when this
 //! screen watches the machine: while the drawer is open on its first page

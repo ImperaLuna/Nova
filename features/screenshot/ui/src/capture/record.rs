@@ -1,8 +1,7 @@
-//! The recording's side of the capture overlay: the picker in video mode
-//! (`nova record` opens and closes it), the toolbar's sound, the switch to
-//! a screenshot and back, the count before a recording starts, and what is
-//! being recorded. `ui/capture/service/RecordingService.qml` in today's
-//! shell.
+//! The recording's side of the capture overlay: the picker in video mode (`nova
+//! record` opens and closes it), the toolbar's sound, the switch to a
+//! screenshot and back, the count before a recording starts, and what is being
+//! recorded.
 //!
 //! The recording picker is over the live screen. With screenshots on, the
 //! screens are frozen first and the frames held behind it, so the

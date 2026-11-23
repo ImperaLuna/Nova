@@ -32,7 +32,7 @@ impl Family {
         Self(name)
     }
 
-    /// The family asked for, as `Tokens.qml` names it.
+    /// The family asked for, as the tokens name it.
     pub const fn asked(self) -> &'static str {
         self.0
     }
@@ -52,7 +52,7 @@ impl Family {
     }
 }
 
-/// Written as `Tokens.qml` writes the family: the asked name in quotes.
+/// Written as the asked name in quotes.
 impl fmt::Debug for Family {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{:?}", self.0)

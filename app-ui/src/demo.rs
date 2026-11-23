@@ -1,5 +1,5 @@
 //! `--demo`: test pills and panels on the stage, to see it work with no
-//! feature ported, to screenshot beside today's shell, and to count frames
+//! feature on, to screenshot, and to count frames
 //! (`--demo-toggles`, `--frames`). They are no feature's, so they come in
 //! as slots of their own ([`slots`]) instead of from a manifest:
 //!

@@ -9,8 +9,7 @@ use std::time::Duration;
 pub const SCREEN_POLL: Duration = Duration::from_secs(1);
 
 /// A panel that grows out of nothing (its pill isn't on screen) starts this
-/// far above its place and settles down into it as it fades in. The
-/// launcher's `launcherEnterRise` in today's shell.
+/// far above its place and settles down into it as it fades in.
 pub const PANEL_ENTER_RISE: Pixels = px(8.0);
 
 /// A pill's content is gone once its panel has grown this share of the way.
@@ -29,7 +28,8 @@ pub const FRAME_REPORT: Duration = Duration::from_secs(1);
 /// The stage's layer surface, as compositor rules name it.
 pub const STAGE_NAMESPACE: &str = "nova-stage";
 /// The window beside the strip that the panels placed off it are drawn in
-/// (`crate::panel_window`). Today's shell names its panel surfaces the same.
+/// (`crate::panel_window`). niri's rule matches every `nova-` namespace
+/// (packaging/compositor/niri.kdl).
 pub const PANEL_NAMESPACE: &str = "nova-panel";
 /// A layer surface needs some size: that window is this big while none of
 /// its panels is out, and draws nothing.

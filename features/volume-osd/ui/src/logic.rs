@@ -1,4 +1,4 @@
-//! What `volume.js` worked out for the capsule, with no GPUI in it: the
+//! What the capsule works out, with no GPUI in it: the
 //! output it shows, when a change is worth showing, where the capsule is
 //! drawn on each frame, and what a point on it sets the volume to.
 

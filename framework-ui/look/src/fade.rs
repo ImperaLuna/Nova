@@ -1,7 +1,6 @@
-//! Short fades that today's shell writes as a QML `Behavior` with a plain
-//! `ColorAnimation` or `NumberAnimation`: a hover wash, a tile's fill
-//! turning the accent. They run on a straight line over their duration, as
-//! Qt's do by default, from wherever they are when the target changes.
+//! Short fades: a hover wash, a tile's fill turning the accent. They run on
+//! a straight line over their duration, from wherever they are when the
+//! target changes.
 //!
 //! An element that isn't a view of its own ([`crate::Tile`], a row) keeps
 //! them by its id in the window ([`gpui::Window::use_keyed_state`]), so they

@@ -1,12 +1,11 @@
 //! What the peripherals feature draws, with GPUI, in quick settings: the
 //! Devices card (`quick-settings.cards` slot `peripherals.card` of
 //! `features/peripherals/feature.toml`), shown while any wireless device is
-//! connected. `DevicesCard.qml` in `ui/quick_settings` in today's shell,
-//! which stays the spec until it is removed.
+//! connected.
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `card`: the card.
-//! - `logic`: what `devices.js` worked out, tested alone.
+//! - `logic`: what the card works out, tested alone.
 //! - `tokens`: the feature's own sizes.
 
 mod card;

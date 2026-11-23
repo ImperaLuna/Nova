@@ -105,8 +105,7 @@ fn letter(name: &str) -> String {
 }
 
 /// Which of `swatches` swatches an app's letter sits on: the same for the
-/// same id every time, and the one today's shell picks
-/// (`ui/launcher/launcher.js`).
+/// same id every time.
 fn swatch(id: &str, swatches: usize) -> usize {
     // JavaScript's `(hash * 31 + code) | 0` over UTF-16 code units.
     let hash = id.encode_utf16().fold(0i32, |hash, unit| hash.wrapping_mul(31).wrapping_add(i32::from(unit)));
@@ -126,8 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn an_app_keeps_its_swatch_and_it_is_today_s() {
-        // launcher.js: swatch("a") is 2 and swatch("firefox.desktop") is 8, counted from 1.
+    fn an_app_keeps_its_swatch() {
         assert_eq!(swatch("a", 8), 1);
         assert_eq!(swatch("firefox.desktop", 8), 7);
         assert_eq!(swatch("", 8), 0);

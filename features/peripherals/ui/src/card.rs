@@ -1,10 +1,9 @@
-//! `peripherals.card`: the wireless mice, keyboards, headsets and
-//! controllers connected now, each with how it connects and its battery.
-//! novad leaves out whatever isn't connected, and the card is shown only
-//! while it lists one. A device that comes fades in, and a battery that
-//! changes eases to its new level. A few rows, then it scrolls, so many
-//! devices never push the cards below off the drawer. `DevicesCard.qml` in
-//! today's shell.
+//! `peripherals.card`: the wireless mice, keyboards, headsets and controllers
+//! connected now, each with how it connects and its battery. novad leaves out
+//! whatever isn't connected, and the card is shown only while it lists one. A
+//! device that comes fades in, and a battery that changes eases to its new
+//! level. A few rows, then it scrolls, so many devices never push the cards
+//! below off the drawer.
 
 use crate::logic::{self, Tone};
 use crate::tokens::{

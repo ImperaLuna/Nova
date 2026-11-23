@@ -1,6 +1,6 @@
-//! An app's icon, `size` square: the image file novad names once it
-//! loads, else the app's first letter on a swatch picked by its id, so a
-//! missing icon still looks deliberate. Today's `ui/launcher/AppIcon.qml`.
+//! An app's icon, `size` square: the image file novad names once it loads, else
+//! the app's first letter on a swatch picked by its id, so a missing icon still
+//! looks deliberate.
 //!
 //! The launcher's port brings the shared one to nova-look (IMP-399); this
 //! one goes once that lands.

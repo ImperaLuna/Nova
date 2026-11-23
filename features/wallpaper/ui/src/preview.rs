@@ -1,8 +1,7 @@
-//! A picture over the whole screen that fades to the next once that has
-//! loaded, so stepping through images never shows a blank; moving on
-//! before one has loaded loads the newest instead. `PreviewImage.qml`.
-//! The carousel draws one under its deck, and each other screen's preview
-//! window draws one.
+//! A picture over the whole screen that fades to the next once that has loaded,
+//! so stepping through images never shows a blank; moving on before one has
+//! loaded loads the newest instead. The carousel draws one under its deck, and
+//! each other screen's preview window draws one.
 
 use crate::images::{Pictures, Wanted};
 use crate::tokens::DURATION_PREVIEW;

@@ -1,6 +1,5 @@
 //! A round button inside a pill: the right pill's quick settings and power
-//! buttons, and the same buttons where quick settings draws them over the
-//! pill. `ui/bar/PillButton.qml` in today's shell.
+//! buttons, and the same buttons where quick settings draws them over the pill.
 
 use crate::tokens::{DURATION_FAST, ICON_SIZE, PILL_BUTTON_SIZE};
 use crate::{Glyph, Hovered, Icon, Theme, fade_color, keyed};

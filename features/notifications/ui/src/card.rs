@@ -1,10 +1,9 @@
-//! A pop-up's card: who it's from, the app, the summary and body (a low
-//! battery alert's battery and percent instead), progress, and the app's
-//! buttons (the first in the accent). A thin line along the bottom drains
-//! over its time; the pointer on it holds it, and shows ✕. Critical ones
-//! have a rim in the error color. It grows out of the quick settings
-//! button over its top right corner, folds back into it, or slides aside.
-//! `ui/notifications/NotificationCard.qml` in today's shell.
+//! A pop-up's card: who it's from, the app, the summary and body (a low battery
+//! alert's battery and percent instead), progress, and the app's buttons (the
+//! first in the accent). A thin line along the bottom drains over its time; the
+//! pointer on it holds it, and shows ✕. Critical ones have a rim in the error
+//! color. It grows out of the quick settings button over its top right corner,
+//! folds back into it, or slides aside.
 
 use crate::logic::ago;
 use crate::pieces::{battery_amount, meter, who};

@@ -1,5 +1,5 @@
-//! The launcher's logic that draws nothing: what its list shows, where
-//! each row sits and moving the selection. `ui/launcher/launcher.js` in today's shell.
+//! The launcher's logic that draws nothing: what its list shows, where each row
+//! sits and moving the selection.
 
 use crate::tokens::{LABEL_HEIGHT, ROW_GAP, ROW_HEIGHT};
 use nova_app_info::App;

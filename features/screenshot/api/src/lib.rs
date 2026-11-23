@@ -67,7 +67,7 @@ pub enum CaptureMode {
 /// One frozen screen, as `grim` saved it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CaptureFrame {
-    /// The output's connector name (`DP-1`), as Quickshell's `screen.name`.
+    /// The output's connector name (`DP-1`).
     pub output: String,
     /// A PNG in novad's private runtime folder, gone once the picker closes.
     pub path: String,

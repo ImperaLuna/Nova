@@ -1,9 +1,8 @@
-//! A tray app's menu under its icon (panel `tray-menu`), ported from
-//! `ui/tray/TrayMenu.qml` and `TrayMenuList.qml`: the app's icon and name,
-//! the entries its DBusMenu lists one level at a time (separators,
-//! checkboxes, submenus with a way back), and Nova's own "Hide from tray"
-//! (or "Show in tray"). It drops into place beside the open tray, closes
-//! with it, and once an entry ran; a checkbox flips in place.
+//! A tray app's menu under its icon (panel `tray-menu`): the app's icon and
+//! name, the entries its DBusMenu lists one level at a time (separators,
+//! checkboxes, submenus with a way back), and Nova's own "Hide from tray" (or
+//! "Show in tray"). It drops into place beside the open tray, closes with it,
+//! and once an entry ran; a checkbox flips in place.
 //!
 //! novad reads the menu and runs its entries (`tray_menu`,
 //! `run_tray_menu_entry`): the stage owns the glass, the drop in, Esc and
@@ -33,7 +32,7 @@ use nova_tray_api::{Command, Toggle, TrayMenuEntry, TrayMenuLevel};
 use nova_ui_client::Daemon;
 use std::collections::HashMap;
 
-/// The panel's name, as today's shell calls it.
+/// The panel's name.
 pub const MENU: &str = "tray-menu";
 /// Quick settings' drawer, by its name, which a menu drawn over it closes.
 const QUICK_SETTINGS: &str = "quick-settings";

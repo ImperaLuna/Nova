@@ -1,9 +1,8 @@
 //! Quick settings' button on the right pill (`quick-settings.button` in
-//! `right-pill.buttons`), and in the same place on the open drawer: opens
-//! and closes the drawer on its screen, picked while it is open. Its badge
-//! says how many notifications are unread, or shows a grey crossed-out
-//! bell during do not disturb; none while open.
-//! `ui/quick_settings/QuickSettingsButton.qml` in today's shell.
+//! `right-pill.buttons`), and in the same place on the open drawer: opens and
+//! closes the drawer on its screen, picked while it is open. Its badge says how
+//! many notifications are unread, or shows a grey crossed-out bell during do
+//! not disturb; none while open.
 
 use crate::NAME;
 use crate::logic::{Badge, badge};

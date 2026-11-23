@@ -1,8 +1,7 @@
 //! A small button on a card that asks something: quiet, or filled with the
-//! accent for the answer that goes ahead, dimmed while it can't be
-//! pressed. A pairing question's answers, a failure's Try again, a Wi-Fi
-//! password's Connect. `ui/quick_settings/PromptButton.qml` in today's
-//! shell.
+//! accent for the answer that goes ahead, dimmed while it can't be pressed. A
+//! pairing question's answers, a failure's Try again, a Wi-Fi password's
+//! Connect.
 
 use crate::Theme;
 use crate::tokens::{

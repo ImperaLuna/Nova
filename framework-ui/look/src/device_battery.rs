@@ -1,7 +1,6 @@
 //! A device's little battery: a rim with a nub, filled to its level, in the
-//! error color while low and the success color with a bolt while charging.
-//! The Bluetooth page's rows, the Devices card and a low battery alert draw
-//! it. `ui/quick_settings/DeviceBattery.qml` in today's shell.
+//! error color while low and the success color with a bolt while charging. The
+//! Bluetooth page's rows, the Devices card and a low battery alert draw it.
 //!
 //! A new level eases in when its owner passes an eased fill: the battery
 //! itself keeps nothing.
@@ -22,7 +21,7 @@ pub struct DeviceBattery {
     charging: bool,
 }
 
-/// At or under this percent a battery reads as low (`devices.js`).
+/// At or under this percent a battery reads as low.
 pub const LOW_PERCENT: u8 = 15;
 
 impl DeviceBattery {
