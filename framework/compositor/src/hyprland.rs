@@ -18,7 +18,9 @@
 //! one this Hyprland speaks ([`Dialect`]).
 
 use super::Backend;
-use nova_desktop_info::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
+use nova_desktop_info::{
+    Capability, Desktop, FocusedWindow, HYPRLAND_LOCK_RESTORE, Output, Workspace as NovaWorkspace, WorkspaceId,
+};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -66,6 +68,8 @@ const WORKSPACES: &str = "j/workspaces";
 const CLIENTS: &str = "j/clients";
 const ACTIVE_WINDOW: &str = "j/activewindow";
 const DEVICES: &str = "j/devices";
+/// Asks for an option's value; the option's name follows a space.
+const GET_OPTION: &str = "j/getoption";
 
 /// A Lua dispatcher that does nothing: only a Hyprland that speaks Lua
 /// answers it with `ok` (others say "Invalid dispatcher").
@@ -275,6 +279,27 @@ impl Backend for Hyprland {
     fn log_out(&self) -> Result<(), String> {
         self.dispatch(&Action::Exit)
     }
+
+    fn restores_session_lock(&self) -> Result<bool, String> {
+        lock_restore_in(&self.request(&format!("{GET_OPTION} {HYPRLAND_LOCK_RESTORE}"))?)
+    }
+}
+
+/// The lock restore switch, from Hyprland's answer to `j/getoption`: an
+/// `int` on a hyprlang config (0.56 and older), a `bool` on a Lua one (all
+/// of 0.57). Hyprland answers plain text for an option it doesn't have.
+pub(super) fn lock_restore_in(answer: &str) -> Result<bool, String> {
+    #[derive(Deserialize)]
+    struct Switch {
+        int: Option<i64>,
+        #[serde(rename = "bool")]
+        boolean: Option<bool>,
+    }
+    let odd = |problem: &dyn std::fmt::Display| {
+        format!("Hyprland sent an odd answer about {HYPRLAND_LOCK_RESTORE} ({problem})")
+    };
+    let switch: Switch = serde_json::from_str(answer).map_err(|e| odd(&e))?;
+    switch.boolean.or(switch.int.map(|value| value != 0)).ok_or_else(|| odd(&answer.trim()))
 }
 
 #[derive(Debug, Deserialize)]

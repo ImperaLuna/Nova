@@ -18,6 +18,7 @@
 # Allowed outside crates:
 # - gpui
 # - gpui_platform
+# - log
 #
 # Allowed workspace crates:
 # - nova-ai-usage-ui
@@ -61,6 +62,7 @@ publish.workspace = true
 [dependencies]
 gpui.workspace = true
 gpui_platform.workspace = true
+log.workspace = true
 nova-ai-usage-ui.workspace = true
 nova-bar-api.workspace = true
 nova-bar-ui.workspace = true
@@ -119,6 +121,9 @@ gpui = { git = "https://github.com/ImperaLuna/zed", rev = "6fab5ba6d9562f331e9c5
 gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "6fab5ba6d9562f331e9c581696432f52ec260429", version = "0.1.0", features = ["wayland"] }
 # The versions GPUI's own tree already holds.
 futures = "0.3"
+# What GPUI reports its own errors through: nova-ui prints them, so a lost
+# Wayland connection says why in nova.log.
+log = "0.4"
 # Decoding frozen screens (grim's PPM), saved shots (PNG) and wallpapers at
 # the size they are drawn, with the formats GPUI already builds it with.
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "pnm", "webp"] }

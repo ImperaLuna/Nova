@@ -20,9 +20,10 @@
 //!   the UI shows as NovaUI in ps and btop (the Nix package has a launcher).
 //! - niri's blur behind Nova's glass and a rule hiding xembedsniproxy's
 //!   window (`packaging/compositor/niri.kdl`),
-//!   included from the user's niri config; Hyprland's rules
-//!   (`packaging/compositor/hyprland.conf`), sourced from its config.
-//!   Hyprland blurs what Quickshell asks for without a rule.
+//!   included from the user's niri config; Hyprland's rules (the lock
+//!   screen's restore, `packaging/compositor/hyprland.lua` required from a
+//!   Lua config, or `hyprland.conf` sourced from an old one). Hyprland
+//!   blurs what Quickshell asks for without a rule.
 
 use crate::host::{Distro, Host};
 use nova_features::{Gpu, Manifest, Selection};
@@ -42,8 +43,11 @@ const NIRI_RULES: &str = include_str!("../../../../packaging/compositor/niri.kdl
 /// Where the niri rules go, in Nova's config folder.
 const NIRI_RULES_FILE: &str = "niri.kdl";
 const HYPRLAND_RULES: &str = include_str!("../../../../packaging/compositor/hyprland.conf");
-/// Where the Hyprland rules go, in Nova's config folder.
+const HYPRLAND_LUA_RULES: &str = include_str!("../../../../packaging/compositor/hyprland.lua");
+/// Where the Hyprland rules go, in Nova's config folder, and the name of
+/// Hyprland's own config file in its folder, in each of its two formats.
 const HYPRLAND_RULES_FILE: &str = "hyprland.conf";
+const HYPRLAND_LUA_RULES_FILE: &str = "hyprland.lua";
 /// Fedora's Quickshell, until a Fedora release ships it.
 const FEDORA_QUICKSHELL_COPR: &str = "errornointernet/quickshell";
 /// AUR helpers, in the order setup prefers them. They install repo packages
@@ -75,8 +79,9 @@ pub struct Paths {
     pub bin_dir: PathBuf,
     /// niri's config file (`~/.config/niri/config.kdl`), when there is one.
     pub niri_config: Option<PathBuf>,
-    /// Hyprland's config file (`~/.config/hypr/hyprland.conf`), when there
-    /// is one.
+    /// Hyprland's config file, when there is one: `~/.config/hypr/hyprland.lua`
+    /// (the only one Hyprland 0.57 reads, and the one 0.56 prefers), else
+    /// `hyprland.conf`.
     pub hyprland_config: Option<PathBuf>,
     /// The running nova binary, which the unit starts.
     pub nova: PathBuf,
@@ -88,8 +93,10 @@ impl Paths {
         let config_home = nova_paths::config_home().ok_or("HOME isn't set")?;
         let niri_config = nova_paths::path_var("NIRI_CONFIG").unwrap_or_else(|| config_home.join("niri/config.kdl"));
         let niri_config = niri_config.is_file().then_some(niri_config);
-        let hyprland_config = config_home.join("hypr/hyprland.conf");
-        let hyprland_config = hyprland_config.is_file().then_some(hyprland_config);
+        let hyprland_config = [HYPRLAND_LUA_RULES_FILE, HYPRLAND_RULES_FILE]
+            .map(|name| config_home.join("hypr").join(name))
+            .into_iter()
+            .find(|config| config.is_file());
         Ok(Self {
             config_dir: nova_paths::config_dir(),
             units_dir: config_home.join("systemd/user"),
@@ -206,12 +213,30 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
         steps.push(Step::AppendLine { path: niri_config.clone(), line: format!("include {}", quoted(&rules)) });
     }
     if let Some(hyprland_config) = &paths.hyprland_config {
-        let rules = paths.config_dir.join(HYPRLAND_RULES_FILE);
-        steps.push(Step::Replace { path: rules.clone(), contents: HYPRLAND_RULES.into() });
-        // Hyprland takes the rest of the line as the path, unquoted.
-        steps.push(Step::AppendLine { path: hyprland_config.clone(), line: format!("source = {}", rules.display()) });
+        steps.extend(hyprland_steps(hyprland_config, &paths.config_dir));
     }
     Ok(Plan::Steps(steps))
+}
+
+/// Nova's Hyprland rules in `config_dir`, in the format of `hyprland_config`,
+/// and the line that loads them from it.
+fn hyprland_steps(hyprland_config: &Path, config_dir: &Path) -> [Step; 2] {
+    let lua = hyprland_config.extension().is_some_and(|extension| extension == "lua");
+    let (file, contents) = match lua {
+        true => (HYPRLAND_LUA_RULES_FILE, HYPRLAND_LUA_RULES),
+        false => (HYPRLAND_RULES_FILE, HYPRLAND_RULES),
+    };
+    let rules = config_dir.join(file);
+    let line = match lua {
+        // Hyprland's `require` takes a file by its absolute path.
+        true => format!("require({})", quoted(&rules)),
+        // Hyprland takes the rest of the line as the path, unquoted.
+        false => format!("source = {}", rules.display()),
+    };
+    [
+        Step::Replace { path: rules, contents: contents.into() },
+        Step::AppendLine { path: hyprland_config.to_owned(), line },
+    ]
 }
 
 /// Installs Quickshell while a feature with a UI is on, and the packages of
@@ -285,8 +310,8 @@ fn gpu_for_packages(host: &Host) -> Option<Gpu> {
     host.gpus.iter().copied().find(|gpu| *gpu != Gpu::Nvidia)
 }
 
-/// `path` as a double-quoted string, with `\\` and `"` escaped: how both
-/// KDL and systemd's command lines spell a string.
+/// `path` as a double-quoted string, with `\\` and `"` escaped: how KDL,
+/// Lua and systemd's command lines spell a string.
 fn quoted(path: &Path) -> String {
     let escaped = path.display().to_string().replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{escaped}\"")
@@ -726,6 +751,20 @@ mod tests {
         };
         assert_eq!(path, Path::new("/home/me/.config/hypr/hyprland.conf"));
         assert_eq!(line, "source = /home/me/.config/nova/hyprland.conf");
+    }
+
+    #[test]
+    fn a_lua_hyprland_config_requires_the_lua_rules() {
+        let config_dir = Path::new(r#"/home/a "b"/.config/nova"#);
+        let [Step::Replace { path: rules, contents }, Step::AppendLine { path, line }] =
+            hyprland_steps(Path::new("/home/me/.config/hypr/hyprland.lua"), config_dir)
+        else {
+            panic!()
+        };
+        assert_eq!(rules, config_dir.join("hyprland.lua"));
+        assert!(contents.contains("allow_session_lock_restore = true"), "{contents}");
+        assert_eq!(path, Path::new("/home/me/.config/hypr/hyprland.lua"));
+        assert_eq!(line, r#"require("/home/a \"b\"/.config/nova/hyprland.lua")"#);
     }
 
     #[test]

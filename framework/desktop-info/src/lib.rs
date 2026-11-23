@@ -10,6 +10,12 @@ use serde::{Deserialize, Serialize};
 pub const TOPIC: Topic = Topic::named("compositor");
 /// The name of the event that carries it.
 pub const EVENT: &str = "compositor";
+/// Hyprland's setting that lets a lock screen that restarted take over the
+/// session lock its crashed one held. Off unless the config turns it on,
+/// which Nova's Hyprland rules do (`packaging/compositor/hyprland.lua`).
+/// Named here so novad's check, `nova doctor` and the lock screen's log
+/// agree.
+pub const HYPRLAND_LOCK_RESTORE: &str = "misc:allow_session_lock_restore";
 
 /// Pushed by novad on [`TOPIC`]. The compositor adapters publish it without
 /// a copy (`nova_compositor::event`), the same on the wire.

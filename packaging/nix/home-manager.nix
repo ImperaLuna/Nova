@@ -2,9 +2,10 @@
 # packages of the features that are on, its systemd user unit started with
 # graphical-session.target, the features.toml novad reads, the Nova Files
 # app while the `nova-files` feature is on, and Nova's compositor rules
-# (blur) in ~/.config/nova: include
-# niri.kdl from niri's config; home-manager's own Hyprland config sources
-# hyprland.conf by itself.
+# (blur, and Hyprland's lock restore) in ~/.config/nova: include niri.kdl
+# from niri's config; home-manager's own Hyprland config sources
+# hyprland.conf by itself, or requires hyprland.lua when it writes a Lua
+# config.
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
@@ -13,6 +14,7 @@
 { packages }:
 {
   config,
+  options,
   lib,
   pkgs,
   osConfig ? null,
@@ -27,6 +29,10 @@ let
   # the feature's mode on); home-manager can only install the whole app.
   novaFilesBySystem = osConfig.programs.nova-files.enable or false;
   unit = "${cfg.package}/lib/systemd/user/nova.service";
+  hyprland = config.wayland.windowManager.hyprland;
+  # A home-manager with `configType` may write hyprland.lua instead of
+  # hyprland.conf (Hyprland 0.57 reads only that).
+  hyprlandLua = (options.wayland.windowManager.hyprland ? configType) && hyprland.configType == "lua";
 in
 {
   imports = [ (import ./options.nix { inherit packages; }) ];
@@ -68,14 +74,23 @@ in
         # The same files `nova setup` writes on other distros.
         "nova/niri.kdl".source = ../compositor/niri.kdl;
         "nova/hyprland.conf".source = ../compositor/hyprland.conf;
+        "nova/hyprland.lua".source = ../compositor/hyprland.lua;
       };
     };
-    # Sourced first, so the user's own rules win.
-    wayland.windowManager.hyprland.settings.source =
-      lib.mkIf config.wayland.windowManager.hyprland.enable
-        [
-          "${config.xdg.configHome}/nova/hyprland.conf"
-        ];
+    wayland.windowManager.hyprland = {
+      # Sourced first, so the user's own rules win.
+      settings.source = lib.mkIf (hyprland.enable && !hyprlandLua) [
+        "${config.xdg.configHome}/nova/hyprland.conf"
+      ];
+    }
+    # Written as ~/.config/hypr/nova-rules.lua and required from the
+    # hyprland.lua home-manager writes. Only a home-manager that has the
+    # option may be given it.
+    // lib.optionalAttrs (options.wayland.windowManager.hyprland ? extraLuaFiles) {
+      extraLuaFiles = lib.mkIf (hyprland.enable && hyprlandLua) {
+        nova-rules = ../compositor/hyprland.lua;
+      };
+    };
 
     warnings =
       lib.optional

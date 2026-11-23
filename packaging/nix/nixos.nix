@@ -1,8 +1,8 @@
 # Nova's NixOS module (nixosModules.default): Nova, the packages of the
 # features that are on, its systemd user unit started with
 # graphical-session.target, a system-wide features.toml in /etc/xdg/nova,
-# which novad reads when the user has none of their own, and Nova Files
-# while the `nova-files` feature is on.
+# which novad reads when the user has none of their own, Nova's Hyprland
+# rules beside it, and Nova Files while the `nova-files` feature is on.
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
@@ -79,7 +79,14 @@ in
       # novad finds `nova-ui` on PATH.
       ++ lib.optional (cfg.ui == "gpui") cfg.uiPackage
       ++ features.packagesFor pkgs cfg.gpu on;
-      etc."xdg/nova/features.toml".text = features.selectionFile cfg.ui cfg.features;
+      etc = {
+        "xdg/nova/features.toml".text = features.selectionFile cfg.ui cfg.features;
+        # Nova's Hyprland rules, which a system module can't load into the
+        # user's Hyprland config: `require("/etc/xdg/nova/hyprland.lua")`
+        # in hyprland.lua (`nova doctor` says so while they're missing).
+        "xdg/nova/hyprland.lua".source = ../compositor/hyprland.lua;
+        "xdg/nova/hyprland.conf".source = ../compositor/hyprland.conf;
+      };
     };
 
     xdg.portal.config = lib.mkIf (novaFilesOn && config.programs.nova-files.filePicker.enable) (

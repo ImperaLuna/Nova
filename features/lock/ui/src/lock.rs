@@ -22,7 +22,7 @@ use gpui::{
     App, AppContext, Context, DisplayId, Entity, Global, Keystroke, SessionLockState, SharedString, Subscription, Task,
     WindowHandle,
 };
-use nova_desktop_info::{Desktop, Event as DesktopEvent};
+use nova_desktop_info::{Desktop, Event as DesktopEvent, HYPRLAND_LOCK_RESTORE};
 use nova_lock_api::{Command, Event, TOPIC};
 use nova_stage::{Screen, Stage};
 use nova_ui_client::{Daemon, Live, Refusal};
@@ -213,15 +213,31 @@ impl LockScreen {
                 // `nova lock` can answer: the screens are covered.
                 Daemon::send(Command::ReportLocked, cx);
             }
+            // A lock it had confirmed and then ended leaves the session
+            // open, and novad has to know to lock it again.
+            SessionLockState::Unlocked if self.confirmed => {
+                eprintln!("WARN nova-ui: the compositor ended the session lock");
+                self.report_unlocked(cx);
+                self.let_go(cx);
+            }
+            // A lock it refused: another lock screen holds the session, or
+            // the compositor won't let a new one take over from one that
+            // stopped. novad keeps its word and asks again next time.
             SessionLockState::Unlocked => {
-                eprintln!("WARN nova-ui: the compositor refused or ended the session lock");
-                // A lock it had confirmed and then ended leaves the
-                // session open, and novad has to know to lock it again. A
-                // lock it refused means another locker holds the session:
-                // novad keeps its word and asks again.
-                if self.confirmed {
-                    self.report_unlocked(cx);
-                }
+                eprintln!(
+                    "ERROR nova-ui: the compositor refused the session lock. On Hyprland a lock screen that \
+                     restarted can lock again only with {HYPRLAND_LOCK_RESTORE} = true, which Nova's Hyprland \
+                     rules set; `nova doctor` checks it"
+                );
+                // Hyprland never makes the lock surfaces asked for on a lock
+                // it refused (SessionLock.cpp, "getLockSurface after it's
+                // inert"), so closing their windows destroys objects it
+                // doesn't know: a protocol error that ends nova-ui, and the
+                // bar with it, on every restart. Their windows stay open,
+                // never shown, until nova-ui exits. Remove this once the
+                // GPUI fork leaves a refused lock's surfaces alone itself
+                // (IMP-454).
+                self.windows.clear();
                 self.let_go(cx);
             }
             SessionLockState::Pending => {}
