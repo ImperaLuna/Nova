@@ -1,5 +1,3 @@
-//! The socket protocol, logs, status and the supervised UI.
-
 use super::*;
 
 #[test]
@@ -56,9 +54,6 @@ fn bad_requests_get_an_error_when_they_have_an_id() {
     assert!(reply["error"].as_str().unwrap().starts_with("bad request"));
 }
 
-/// The router's error for a command nobody serves is the one decoding the
-/// whole command list gives, word for word: every command, in the order
-/// the routes take them, however many routes serve them.
 #[test]
 fn an_unknown_command_gets_the_decoders_error() {
     let novad = TestDaemon::start("unknown", None);
@@ -69,8 +64,6 @@ fn an_unknown_command_gets_the_decoders_error() {
     assert_eq!(client.next()["error"], format!("bad request: {decoded}"));
 }
 
-/// A topic novad doesn't serve makes `subscribe` a bad request, with the
-/// error serde gives for an unknown variant, so nothing is subscribed.
 #[test]
 fn an_unknown_topic_is_a_bad_request() {
     let novad = TestDaemon::start("unknown-topic", None);
@@ -97,13 +90,8 @@ fn oversized_requests_close_the_connection() {
     let novad = TestDaemon::start("oversized", None);
     let mut client = novad.connect();
     let huge = "x".repeat(usize::try_from(nova_socket::MAX_REQUEST_BYTES).unwrap() + 10);
-    // novad may hang up before it has read the whole line, and a write it
-    // stops reading mustn't hang the test.
     client.writer.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
     let _ = writeln!(client.writer, "{huge}");
-    // Hanging up on a line it hasn't read all of resets the connection
-    // rather than ending it (a Unix socket closed with unread data), and
-    // which one comes depends on how far novad read: both are a hang-up.
     client.writer.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     match client.lines.next() {
         None => {}
@@ -117,7 +105,6 @@ fn a_client_that_stops_reading_is_disconnected() {
     let novad = TestDaemon::start("slow-client", None);
     let mut stalled = novad.connect();
     stalled.request(1, "subscribe", Some(json!({"topics": ["logs"]})));
-    // Far more entries than the socket buffer and the queue hold together.
     for entry in 0..nova_hub::MAX_QUEUED_MESSAGES * 8 {
         novad.daemon.logger.info("test", &format!("entry {entry}"));
     }
@@ -132,15 +119,12 @@ fn a_client_that_stalls_with_its_socket_full_is_disconnected() {
     let novad = TestDaemon::start("stalled-client", None);
     let mut stalled = novad.connect();
     stalled.request(1, "subscribe", Some(json!({"topics": ["logs"]})));
-    // Fills the socket buffer many times over but not the queue, so only the
-    // write deadline can cut the client off.
     let entries = nova_hub::MAX_QUEUED_MESSAGES / 2;
     let padding = "x".repeat(1024);
     for entry in 0..entries {
         novad.daemon.logger.info("test", &format!("entry {entry} {padding}"));
     }
     nova_test_support::settle(nova_socket::WRITE_TIMEOUT * 3);
-    // Without the deadline everything arrives and the connection stays open.
     stalled.writer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
     let delivered = stalled.lines.by_ref().map_while(Result::ok).count();
     assert!(delivered < entries, "the stalled client was never cut off");
@@ -169,8 +153,6 @@ fn log_subscribers_get_a_backlog_then_live_entries() {
     assert!(messages.contains(&"before"), "{messages:?}");
 
     novad.daemon.logger.warn("test", "after");
-    // Features starting in the background (NetworkManager without a bus)
-    // log their own entries meanwhile, so only this test's entry counts.
     let entry = loop {
         let live = client.next();
         assert_eq!(live["data"].get("backlog"), None);
@@ -214,17 +196,12 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     let full_log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
     assert!(full_log.iter().any(|entry| entry.message.contains("failed to load")));
 
-    // One that exits at once keeps being started, and novad says why it
-    // isn't running.
     let status =
         wait_for_status(&mut client, |status| status.ui.restarts >= 2 && status.ui.state == UiState::Restarting);
     assert!(status.ui.problem.as_deref().is_some_and(|problem| problem.contains("exit code 3")), "{:?}", status.ui);
     assert!(status.ui.since.is_some(), "{:?}", status.ui);
 }
 
-/// A missing `nova-ui` is no reason to run anything else: an error in the
-/// log, once, another try after each backoff (each one logged), and novad's
-/// status says why there is no UI. Once the program is there, it runs.
 #[test]
 fn a_missing_ui_is_an_error_and_tried_again() {
     let scripts = nova_test_support::TempDir::new("no-ui");
@@ -233,7 +210,6 @@ fn a_missing_ui_is_an_error_and_tried_again() {
     let log = || read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
     let failed = |entry: &LogEntry| entry.level == LogLevel::Error && entry.message.contains("didn't start");
     let retried = |entry: &LogEntry| entry.message.starts_with("starting the UI again");
-    // Two tries after the first: 1 s and 2 s of backoff.
     nova_test_support::eventually(Duration::from_secs(10), "two retries", || {
         (log().iter().filter(|entry| retried(entry)).count() >= 2).then_some(())
     });
@@ -249,7 +225,6 @@ fn a_missing_ui_is_an_error_and_tried_again() {
     let since = status.ui.since.clone();
     assert!(since.is_some(), "{:?}", status.ui);
 
-    // The next try finds it.
     write_program(&scripts, "nova-ui", "exec sleep 60");
     let status = wait_for_status(&mut client, |status| status.ui.state == UiState::Running);
     assert_eq!(status.ui.problem, None);
@@ -257,9 +232,6 @@ fn a_missing_ui_is_an_error_and_tried_again() {
     novad.daemon.ui.as_ref().unwrap().stop();
 }
 
-/// With every feature off, novad runs without its UI; turning on one
-/// that draws (the bar) starts it, and turning it off again stops it without
-/// counting a crash.
 #[test]
 fn the_ui_runs_only_while_a_feature_with_a_ui_is_on() {
     let scripts = nova_test_support::TempDir::new("ui-on-demand");
@@ -286,8 +258,6 @@ fn the_ui_runs_only_while_a_feature_with_a_ui_is_on() {
     let status = wait_for_status(&mut client, |status| status.ui.state == UiState::NotNeeded);
     assert_eq!((status.ui.pid, status.ui.restarts, status.ui.last_crash), (None, 0, None));
 
-    // Off and straight back on, before the stopped UI has exited: a restart,
-    // not a crash.
     let ui = novad.daemon.ui.as_ref().unwrap();
     ui.want(true, &novad.daemon.logger);
     let first = wait_for_status(&mut client, |status| status.ui.pid.is_some()).ui.pid;

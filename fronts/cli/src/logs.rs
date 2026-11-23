@@ -1,5 +1,3 @@
-//! `nova logs`: novad's and the UI's log, live from novad or from its files.
-
 use crate::client::{Client, Sent};
 use crate::status::printable;
 use nova_carrier::log::{LogEntry, LogLevel, UI_LOG_SOURCE};
@@ -12,29 +10,20 @@ const DIM: &str = "\x1b[2m";
 
 #[derive(clap::Args)]
 pub struct LogsArgs {
-    /// Lines of history to show first.
     #[arg(short = 'n', long, default_value_t = 50)]
     lines: usize,
-    /// Print the history and exit instead of following new lines.
     #[arg(long)]
     no_follow: bool,
-    /// Only the UI's lines.
     #[arg(long, conflicts_with = "daemon")]
     ui: bool,
-    /// Only novad's lines.
     #[arg(long)]
     daemon: bool,
-    /// Lowest level to show: debug, info, warn or error.
     #[arg(long)]
     level: Option<LogLevel>,
-    /// The log of the run before the current one.
     #[arg(long, conflicts_with = "crash")]
     previous: bool,
-    /// The lines saved at the latest crash.
     #[arg(long)]
     crash: bool,
-    /// Where novad keeps its logs. By default, where the running novad
-    /// says, else the usual place.
     #[arg(long, hide = true)]
     log_dir: Option<PathBuf>,
 }
@@ -62,8 +51,6 @@ pub fn run(args: &LogsArgs, socket: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// `--log-dir`, else the running novad's (`just run` uses its own), else
-/// the default.
 fn log_dir(args: &LogsArgs, socket: &Path) -> PathBuf {
     args.log_dir.clone().unwrap_or_else(|| {
         Client::connect(socket)
@@ -145,7 +132,6 @@ impl Printer {
         Ok(())
     }
 
-    /// Prints one entry; false once stdout is closed (`nova logs | head`).
     fn entry(&mut self, entry: &LogEntry) -> bool {
         let time = local_time(&entry.time);
         let line = if self.color {
@@ -167,7 +153,6 @@ fn level_color(level: LogLevel) -> &'static str {
     }
 }
 
-/// `13:45:09.123` in the local time zone, or the stored time if it won't parse.
 fn local_time(time: &str) -> String {
     match time.parse::<jiff::Timestamp>() {
         Ok(timestamp) => timestamp.to_zoned(jiff::tz::TimeZone::system()).strftime("%H:%M:%S%.3f").to_string(),

@@ -1,27 +1,3 @@
-//! novad: Nova's background daemon, run as `nova daemon`.
-//!
-//! It owns Nova's state, serves the socket that the UI and the `nova` CLI
-//! talk to, runs the UI (`nova-ui`) as its child (restarting it when it
-//! crashes) and keeps the log. Compositor adapters and services get added on
-//! top of this.
-//!
-//! Adding a feature with its own daemon service and event topic touches, end
-//! to end (`resources` is the worked example; AGENTS.md's "Moving a feature
-//! out of novad" lists the shared files and where each entry goes):
-//! - `features/<id>/feature.toml`: the feature, its dependencies, `daemon = "<id>"`.
-//! - `features/<id>/api`: its topic constant, its `Event` and `Command`s;
-//!   `features/<id>/core`: its work.
-//! - Its wiring file here, with an `impl Module` (`modules`) over the core
-//!   and the answers to its commands (through `Daemon::module`, which
-//!   answers when the feature isn't ready).
-//! - `modules/mod.rs`: one line in the `modules!` registry; `requests.rs`:
-//!   its route; `topics.rs`: its topic.
-//! - `config.rs`: its `[<id>]` options in config.toml, if any.
-//! - The wire format snapshot (`tests/wire.rs`).
-//! - Its ui crate, `features/<id>/ui`, which follows the topic and sends
-//!   the commands through `nova-ui-client` (AGENTS.md, "Porting a
-//!   feature's UI to GPUI").
-
 mod ai_usage;
 mod bluetooth;
 pub mod checks;
@@ -62,69 +38,39 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use supervisor::{Supervisor, UiSettings};
 
-/// The daemon's process name in ps and btop. It renames itself to this, and
-/// whatever starts it passes it as `argv[0]` (`nova`, the systemd unit).
 pub const PROCESS_NAME: &str = "Nova";
-/// Sets the lowest level written to the log: debug, info (default), warn, error.
 const LOG_LEVEL_VAR: &str = "NOVA_LOG";
 const LOG_SOURCE: &str = "novad";
-/// Beside the socket, in `XDG_RUNTIME_DIR`: the login apps were started this
-/// session (`--autostart`), named after the login session (`XDG_SESSION_ID`)
-/// when there is one, since the folder outlives a graphical session while
-/// another login of the user's (SSH) stays.
 const AUTOSTART_MARKER: &str = "autostarted";
 
-/// `nova daemon`'s options. The socket comes from `nova`'s own `--socket`.
 #[derive(clap::Args)]
 pub struct Args {
-    /// Folder of feature manifests.
     #[arg(long, default_value_os_t = nova_features::default_dir())]
     features_dir: PathBuf,
-    /// The user's feature choices. Reloaded when it changes. By default
-    /// the user's features.toml, else the system's (`/etc/xdg/nova`).
     #[arg(long)]
     selection: Option<PathBuf>,
-    /// Folder of theme files (`<id>.toml`).
     #[arg(long, default_value_os_t = nova_theme::default_dir())]
     themes_dir: PathBuf,
-    /// The user's settings (see `config`). Reloaded when it changes.
     #[arg(long, default_value_os_t = nova_paths::config_dir().join("config.toml"))]
     config: PathBuf,
-    /// The UI program. By default `nova-ui` on PATH, looked up each time
-    /// it starts.
     #[arg(long)]
     gpui_ui: Option<PathBuf>,
-    /// Don't run the UI (tests, or running it by hand).
     #[arg(long)]
     no_ui: bool,
-    /// Where nova.log and crash snapshots go.
     #[arg(long, default_value_os_t = nova_paths::state_dir())]
     log_dir: PathBuf,
-    /// Where features keep what survives a restart.
     #[arg(long, default_value_os_t = nova_paths::state_dir())]
     state_dir: PathBuf,
-    /// Codex's folder, read by the `ai-usage` feature. By default
-    /// `$CODEX_HOME`, else `~/.codex`.
     #[arg(long)]
     codex_home: Option<PathBuf>,
-    /// Claude Code's credentials file, read by the `ai-usage` feature. By
-    /// default `$CLAUDE_CONFIG_DIR/.credentials.json`, else
-    /// `~/.claude/.credentials.json`.
     #[arg(long)]
     claude_credentials: Option<PathBuf>,
-    /// The Claude desktop app's config, whose sign-in the `ai-usage`
-    /// feature uses when Claude Code's file has none. By default
-    /// `$XDG_CONFIG_HOME/Claude/config.json`, else `~/.config/Claude/config.json`.
     #[arg(long)]
     claude_desktop_config: Option<PathBuf>,
-    /// Start the login apps (XDG autostart) once the tray is up, once a
-    /// session. `nova` asks for it when it starts novad without systemd,
-    /// whose own autostart does it otherwise.
     #[arg(long)]
     autostart: bool,
 }
 
-/// Everything a connection needs to answer requests.
 pub struct Daemon {
     started: Instant,
     hub: Arc<Hub>,
@@ -132,15 +78,9 @@ pub struct Daemon {
     ui: Option<Arc<Supervisor>>,
     socket: PathBuf,
     sources: Sources,
-    /// Replaced on reload. Events about it are published under this lock,
-    /// so a new subscriber's snapshot and later events arrive in order.
     settings: Mutex<Settings>,
-    /// Following the compositor, when it's one novad knows.
     compositor: Option<Arc<nova_compositor::Compositor>>,
-    /// The modules kept for novad's life, reached without the settings
-    /// lock: a reload holds it while modules start, which may take seconds.
     kept: modules::Kept,
-    /// Where each request goes.
     router: nova_socket::Router<Daemon>,
 }
 
@@ -193,33 +133,26 @@ impl Daemon {
         }
     }
 
-    /// Whether the feature `id` is ready.
     fn feature_ready(&self, id: &str) -> bool {
         features::is_ready(&lock(&self.settings).features, id)
     }
 
-    /// Reads the settings files again and applies what changed.
     fn reload(&self) {
         let settings = &mut lock(&self.settings);
         settings.reload(&self.sources, &self.hub, &self.logger);
         self.follow_features(settings);
     }
 
-    /// Runs the UI while some feature that draws is ready.
     fn follow_features(&self, settings: &Settings) {
         if let Some(ui) = &self.ui {
             ui.want(features::needs_ui(&self.sources.manifests, &settings.features), &self.logger);
         }
     }
 
-    /// The lock screen, kept whatever the settings.
     fn session_lock(&self) -> Arc<session_lock::SessionLock> {
         Arc::clone(&self.kept.session_lock)
     }
 
-    /// The module `M`, or the error that its feature isn't ready. Taken out
-    /// of the settings lock: acting may take a while, and a reload may stop
-    /// it meanwhile (it then says its feature isn't ready).
     fn module<M: nova_modules::Module>(&self) -> Result<Arc<M>, String>
     where
         modules::Running: nova_modules::Has<M>,
@@ -227,14 +160,12 @@ impl Daemon {
         lock(&self.settings).modules.get::<M>().ok_or_else(|| nova_modules::not_ready(M::ID))
     }
 
-    /// Starts watching the settings files, reloading when they change.
     fn watch_settings(self: &Arc<Self>) -> Option<nova_inotify::Stopper> {
         let daemon = Arc::clone(self);
         let files = [vec![self.sources.config.clone()], self.sources.selection.clone()].concat();
         nova_settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
     }
 
-    /// Stops the UI and exits novad. Exit code 0, so systemd leaves it off.
     fn quit(&self) -> ! {
         self.logger.info(LOG_SOURCE, "quit requested, stopping");
         if let Some(ui) = &self.ui {
@@ -245,19 +176,13 @@ impl Daemon {
     }
 }
 
-/// Runs novad until it quits.
 pub fn run(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    // Before any thread starts, so they all inherit the name.
     set_process_name(PROCESS_NAME)?;
-    // systemd's, for novad alone: neither the UI nor the apps novad starts
-    // may answer it.
     let notify_socket = std::env::var_os(notify::SOCKET_VAR);
     // SAFETY: no other thread runs yet to read the environment meanwhile.
     unsafe { std::env::remove_var(notify::SOCKET_VAR) };
     let (listener, daemon, _watching) = start(args, socket)?;
     install_panic_hook(Arc::clone(&daemon.logger));
-    // Up: the socket listens and the tray's name is claimed, so login apps
-    // may start (nova.service is Type=notify).
     if let Err(e) = notify::ready(notify_socket.as_deref()) {
         daemon.logger.warn(LOG_SOURCE, &format!("can't tell systemd novad is ready: {e}"));
     }
@@ -265,19 +190,11 @@ pub fn run(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-/// Starts novad on background threads in this process and returns once its
-/// socket accepts connections. For tests of novad's clients; it stops when
-/// the returned handle is dropped.
 pub fn spawn(args: Args, socket: PathBuf) -> Result<InProcess, Box<dyn std::error::Error>> {
     let (listener, daemon, watching) = start(args, socket)?;
     Ok(InProcess::serve(listener, daemon, watching))
 }
 
-/// A novad serving on a thread of this process ([`spawn`], novad's own
-/// tests). Dropping it stops the accept loop and waits for it to end, and
-/// stops the UI, the feature services and the settings watcher, so tests
-/// sharing one process don't pile up threads, children and inotify
-/// instances. Connections still open end when their clients hang up.
 pub struct InProcess {
     daemon: Arc<Daemon>,
     stopped: Arc<AtomicBool>,
@@ -303,13 +220,10 @@ impl InProcess {
 impl Drop for InProcess {
     fn drop(&mut self) {
         self.stopped.store(true, Ordering::SeqCst);
-        // Wakes the accept loop, which then sees the stop.
         let _ = std::os::unix::net::UnixStream::connect(&self.daemon.socket);
         if let Some(serving) = self.serving.take() {
             let _ = serving.join();
         }
-        // The watcher first: a reload after the services stop would start
-        // them again.
         if let Some(watching) = &self.watching {
             watching.stop();
         }
@@ -320,11 +234,8 @@ impl Drop for InProcess {
     }
 }
 
-/// A started novad before it serves: its bound socket, itself, and its
-/// settings watcher.
 type Started = (std::os::unix::net::UnixListener, Arc<Daemon>, Option<nova_inotify::Stopper>);
 
-/// How the UI runs.
 fn ui_settings(args: &Args, socket: &Path, path_var: &str) -> UiSettings {
     UiSettings {
         program: args.gpui_ui.clone(),
@@ -334,8 +245,6 @@ fn ui_settings(args: &Args, socket: &Path, path_var: &str) -> UiSettings {
     }
 }
 
-/// The running compositor, followed from now on; `None` (logged) when
-/// there's none novad knows.
 fn follow_compositor(hub: &Arc<Hub>, logger: &Arc<Logger>) -> Option<Arc<nova_compositor::Compositor>> {
     let Some(backend) = nova_compositor::detect(|name| std::env::var_os(name)) else {
         logger
@@ -346,8 +255,6 @@ fn follow_compositor(hub: &Arc<Hub>, logger: &Arc<Logger>) -> Option<Arc<nova_co
 }
 
 fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Error>> {
-    // The socket first: a second daemon is refused before it can rotate the
-    // running one's log.
     let listener = nova_socket::bind(&socket)?;
     let hub = Arc::new(Hub::default());
     let logger = Arc::new(Logger::open(&args.log_dir, log_level(), std::io::stderr().is_terminal(), Arc::clone(&hub))?);
@@ -374,7 +281,6 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         modules,
         icons,
     };
-    // Before the modules: the wallpaper follows its outputs.
     let compositor = follow_compositor(&hub, &logger);
     let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
     let ui_settings = ui_settings(&args, &socket, &path_var);
@@ -412,10 +318,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         compositor,
         router: requests::router(),
     });
-    // Watched for as long as novad runs.
     let watching = daemon.watch_settings();
-    // Not for a daemon without its UI (tests, a UI run by hand): logind's
-    // locks and the sleep inhibitor are the whole machine's.
     if daemon.ui.is_some() {
         power::follow_logind(&daemon);
     }
@@ -432,8 +335,6 @@ fn log_level() -> LogLevel {
     }
 }
 
-/// Logs a panic and saves a crash snapshot, then lets the default hook print
-/// it to stderr (journald under systemd).
 fn install_panic_hook(logger: Arc<Logger>) {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -444,11 +345,6 @@ fn install_panic_hook(logger: Arc<Logger>) {
     }));
 }
 
-/// `PATH` plus the folders packages put programs in, even ones not there
-/// yet (a first package installed later makes them):
-/// systemd user services don't get the login shell's PATH, so the user's
-/// Nix profile, NixOS's system packages, Flatpak's exports or `~/.local/bin`
-/// (pip, cargo) may be missing. Apps the launcher starts get it too.
 pub(crate) fn session_path() -> String {
     let path = std::env::var_os("PATH").unwrap_or_default();
     let mut dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
@@ -476,8 +372,6 @@ fn autostart_marker() -> String {
     }
 }
 
-/// Sets this thread's name, which is the process name ps and btop show for
-/// the main thread (`/proc/<pid>/comm`).
 fn set_process_name(name: &str) -> std::io::Result<()> {
     let name = std::ffi::CString::new(name).map_err(std::io::Error::other)?;
     // SAFETY: PR_SET_NAME reads a NUL-terminated string, which `name` is
@@ -488,8 +382,6 @@ fn set_process_name(name: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The compositor's socket, from `WAYLAND_DISPLAY` (a name in
-/// `XDG_RUNTIME_DIR`, or an absolute path).
 fn wayland_socket() -> Option<PathBuf> {
     let display = PathBuf::from(std::env::var_os("WAYLAND_DISPLAY").filter(|value| !value.is_empty())?);
     if display.is_absolute() {
@@ -498,8 +390,6 @@ fn wayland_socket() -> Option<PathBuf> {
     Some(PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?).join(display))
 }
 
-/// Claude's limits from a Claude Code status line input, for
-/// `nova claude-statusline`.
 pub use nova_ai_usage::limits_from_statusline as claude_limits_from_statusline;
 
 #[cfg(test)]

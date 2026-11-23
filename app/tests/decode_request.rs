@@ -1,8 +1,3 @@
-//! Property tests for `decode_request`, the parser every line on novad's
-//! socket goes through. Lines come from any process the user runs, so random
-//! and hostile input must only ever give an error, and the valid requests
-//! that do decode must be exactly what a client meant to send.
-
 #![expect(clippy::unwrap_used, clippy::expect_used, reason = "test setup should fail loudly")]
 
 use nova_ai_usage_api::{AiProvider, UsageLimit, UsageWindow};
@@ -12,11 +7,8 @@ use nova_desktop_info::Step;
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
 
-/// The fields a request line may have; anything else is refused.
 const LINE_FIELDS: [&str; 4] = ["v", "id", "cmd", "args"];
 
-/// Names that appear in real requests, so generated JSON hits the decoder's
-/// paths past the first unknown field.
 const NAMES: &[&str] = &[
     "v",
     "id",
@@ -82,7 +74,6 @@ fn command() -> impl Strategy<Value = Command> {
     ]
 }
 
-/// The workspaces feature's commands (`nova-workspaces-api`).
 fn workspaces_request() -> impl Strategy<Value = Request<nova_workspaces_api::Command>> {
     use nova_workspaces_api::Command;
     let command = prop_oneof![
@@ -93,7 +84,6 @@ fn workspaces_request() -> impl Strategy<Value = Request<nova_workspaces_api::Co
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| Request { id, command })
 }
 
-/// The AI usage feature's commands, which it owns (`nova-ai-usage-api`).
 fn ai_usage_request() -> impl Strategy<Value = nova_carrier::Request<nova_ai_usage_api::Command>> {
     use nova_ai_usage_api::Command;
     let command = prop_oneof![
@@ -105,7 +95,6 @@ fn ai_usage_request() -> impl Strategy<Value = nova_carrier::Request<nova_ai_usa
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The launcher feature's commands, which it owns (`nova-launcher-api`).
 fn launcher_request() -> impl Strategy<Value = nova_carrier::Request<nova_launcher_api::Command>> {
     use nova_launcher_api::Command;
     let command = prop_oneof![
@@ -118,7 +107,6 @@ fn launcher_request() -> impl Strategy<Value = nova_carrier::Request<nova_launch
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The media feature's commands, which it owns (`nova-media-api`).
 fn media_request() -> impl Strategy<Value = nova_carrier::Request<nova_media_api::Command>> {
     use nova_media_api::{Command, MediaAction};
     let action = prop_oneof![Just(MediaAction::PlayPause), Just(MediaAction::Next), Just(MediaAction::Previous)];
@@ -132,7 +120,6 @@ fn media_request() -> impl Strategy<Value = nova_carrier::Request<nova_media_api
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The notifications feature's commands, which it owns (`nova-notifications-api`).
 fn notifications_request() -> impl Strategy<Value = nova_carrier::Request<nova_notifications_api::Command>> {
     use nova_notifications_api::Command;
     let command = prop_oneof![
@@ -147,7 +134,6 @@ fn notifications_request() -> impl Strategy<Value = nova_carrier::Request<nova_n
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The recording feature's commands, which it owns (`nova-recording-api`).
 fn recording_request() -> impl Strategy<Value = nova_carrier::Request<nova_recording_api::Command>> {
     use nova_recording_api::{Command, LayoutRect, RecordAudio, ScreenshotAction};
     let action =
@@ -172,7 +158,6 @@ fn recording_request() -> impl Strategy<Value = nova_carrier::Request<nova_recor
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The resources feature's commands, which it owns (`nova-resources-api`).
 fn resources_request() -> impl Strategy<Value = nova_carrier::Request<nova_resources_api::Command>> {
     use nova_resources_api::Command;
     let command = prop_oneof![
@@ -182,7 +167,6 @@ fn resources_request() -> impl Strategy<Value = nova_carrier::Request<nova_resou
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The sound feature's commands, which it owns (`nova-sound-api`).
 fn sound_request() -> impl Strategy<Value = nova_carrier::Request<nova_sound_api::Command>> {
     use nova_sound_api::{Command, Kind};
     let kind = || prop_oneof![Just(Kind::Output), Just(Kind::Input), Just(Kind::App)];
@@ -196,14 +180,12 @@ fn sound_request() -> impl Strategy<Value = nova_carrier::Request<nova_sound_api
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The lock feature's commands, which it owns (`nova-lock-api`).
 fn lock_request() -> impl Strategy<Value = nova_carrier::Request<nova_lock_api::Command>> {
     use nova_lock_api::Command;
     let command = prop_oneof![Just(Command::Lock), Just(Command::ReportLocked), Just(Command::ReportUnlocked)];
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The network feature's commands, which it owns (`nova-network-api`).
 fn network_request() -> impl Strategy<Value = nova_carrier::Request<nova_network_api::Command>> {
     use nova_network_api::{Command, LinkKind, WifiPassword};
     let command = prop_oneof![
@@ -220,7 +202,6 @@ fn network_request() -> impl Strategy<Value = nova_carrier::Request<nova_network
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The Bluetooth feature's commands, which it owns (`nova-bluetooth-api`).
 fn bluetooth_request() -> impl Strategy<Value = nova_carrier::Request<nova_bluetooth_api::Command>> {
     use nova_bluetooth_api::Command;
     let command = prop_oneof![
@@ -234,7 +215,6 @@ fn bluetooth_request() -> impl Strategy<Value = nova_carrier::Request<nova_bluet
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The power feature's commands, which it owns (`nova-power-api`).
 fn power_request() -> impl Strategy<Value = nova_carrier::Request<nova_power_api::Command>> {
     use nova_power_api::{Command, PowerAction};
     let command = prop_oneof![
@@ -244,7 +224,6 @@ fn power_request() -> impl Strategy<Value = nova_carrier::Request<nova_power_api
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The screenshot feature's commands, which it owns (`nova-screenshot-api`).
 fn screenshot_request() -> impl Strategy<Value = nova_carrier::Request<nova_screenshot_api::Command>> {
     use nova_screenshot_api::{CaptureMode, Command, PixelRect, ScreenshotAction};
     let action =
@@ -261,7 +240,6 @@ fn screenshot_request() -> impl Strategy<Value = nova_carrier::Request<nova_scre
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The tray feature's commands, which it owns (`nova-tray-api`).
 fn tray_request() -> impl Strategy<Value = nova_carrier::Request<nova_tray_api::Command>> {
     use nova_tray_api::Command;
     let command = prop_oneof![
@@ -279,7 +257,6 @@ fn tray_request() -> impl Strategy<Value = nova_carrier::Request<nova_tray_api::
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-/// The wallpaper feature's commands, which it owns (`nova-wallpaper-api`).
 fn wallpaper_request() -> impl Strategy<Value = nova_carrier::Request<nova_wallpaper_api::Command>> {
     use nova_wallpaper_api::Command;
     let command = prop_oneof![
@@ -295,7 +272,6 @@ fn pairing_answer() -> impl Strategy<Value = nova_bluetooth_api::PairingAnswer> 
     prop_oneof![Just(PairingAnswer::Accept), Just(PairingAnswer::Reject), ".*".prop_map(PairingAnswer::Code)]
 }
 
-/// One request line, read as one of novad's own commands.
 fn decode_request(line: &str) -> Result<Request<Command>, String> {
     nova_carrier::decode_request(line)
 }
@@ -304,7 +280,6 @@ fn request() -> impl Strategy<Value = Request<Command>> {
     (proptest::option::of(any::<u64>()), command()).prop_map(|(id, command)| Request { id, command })
 }
 
-/// Any JSON, with keys and strings mostly drawn from [`NAMES`].
 fn json() -> impl Strategy<Value = Value> {
     let name = || prop_oneof![3 => proptest::sample::select(NAMES).prop_map(String::from), 1 => any::<String>()];
     let leaf = prop_oneof![
@@ -324,8 +299,6 @@ fn json() -> impl Strategy<Value = Value> {
     })
 }
 
-/// A request-shaped object: the line's own fields, each one sometimes left
-/// out, with any JSON as the values.
 fn request_shaped() -> impl Strategy<Value = Value> {
     (
         proptest::option::of(prop_oneof![4 => Just(json!(PROTOCOL_VERSION)), 1 => json()]),
@@ -339,8 +312,6 @@ fn request_shaped() -> impl Strategy<Value = Value> {
         })
 }
 
-/// What decoding `line` must give if it gives anything: the same request
-/// again when re-encoded, from a line with only the allowed fields.
 fn check_accepted(line: &str) -> Result<(), TestCaseError> {
     if let Ok(request) = decode_request(line) {
         let fields: Map<String, Value> = serde_json::from_str(line).expect("an accepted line is a JSON object");
@@ -609,7 +580,6 @@ proptest! {
     }
 }
 
-/// Nesting deep enough to overflow a recursive parser's stack.
 #[test]
 fn deep_nesting_is_refused() {
     let depth = 100_000;

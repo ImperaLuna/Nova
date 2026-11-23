@@ -1,10 +1,3 @@
-//! Runs the Nova Files feature (`nova-nova-files`, in `features/nova-files`)
-//! in novad: its module, and its place in the launcher as the provider of
-//! the Files mode (`nova-nova-files-api`'s `PROVIDER_FILES`). Wiring only:
-//! it adapts the feature's core to novad's `Module` trait and to the
-//! launcher's `Provider` port, and all of the feature's work and state stay
-//! in the core.
-
 use nova_daemon_info::FeatureState;
 use nova_launcher::providers::{Provider, Run};
 use nova_launcher_api::LauncherItem;
@@ -13,10 +6,8 @@ pub use nova_nova_files::Sources;
 use std::path::Path;
 use std::sync::Arc;
 
-/// The feature's core, as novad's module.
 pub struct NovaFiles(nova_nova_files::NovaFiles);
 
-/// The launcher's Files mode: a mode of its own, answered by the core.
 impl Provider for NovaFiles {
     fn own_mode(&self) -> bool {
         true
@@ -48,8 +39,6 @@ impl nova_modules::Module for NovaFiles {
         Arc::new(Self(nova_nova_files::NovaFiles::start(sources, own_windows(features), Arc::clone(&ctx.logger))))
     }
 
-    /// A mode change that adds or drops Nova Files' windows restarts the
-    /// module, which reads the mode when it starts.
     fn reconfigure(&self, _: &(), _: &(), features: &[FeatureState]) -> nova_modules::Reconfigure {
         if own_windows(features) == self.0.own_windows() {
             nova_modules::Reconfigure::InPlace
@@ -63,8 +52,6 @@ impl nova_modules::Module for NovaFiles {
     }
 }
 
-/// Whether Nova Files opens its own windows in the mode `features` give
-/// it.
 fn own_windows(features: &[FeatureState]) -> bool {
     let mode = features.iter().find(|feature| feature.id == ID).and_then(|feature| feature.mode.as_deref());
     nova_nova_files::windows_in(mode)
@@ -88,8 +75,6 @@ mod tests {
         }
     }
 
-    /// Switching between a mode with windows and the launcher mode restarts
-    /// the module, so it routes folders the new way; other changes keep it.
     #[test]
     fn a_change_to_or_from_the_launcher_mode_restarts_the_module() {
         let dir = TempDir::new("nova-files-reconfigure");
@@ -100,7 +85,6 @@ mod tests {
             Arc::new(nova_hub::Hub::default()),
         )
         .unwrap();
-        // No bus there: it can't reach Nova Files, which a mode change doesn't need.
         let sources = Sources {
             bus: nova_session_bus::Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
             data_dirs: vec![],

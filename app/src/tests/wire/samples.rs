@@ -1,6 +1,3 @@
-//! The sample values the wire snapshot shows: one of each message's
-//! payloads, filled the way novad fills them.
-
 use super::*;
 
 pub(super) fn desktop() -> Desktop {
@@ -480,7 +477,6 @@ pub(super) fn status() -> Status {
     }
 }
 
-/// A `tray_menu` answer, shaped as Spotify's libdbusmenu menu reads.
 pub(super) fn tray_menu_level() -> nova_tray_api::TrayMenuLevel {
     use nova_tray_api::{Toggle, TrayMenuEntry, TrayMenuLevel};
     let entry = |id, label: &str| TrayMenuEntry {

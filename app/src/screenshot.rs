@@ -1,9 +1,3 @@
-//! Runs the screenshot feature (`nova-screenshot`, in
-//! `features/screenshot`) in novad: its kept module and the answers to its
-//! commands. Wiring only: it adapts the feature's core to novad's `Module`
-//! trait and `Daemon`, and all of the feature's work and state stay in the
-//! core.
-
 use crate::Daemon;
 use nova_base::lock;
 use nova_carrier::Outcome;
@@ -15,7 +9,6 @@ use std::sync::Arc;
 
 use nova_screenshot::FEATURE_ID;
 
-/// The feature's core, as novad's module.
 pub struct Screenshots(Arc<nova_screenshot::Screenshots>);
 
 impl std::ops::Deref for Screenshots {
@@ -26,13 +19,10 @@ impl std::ops::Deref for Screenshots {
     }
 }
 
-/// The answer to one of the feature's commands, the route
-/// `requests::router` gives them.
 pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     match command {
         Command::Screenshot { mode } => screenshot(daemon, *mode),
         Command::SaveCapture { output, rect } => save_capture(daemon, output.clone(), *rect),
-        // Even with the feature off, so a reload can't strand the picker.
         Command::CancelCapture => {
             screenshots(daemon).cancel();
             Answer::Now(done(Ok(())))
@@ -41,12 +31,10 @@ pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     }
 }
 
-/// Kept for novad's life, whatever the settings.
 fn screenshots(daemon: &Daemon) -> Arc<nova_screenshot::Screenshots> {
     Arc::clone(&daemon.kept.screenshots.0)
 }
 
-/// An error saying the feature isn't ready, when it isn't.
 fn require_feature(daemon: &Daemon) -> Result<(), String> {
     match daemon.feature_ready(FEATURE_ID) {
         true => Ok(()),
@@ -54,8 +42,6 @@ fn require_feature(daemon: &Daemon) -> Result<(), String> {
     }
 }
 
-/// Opens the region picker on every screen (or closes it), or saves the
-/// focused screen.
 fn screenshot(daemon: &Daemon, mode: CaptureMode) -> Answer {
     if let Err(e) = require_feature(daemon) {
         return Answer::Now(Outcome::Error(e));
@@ -80,7 +66,6 @@ fn screenshot(daemon: &Daemon, mode: CaptureMode) -> Answer {
     })
 }
 
-/// Saves the region the user picked.
 fn save_capture(daemon: &Daemon, output: String, rect: PixelRect) -> Answer {
     if let Err(e) = require_feature(daemon) {
         return Answer::Now(Outcome::Error(e));
@@ -90,7 +75,6 @@ fn save_capture(daemon: &Daemon, output: String, rect: PixelRect) -> Answer {
     Answer::later(move || done(folder.and_then(|folder| screenshots.save_region(&output, rect, &folder))))
 }
 
-/// Kept for novad's life, so a reload can't strand the region picker.
 impl nova_modules::Module for Screenshots {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
@@ -118,7 +102,6 @@ impl nova_modules::Module for Screenshots {
         ))))
     }
 
-    /// A restarted UI picks up a region picker that was open.
     fn send_state(&self, client: ClientId) {
         self.0.send_state(client);
     }

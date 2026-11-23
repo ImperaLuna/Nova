@@ -1,9 +1,3 @@
-//! Runs the wallpaper feature (`nova-wallpaper`, in `features/wallpaper`)
-//! in novad: its module and the answers to its commands. Wiring only: it
-//! adapts the feature's core to novad's `Module` trait and `Daemon`, tells
-//! it about the compositor's outputs, and all of the feature's work and
-//! state stay in the core.
-
 use crate::Daemon;
 use nova_base::lock;
 use nova_carrier::Outcome;
@@ -15,7 +9,6 @@ use std::sync::Arc;
 
 use nova_wallpaper::{ENGINE_FEATURE_ID, FEATURE_ID};
 
-/// The feature's core, as novad's module.
 pub struct Wallpaper(Arc<nova_wallpaper::Wallpaper>);
 
 impl std::ops::Deref for Wallpaper {
@@ -26,20 +19,15 @@ impl std::ops::Deref for Wallpaper {
     }
 }
 
-/// The answer to one of the feature's commands, the route
-/// `requests::router` gives them.
 pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     let wallpaper = &daemon.kept.wallpaper;
     Answer::Now(match command {
-        // The service knows which wallpapers need which feature.
         Command::SetWallpaper { path, output } => done(wallpaper.set(path, output.as_deref())),
         Command::Wallpapers => value(wallpaper.current()),
         Command::WallpaperFolder => return folder(daemon),
     })
 }
 
-/// Lists the wallpaper folder on its own thread: reading each file's
-/// header takes a moment in a big folder, or one on a slow disk.
 fn folder(daemon: &Daemon) -> Answer {
     let folder = match daemon.feature_ready(FEATURE_ID) {
         true => lock(&daemon.settings).wallpaper_config().folder(),
@@ -51,16 +39,12 @@ fn folder(daemon: &Daemon) -> Answer {
     }
 }
 
-/// Where the wallpaper service keeps its state, and the home its paths start from.
 #[derive(Clone)]
 pub struct Sources {
     pub state_dir: PathBuf,
     pub home: Option<PathBuf>,
 }
 
-/// Kept for novad's life, told which wallpaper features are ready and what
-/// `[wallpaper]` says on every change, and about the outputs whenever they
-/// change.
 impl nova_modules::Module for Wallpaper {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;

@@ -1,17 +1,3 @@
-//! Runs the UI, `nova-ui` (the GPUI program), as a child of novad and
-//! restarts it when it exits. A `nova-ui` that is missing or won't start
-//! is an error in the log (once per reason) and another try after a
-//! backoff, so installing it later brings the UI back with no restart.
-//!
-//! It runs only while some feature with a UI is on ([`Supervisor::want`]):
-//! with every such feature off, novad keeps serving `nova` commands without
-//! a UI, and turning one on starts it again.
-//!
-//! The UI's stdout and stderr go into novad's log with source `ui`. When it
-//! exits on its own, the lines before the exit are saved as a crash snapshot
-//! and it starts again after a backoff. When the compositor is gone, the
-//! session is over and novad exits instead.
-
 use nova_base::backoff::Backoff;
 use nova_base::lock;
 use nova_carrier::log::UI_LOG_SOURCE;
@@ -27,39 +13,25 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-/// The UI's process name in ps and btop: its `argv[0]`.
 pub const UI_PROCESS_NAME: &str = "NovaUI";
-/// The GPUI program, looked up on the session's `PATH` at each start.
 pub const GPUI_UI: &str = "nova-ui";
 const LOG_SOURCE: &str = "supervisor";
 const NOT_NEEDED: &str = "no feature with a UI is on, so the UI isn't running";
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const MAX_RETRY: Duration = Duration::from_secs(30);
-/// A UI that ran this long counts as healthy: the backoff starts over.
 const HEALTHY_AFTER: Duration = Duration::from_secs(60);
-/// A UI that dies this quickly most likely failed to load.
 const EARLY_EXIT: Duration = Duration::from_secs(5);
-/// How often novad checks the compositor is still there while no UI runs
-/// (a UI's exit is the check otherwise).
 const SESSION_CHECK: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct UiSettings {
-    /// The program novad was told to run (`nova daemon --gpui-ui`), else
-    /// [`GPUI_UI`] found on `path_var` at each start.
     pub program: Option<PathBuf>,
-    /// Passed to the UI as [`SOCKET_VAR`].
     pub socket: PathBuf,
-    /// `PATH` for the UI and its children.
     pub path_var: String,
-    /// The compositor's Wayland socket. When it's gone after the UI exits,
-    /// the session is over and novad exits.
     pub wayland_socket: Option<PathBuf>,
 }
 
 impl UiSettings {
-    /// The program to start now: the one novad was given, else `nova-ui`
-    /// on `PATH`, or why there is none.
     fn program_path(&self) -> Result<PathBuf, String> {
         match &self.program {
             Some(path) => Ok(path.clone()),
@@ -71,40 +43,28 @@ impl UiSettings {
 
 pub struct Supervisor {
     record: Mutex<Record>,
-    /// Signalled when `wanted` or `quitting` changes.
     changed: Condvar,
     quitting: AtomicBool,
 }
 
-/// How one run of the UI went.
 enum Outcome {
-    /// It ran and exited, as text for the log.
     Exited(String),
-    /// It never started, and why.
     NotStarted(String),
-    /// It wasn't wanted any more by the time it would have started.
     NotWanted,
 }
 
 #[derive(Default)]
 struct Record {
-    /// Some feature with a UI is on, so the UI should run.
     wanted: bool,
-    /// The running UI was told to stop because it's no longer wanted, so
-    /// its exit isn't a crash even if it's wanted again by then.
     stopping: bool,
     pid: Option<u32>,
     restarts: u32,
     last_crash: Option<Crash>,
-    /// When the UI got to its state ([`UiStatus::since`]).
     since: Option<String>,
-    /// Why it isn't running while wanted ([`UiStatus::problem`]).
     problem: Option<String>,
 }
 
 impl Supervisor {
-    /// Starts the UI on a thread of its own that lives as long as novad,
-    /// running it while `wanted` (see [`Self::want`]).
     pub fn start(settings: UiSettings, wanted: bool, logger: Arc<Logger>) -> Arc<Self> {
         if !wanted {
             logger.info(LOG_SOURCE, NOT_NEEDED);
@@ -140,7 +100,6 @@ impl Supervisor {
         }
     }
 
-    /// Stops the UI for good; it won't be restarted.
     pub fn stop(&self) {
         self.quitting.store(true, Ordering::SeqCst);
         let record = lock(&self.record);
@@ -148,8 +107,6 @@ impl Supervisor {
         self.changed.notify_all();
     }
 
-    /// Runs the UI while `wanted` (some feature with a UI is on): stops it
-    /// when that turns false and starts it when it turns true again.
     pub fn want(&self, wanted: bool, logger: &Logger) {
         let mut record = lock(&self.record);
         if record.wanted == wanted {
@@ -168,7 +125,6 @@ impl Supervisor {
 
     fn run(&self, settings: &UiSettings, logger: &Arc<Logger>) {
         let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
-        // Why the last start failed, so the same reason is logged once.
         let mut failed_start: Option<String> = None;
         loop {
             loop {
@@ -194,7 +150,6 @@ impl Supervisor {
                 return;
             }
             if std::mem::take(&mut lock(&self.record).stopping) || matches!(outcome, Outcome::NotWanted) {
-                // Stopped on purpose: no crash, and a fresh backoff.
                 retry.reset();
                 failed_start = None;
                 self.not_running(None);
@@ -216,8 +171,6 @@ impl Supervisor {
             }
             let wait = retry.next();
             logger.info(LOG_SOURCE, &format!("starting the UI again in {} s", wait.as_secs()));
-            // Cut short by `stop`, or by `want(false)` (the loop then waits
-            // until it's wanted again).
             let record = lock(&self.record);
             let _waited = self
                 .changed
@@ -226,10 +179,7 @@ impl Supervisor {
         }
     }
 
-    /// Runs the UI until it exits, and says how that went.
     fn run_once(&self, settings: &UiSettings, logger: &Arc<Logger>) -> Outcome {
-        // Spawned under the record lock, so a `want(false)` or `stop` either
-        // comes first (and nothing starts) or sees the pid and ends it.
         let mut child = {
             let mut record = lock(&self.record);
             if !record.wanted || self.quitting.load(Ordering::SeqCst) {
@@ -254,14 +204,11 @@ impl Supervisor {
             child.stdout.take().map(|out| forward_lines(out, Arc::clone(logger), UI_LOG_SOURCE)),
             child.stderr.take().map(|err| forward_lines(err, Arc::clone(logger), UI_LOG_SOURCE)),
         ];
-        // The pid is forgotten between the exit and the reap, so `stop` and
-        // `status` never act on a pid the kernel may have handed out again.
         if let Err(e) = nova_process::child::wait_for_exit(child.id()) {
             logger.warn(LOG_SOURCE, &format!("couldn't wait for the UI without reaping it: {e}"));
         }
         lock(&self.record).pid = None;
         let status = child.wait();
-        // Every line the UI printed is in the log before its exit is.
         for reader in readers.into_iter().flatten() {
             let _ = reader.join();
         }
@@ -271,16 +218,11 @@ impl Supervisor {
         })
     }
 
-    /// Notes a start that failed for `problem`. It never ran: no output to
-    /// keep, so no crash snapshot, and not a restart. The same reason as the
-    /// last try's (`failed_start`) is an error only once; each try after it
-    /// is the "starting again" info line.
     fn failed_to_start(&self, problem: String, failed_start: &mut Option<String>, logger: &Logger) {
         if failed_start.as_ref() == Some(&problem) {
             return;
         }
         logger.error(LOG_SOURCE, &format!("the UI didn't start: {problem}"));
-        // Not running since the first failed try, not the latest.
         if failed_start.is_none() {
             self.not_running(None);
         }
@@ -288,7 +230,6 @@ impl Supervisor {
         *failed_start = Some(problem);
     }
 
-    /// Notes that the UI stopped running now, and why, if it should run.
     fn not_running(&self, problem: Option<String>) {
         let mut record = lock(&self.record);
         record.since = Some(nova_log::now());
@@ -316,11 +257,6 @@ impl Supervisor {
     }
 }
 
-/// Sends the UI SIGTERM, if it runs. Called under the record lock:
-/// `run_once` clears the pid under it before reaping, so the pid is still
-/// the UI's (at worst a zombie) and can't have been reused by another
-/// process.
-/// Exits novad once the compositor's socket is gone: the session is over.
 fn exit_if_session_over(settings: &UiSettings, logger: &Logger) {
     if settings.wayland_socket.as_ref().is_some_and(|socket| !socket.exists()) {
         logger.info(LOG_SOURCE, "the compositor is gone, so the session is over: exiting");
@@ -337,8 +273,6 @@ fn terminate(record: &Record) {
     }
 }
 
-/// `program` as [`UI_PROCESS_NAME`], connected to novad, its output piped
-/// to the log.
 fn spawn(settings: &UiSettings, program: &Path) -> std::io::Result<Child> {
     let mut command = Command::new(program);
     command
@@ -348,14 +282,10 @@ fn spawn(settings: &UiSettings, program: &Path) -> std::io::Result<Child> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // A crashed novad never leaves an orphaned bar behind. This runs on the
-    // supervisor thread, which lives as long as novad.
     nova_process::child::die_with_novad(&mut command, libc::SIGTERM);
     command.spawn()
 }
 
-/// Logs each line a UI process writes to `stream`, as from
-/// `source`, until it closes.
 pub fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>, source: &'static str) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let mut reader = BufReader::new(stream);
@@ -382,7 +312,6 @@ mod tests {
         };
         let on_path = settings(None);
         assert_eq!(on_path.program_path(), Err("nova-ui isn't on PATH, so Nova has no UI".into()));
-        // Installed after novad started: the next start finds it.
         let installed = nova_test_support::write_program(dir.path(), GPUI_UI, "exit 0");
         assert_eq!(on_path.program_path(), Ok(installed));
         let given = dir.join("given");

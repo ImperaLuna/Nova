@@ -1,10 +1,3 @@
-//! Runs the launcher feature (`nova-launcher`, in `features/launcher`) in
-//! novad: its module, the answers to its commands, and its ports. Wiring
-//! only: it adapts the feature's core to novad's `Module` trait and
-//! `Daemon`, fills the core's ports with today's modules (the tray's apps,
-//! and the module answering each provider view, [`PROVIDERS`]), and all of
-//! the feature's work and state stay in the core.
-
 use crate::Daemon;
 use crate::modules::Running;
 use crate::nova_files::NovaFiles;
@@ -21,7 +14,6 @@ use std::sync::{Arc, mpsc};
 
 use nova_launcher::{FEATURE_ID, Paths};
 
-/// The feature's core, as novad's module.
 pub struct Launcher(Arc<nova_launcher::Launcher>);
 
 impl std::ops::Deref for Launcher {
@@ -32,13 +24,8 @@ impl std::ops::Deref for Launcher {
     }
 }
 
-/// The answer to one of the feature's commands, the route
-/// `requests::router` gives them.
 pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     Answer::Now(match command {
-        // A provider's own mode (files) waits on another app (Nova
-        // Files), so it's answered off the connection's thread: a slow
-        // answer must not hold up other requests. The mixed providers answer from memory.
         Command::LauncherSearch { query, mode } => {
             let providers = match providers(daemon) {
                 Ok(providers) => providers,
@@ -63,15 +50,12 @@ pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     })
 }
 
-/// The ready features' launcher providers, while the launcher runs.
 fn providers(daemon: &Daemon) -> Result<Host, String> {
     daemon.module::<Launcher>()?;
     let settings = lock(&daemon.settings);
     Ok(Host::new(slotted(&settings.features), |view| find(view, &settings.modules)))
 }
 
-/// The provider views the ready features in `features` slot into the
-/// launcher's host.
 fn slotted(features: &[FeatureState]) -> impl Iterator<Item = Slotted<'_>> {
     features.iter().filter(|feature| feature.status == FeatureStatus::Ready).flat_map(|feature| {
         feature.slots.iter().filter(|slot| slot.host == HOST).map(|slot| Slotted {
@@ -82,11 +66,6 @@ fn slotted(features: &[FeatureState]) -> impl Iterator<Item = Slotted<'_>> {
     })
 }
 
-/// Runs what the launcher's provider `provider` found as `id`, like an
-/// app it focuses or starts (see `nova_launcher::providers`). Answers once it
-/// is underway: the launcher waits for the answer to close, and an app
-/// in the tray may take seconds to show its window. A failure after
-/// that is only logged.
 pub fn run(daemon: &Daemon, provider: &str, id: &str, output: Option<String>, new_window: bool) -> Answer {
     let provider = match providers(daemon).and_then(|providers| providers.provider(provider)) {
         Ok(provider) => provider,
@@ -111,16 +90,12 @@ pub fn run(daemon: &Daemon, provider: &str, id: &str, output: Option<String>, ne
                 logger: &logger,
                 underway: &underway,
             };
-            // Unheard once it was underway; starting the app logs its
-            // own failures.
             let _ = answer.send(provider.run(&id, &how));
         });
         done(answered.recv().unwrap_or_else(|_| Err("the launch stopped without an answer".into())))
     })
 }
 
-/// The launcher's port for the apps in the tray, filled by the tray's
-/// module.
 impl nova_launcher::TrayApps for Tray {
     fn in_tray(&self, app_id: &str) -> bool {
         self.has_app(app_id)
@@ -131,19 +106,14 @@ impl nova_launcher::TrayApps for Tray {
     }
 }
 
-/// The running module that answers a provider view, while its feature runs.
 type Finds = fn(&Running) -> Option<Arc<dyn Provider>>;
 
-/// Every provider view and the module that answers it: the one line a new
-/// provider adds outside its folder.
 const PROVIDERS: &[(&str, Finds)] = &[(PROVIDER_APPS, apps), (PROVIDER_FILES, running::<NovaFiles>)];
 
-/// The launcher's own provider, the installed apps, while it runs.
 fn apps(modules: &Running) -> Option<Arc<dyn Provider>> {
     modules.get::<Launcher>().map(|launcher| Arc::clone(&launcher.0) as Arc<dyn Provider>)
 }
 
-/// The module `M`, while it runs, as a provider.
 fn running<M: Module + Provider>(modules: &Running) -> Option<Arc<dyn Provider>>
 where
     Running: Has<M>,
@@ -151,12 +121,10 @@ where
     modules.get::<M>().map(|module| module as Arc<dyn Provider>)
 }
 
-/// The running module that answers the provider view `view`.
 fn find(view: &str, modules: &Running) -> Option<Arc<dyn Provider>> {
     PROVIDERS.iter().find(|(known, _)| *known == view).and_then(|(_, finds)| finds(modules))
 }
 
-/// It has no options: it only starts and stops with its feature.
 impl nova_modules::Module for Launcher {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
@@ -198,7 +166,6 @@ mod tests {
     use nova_launcher_api::{LauncherItem, TextRun};
     use nova_test_support::TempDir;
 
-    /// A provider that finds `query` back as one item.
     struct Echo;
 
     impl Provider for Echo {
@@ -217,7 +184,6 @@ mod tests {
         }
     }
 
-    /// A feature `id` in `status`, filling `host` with the view `id` at `order`.
     fn feature(id: &str, status: FeatureStatus, host: &str, order: i64) -> FeatureState {
         let slot = Slot { host: host.into(), view: id.into(), order };
         FeatureState { id: id.into(), status, missing: Vec::new(), slots: vec![slot], mode: None }
@@ -248,7 +214,6 @@ mod tests {
         assert!(host.provider("bar").is_err());
     }
 
-    /// Every provider view a manifest in the repo slots in has a provider.
     #[test]
     fn every_provider_in_the_repo_is_known() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");

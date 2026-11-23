@@ -1,30 +1,19 @@
-//! The machine Nova runs on: its distro and GPUs. `nova doctor` reports
-//! them; `nova setup` picks packages by them.
-//!
-//! Everything is read below a root folder (`/` for real), so tests run on a
-//! fake `/etc` and `/sys`.
-
 use nova_features::{Gpu, gpus};
 use std::fmt;
 use std::path::Path;
 
-/// os-release, in the order systemd reads it.
 const OS_RELEASE: &[&str] = &["etc/os-release", "usr/lib/os-release"];
 
-/// The distro families Nova has package names for, plus the rest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Distro {
     NixOs,
     Arch,
     Fedora,
     Debian,
-    /// Something else, by its os-release `ID` (empty when there's none).
     Other(String),
 }
 
 impl Distro {
-    /// The key a feature manifest lists this distro's packages under
-    /// (`nova_features::DISTROS`). None where Nova has no package names.
     pub fn packages_key(&self) -> Option<&'static str> {
         match self {
             Self::NixOs => Some("nix"),
@@ -35,8 +24,6 @@ impl Distro {
         }
     }
 
-    /// Reads os-release: `ID`, else the first family in `ID_LIKE` Nova
-    /// knows, so Manjaro is Arch and Ubuntu is Debian.
     fn from_os_release(text: &str) -> Self {
         let field = |name: &str| novad::checks::os_release_field(text, name).unwrap_or_default();
         let id = field("ID");
@@ -71,14 +58,11 @@ impl fmt::Display for Distro {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Host {
     pub distro: Distro,
-    /// Each GPU's vendor, once per vendor, in card order.
     pub gpus: Vec<Gpu>,
-    /// NVIDIA's kernel driver is loaded (not nouveau).
     pub nvidia_driver: bool,
 }
 
 impl Host {
-    /// The machine whose files are below `root`.
     pub fn detect(root: &Path) -> Self {
         let os_release = OS_RELEASE.iter().find_map(|path| std::fs::read_to_string(root.join(path)).ok());
         Self {
@@ -94,7 +78,6 @@ pub mod tests {
     use super::*;
     use nova_features::gpus::{DRM_DIR, NVIDIA_MODULE};
 
-    /// A fake root folder with an os-release and GPUs, removed on drop.
     pub struct FakeRoot(pub nova_test_support::TempDir);
 
     impl FakeRoot {

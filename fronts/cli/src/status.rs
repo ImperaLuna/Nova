@@ -1,5 +1,3 @@
-//! `nova status` and `nova version`.
-
 use crate::client::{Client, RESTART_COMMAND};
 use nova_daemon_info::{FeatureStatus, Status, UiState};
 use nova_desktop_info::Desktop;
@@ -17,8 +15,6 @@ pub fn show(socket: &Path, json: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Prints nova's version. A running novad from another version is pointed
-/// out, since it keeps running the old code until it's restarted.
 pub fn version(socket: &Path) {
     let version = env!("CARGO_PKG_VERSION");
     println!("nova {version}");
@@ -78,7 +74,6 @@ fn describe(status: &Status) -> String {
     out
 }
 
-/// The compositor, its workspaces per output and the focused window.
 fn describe_desktop(desktop: Option<&Desktop>) -> String {
     let Some(desktop) = desktop else {
         return row("compositor", "none followed (Nova knows niri and Hyprland)");
@@ -121,8 +116,6 @@ fn describe_desktop(desktop: Option<&Desktop>) -> String {
     out + &row("window", &window)
 }
 
-/// `text` with control characters escaped (`\u{1b}`), so text from apps,
-/// like a web page's title, can't send the terminal escape sequences.
 pub fn printable(text: &str) -> String {
     text.chars().map(|c| if c.is_control() { c.escape_unicode().to_string() } else { c.to_string() }).collect()
 }
@@ -135,7 +128,6 @@ fn megabytes(kib: u64) -> String {
     format!("{} MB", kib / KIB_PER_MB)
 }
 
-/// `2h 3m`, `5m 10s`, `42s`.
 fn duration(secs: u64) -> String {
     let (hours, minutes, seconds) = (secs / 3600, secs / 60 % 60, secs % 60);
     match (hours, minutes) {
@@ -145,7 +137,6 @@ fn duration(secs: u64) -> String {
     }
 }
 
-/// `3m 5s ago` from an RFC 3339 time, or the time itself if it won't parse.
 fn ago(time: &str) -> String {
     match time.parse::<jiff::Timestamp>() {
         Ok(then) => {

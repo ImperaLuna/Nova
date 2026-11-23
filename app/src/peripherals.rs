@@ -1,10 +1,3 @@
-//! Runs the peripherals feature (`nova-peripherals`, in
-//! `features/peripherals`) in novad: its module. Wiring only: it adapts the
-//! feature's core to novad's `Module` trait and fills its port for low
-//! battery alerts with the notifications feature's core while that runs;
-//! all of the feature's work and state stay in the core. It takes no
-//! commands.
-
 use nova_hub::ClientId;
 use nova_notifications_api::Post;
 use nova_peripherals::Sources;
@@ -12,11 +5,8 @@ use std::sync::Arc;
 
 use nova_peripherals::FEATURE_ID;
 
-/// The feature's core, as novad's module.
 pub struct Peripherals(Arc<nova_peripherals::Peripherals>);
 
-/// No options. Its low battery alerts go to whatever notification server
-/// is up.
 impl nova_modules::Module for Peripherals {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
