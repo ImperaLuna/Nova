@@ -67,7 +67,7 @@ mod view;
 pub use frames::FrameLog;
 pub use item::{Panel, Part, Pill, Placement, Shown};
 pub use middle::middle;
-pub use registry::{Parts, overlay, panel, part, pill};
+pub use registry::{Parts, has_part, overlay, panel, part, pill};
 pub use screens::{Screen, Screens};
 pub use slots::{HOST_BAR_CENTER, HOST_BAR_LEFT, HOST_BAR_RIGHT, HOST_SHELL_OVERLAYS, HOST_STAGE_PANELS, Slots};
 pub use stage::{Stage, StageOptions};
