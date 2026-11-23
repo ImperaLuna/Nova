@@ -112,11 +112,11 @@ impl PopupWindow {
         }
     }
 
-    /// Makes the window `height` tall: taller at once, shorter only when
-    /// `may_shrink` (nothing moves).
-    fn fit(&mut self, height: Pixels, may_shrink: bool, now: Instant, window: &mut Window) {
+    /// Makes the window `height` tall. Only for a frame in which nothing
+    /// moves.
+    fn fit(&mut self, height: Pixels, now: Instant, window: &mut Window) {
         let height = if height < RESTING_HEIGHT { RESTING_HEIGHT } else { height.ceil() };
-        if height == self.height || (height < self.height && !may_shrink) {
+        if height == self.height {
             return;
         }
         self.height = height;
@@ -134,7 +134,7 @@ impl PopupWindow {
     /// Nothing to draw: as small as it gets, with no wake-up left.
     fn rest(&mut self, now: Instant, window: &mut Window) -> Div {
         self.countdown = None;
-        self.fit(RESTING_HEIGHT, true, now, window);
+        self.fit(RESTING_HEIGHT, now, window);
         self.log_frame(false, now);
         div().child(self.regions())
     }
@@ -218,17 +218,18 @@ impl Render for PopupWindow {
 
         // The room every card takes once in place, counting those not
         // opened yet and those leaving, so the window keeps one size
-        // through a motion. New ones are laid out unseen first: the window
-        // grows once, to their real heights, and they open in the frame
-        // after it has.
-        let measured = arrivals.iter().all(|key| heights.contains_key(key));
-        if measured {
+        // through a motion. New ones are laid out unseen first, and wait
+        // for the cards on their way to arrive: then the window grows
+        // once, to their real heights, and they open in the frame after
+        // it has.
+        let settled = !moving && arrivals.iter().all(|key| heights.contains_key(key));
+        if settled {
             let chip_room = if waiting > 0 { ACTION_HEIGHT } else { px(0.0) };
             let full = entries.iter().fold(chip_room, |total, entry| total + height_of(entry) + GAP);
-            self.fit(top + full + SHADOW_ROOM, !moving, now, window);
+            self.fit(top + full + SHADOW_ROOM, now, window);
         }
         if !arrivals.is_empty() {
-            if measured && self.fitted(now, window) {
+            if settled && self.fitted(now, window) {
                 popups.update(cx, |popups, _| popups.open_arrivals(now));
                 moving = true;
             } else {
