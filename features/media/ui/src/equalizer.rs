@@ -79,8 +79,7 @@ pub fn outline(heights: &[f32], width: f32, gap: f32, top: f32, samples: usize) 
     let mut points = Vec::new();
     corner(&mut points, (radius, radius), radius, 270.0);
     corner(&mut points, (radius, height(*first) - radius), radius, 180.0);
-    for span in middles.windows(2).enumerate() {
-        let (index, pair) = span;
+    for (index, pair) in middles.windows(2).enumerate() {
         let before = middles[index.saturating_sub(1)];
         let after = middles[(index + 2).min(middles.len() - 1)];
         for step in 1..=samples.max(1) {
