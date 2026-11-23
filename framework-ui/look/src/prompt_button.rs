@@ -4,8 +4,10 @@
 //! password's Connect. `ui/quick_settings/PromptButton.qml` in today's
 //! shell.
 
-use crate::tokens::{CONFIRM_BUTTON_HEIGHT, DIM_OPACITY, FONT_SIZE_SMALL, PAD, RADIUS_SEGMENT, WEIGHT_BODY, WEIGHT_TITLE};
 use crate::Theme;
+use crate::tokens::{
+    CONFIRM_BUTTON_HEIGHT, DIM_OPACITY, FONT_SIZE_SMALL, PAD, RADIUS_SEGMENT, WEIGHT_BODY, WEIGHT_TITLE,
+};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,

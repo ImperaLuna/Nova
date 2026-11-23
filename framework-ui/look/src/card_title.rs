@@ -20,10 +20,6 @@ impl CardTitle {
 
 impl RenderOnce for CardTitle {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        div()
-            .flex_none()
-            .text_size(FONT_SIZE_SMALL)
-            .text_color(Theme::of(cx).fg_soft())
-            .child(self.text.to_uppercase())
+        div().flex_none().text_size(FONT_SIZE_SMALL).text_color(Theme::of(cx).fg_soft()).child(self.text.to_uppercase())
     }
 }

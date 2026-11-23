@@ -43,7 +43,9 @@ impl Watch {
         let send: Send = Rc::new(move |wanted, cx| Daemon::send(command(wanted), cx));
         let watch = cx.new(|cx| {
             let connection = Daemon::connection(cx).map(|connection| {
-                cx.observe(&connection, |watch: &mut Watch, connection, cx| watch.again(connection.read(cx).is_connected(), cx))
+                cx.observe(&connection, |watch: &mut Watch, connection, cx| {
+                    watch.again(connection.read(cx).is_connected(), cx)
+                })
             });
             Watch { wanting: HashSet::new(), send, _connection: connection }
         });
