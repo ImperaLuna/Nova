@@ -51,8 +51,12 @@ pub struct Frame {
 pub enum Saved {
     Shot(SavedScreenshot),
     Recording(SavedRecording),
-    /// A recording didn't start after the countdown: novad's reason.
-    Failed(String),
+    /// A recording didn't start after the countdown, or (`started`) its
+    /// recorder ended without a frame: novad's reason.
+    Failed {
+        reason: String,
+        started: bool,
+    },
 }
 
 /// A card's button.
@@ -459,7 +463,7 @@ impl Capture {
         };
         let Some(screen) = screen else { return };
         let slide = kept.as_ref().map_or_else(|| Eased::lasting(0.0, DURATION_PANEL, now), |card| card.slide);
-        let time = if matches!(saved, Saved::Failed(_)) { FAILED_CARD_TIME } else { CARD_TIME };
+        let time = if matches!(saved, Saved::Failed { .. }) { FAILED_CARD_TIME } else { CARD_TIME };
         let mut countdown = Countdown::start(time, now);
         // Still under the pointer, which no hover change will say again.
         countdown.set_held(kept.is_some_and(|card| card.countdown.held()), now);
@@ -527,8 +531,8 @@ impl Capture {
             (Saved::Recording(saved), Button::File(action)) => {
                 Daemon::send(nova_recording_api::Command::RecordingAction { id: saved.id, action }, cx);
             }
-            (Saved::Failed(_), Button::Retry) => self.record_again(cx),
-            (Saved::Failed(_), Button::Log) => Daemon::send(nova_recording_api::Command::OpenLog, cx),
+            (Saved::Failed { .. }, Button::Retry) => self.record_again(cx),
+            (Saved::Failed { .. }, Button::Log) => Daemon::send(nova_recording_api::Command::OpenLog, cx),
             _ => {}
         }
         cx.notify();

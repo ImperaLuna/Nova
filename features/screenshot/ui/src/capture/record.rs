@@ -79,6 +79,7 @@ impl Capture {
                 }
             }
             Event::RecordingSaved(saved) => self.show_card(Saved::Recording(saved), cx),
+            Event::RecordingFailed { reason } => self.show_card(Saved::Failed { reason, started: true }, cx),
         }
     }
 
@@ -282,7 +283,8 @@ impl Capture {
                     other => other.to_string(),
                 };
                 eprintln!("WARN nova-ui: recording didn't start: {reason}");
-                let _ = capture.update(cx, |capture, cx| capture.show_card(Saved::Failed(reason), cx));
+                let _ =
+                    capture.update(cx, |capture, cx| capture.show_card(Saved::Failed { reason, started: false }, cx));
             }
         })
         .detach();

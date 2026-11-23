@@ -32,9 +32,10 @@ Scope {
         function onSaved(saved: var) {
             cards.show(saved, true);
         }
-        function onFailed(reason: string) {
+        function onFailed(reason: string, started: bool) {
             cards.show({
-                reason: reason
+                reason: reason,
+                started: started
             }, true);
         }
     }

@@ -54,6 +54,7 @@ expression: all
 {"v":2,"id":38,"cmd":"stop_recording"}
 {"v":2,"event":"recording","data":null}
 {"v":2,"event":"recording_saved","data":{"id":1,"path":"/home/me/Videos/Recordings/Recording 2026-10-25 18-03-41.mp4","duration_ms":42000}}
+{"v":2,"event":"recording_failed","data":{"reason":"wf-recorder wrote no frames"}}
 {"v":2,"cmd":"recording_action","args":{"id":1,"action":"open"}}
 {"v":2,"cmd":"open_log"}
 {"v":2,"event":"host","data":{"host":"RyzenShine","user":"Luna","booted_at":1793000000,"os":{"id":"nixos","name":"NixOS","logo":"nix-snowflake"}}}

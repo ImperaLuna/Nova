@@ -41,9 +41,9 @@ Singleton {
 
     // The last recording saved ({id, path, duration_ms}), for the card.
     signal saved(var saved)
-    // The recording didn't start after the countdown: novad's reason, for
-    // the card.
-    signal failed(string reason)
+    // The recording didn't start after the countdown, or (`started`) its
+    // recorder ended without a frame: novad's reason, for the card.
+    signal failed(string reason, bool started)
 
     onActiveChanged: {
         _since = Date.now();
@@ -198,7 +198,7 @@ Singleton {
                 if (!error)
                     return;
                 console.warn(`nova: recording didn't start: ${error}`);
-                root.failed(error);
+                root.failed(error, false);
             });
         }
     }
@@ -223,6 +223,9 @@ Singleton {
         }
         function onRecordingSaved(saved: var) {
             root.saved(saved);
+        }
+        function onRecordingFailed(reason: string) {
+            root.failed(reason, true);
         }
     }
 }

@@ -4,10 +4,13 @@
 //! as the screen for as long as their feature is on. `PanelSurface.qml` in
 //! today's shell.
 //!
-//! The stage's view opens it when a feature with such a panel becomes
-//! ready, and it stays: a new window holds every window's frames up for a
-//! moment, which must never be the start of a panel's morph. While none of
-//! its panels is out it is parked, one pixel in the screen's top right
+//! It opens with the stage, just before the stage's own window, and stays
+//! as long as the stage: a new window holds every window's frames up for
+//! a moment, which must never be the start of a panel's morph, and
+//! compositors stack windows of one layer by when they opened (niri does),
+//! so the strip opened after it stays over it, as today's shell's stage
+//! stays over its PanelSurfaces: the bar over the wallpaper carousel.
+//! While none of its panels is out it is parked, one pixel in the screen's top right
 //! corner with nothing to blur and no clicks to take, and draws no frames.
 //! When one opens it grows to what that panel draws (and its shadow), and
 //! it parks again once the last has closed.
@@ -107,7 +110,9 @@ fn parked() -> Size<Pixels> {
     size(PANEL_WINDOW_PARKED, PANEL_WINDOW_PARKED)
 }
 
-/// Opens the window on `screen`, parked.
+/// Opens the window on `screen`, parked. Its stage is `shared.stage`, or
+/// the one [`PanelWindow::set_stage`] gives it when it opens before the
+/// stage does.
 pub(crate) fn open(
     screen: &Screen,
     shared: Shared,
@@ -181,6 +186,19 @@ fn needs(off_strip: &OffStrip, screen: Size<Pixels>, now: Instant) -> Size<Pixel
 }
 
 impl PanelWindow {
+    /// The stage it is beside, opened after it.
+    pub fn set_stage(&mut self, stage: WeakEntity<StageView>) {
+        self.stage = stage;
+    }
+
+    /// Its screen changed size: it lays its panels out by the new one.
+    pub fn set_screen(&mut self, screen: Size<Pixels>, cx: &mut Context<Self>) {
+        if self.screen != screen {
+            self.screen = screen;
+            cx.notify();
+        }
+    }
+
     /// Takes what the stage's view tells it.
     pub fn follow(&mut self, told: Told, window: &mut Window, cx: &mut Context<Self>) {
         let Told { hold, focus, moved } = told;
