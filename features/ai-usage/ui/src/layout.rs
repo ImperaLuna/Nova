@@ -32,10 +32,12 @@ pub fn panel_height(summary: &Summary, others: usize, message_lines: usize) -> P
     let caption = caption_line();
     let main = summary.main.as_ref();
     let lone_reset = main.filter(|main| summary.second.is_none() && !main.reset.is_empty());
+    // Qt's wrapped line height is a share of the face's own line, not of
+    // the size.
     let message = if summary.message.is_empty() {
         px(0.0)
     } else {
-        FONT_SIZE_SMALL * LINE_HEIGHT_WRAPPED * message_lines.max(1) as f32
+        caption_line() * LINE_HEIGHT_WRAPPED * message_lines.max(1) as f32
     };
     let primary = stacked(
         &[
@@ -109,7 +111,7 @@ mod tests {
     fn a_hint_grows_by_its_lines() {
         let one = panel_height(&summary(None, None, "Sign in"), 1, 1);
         let three = panel_height(&summary(None, None, "Sign in"), 1, 3);
-        assert!((three - one - FONT_SIZE_SMALL * LINE_HEIGHT_WRAPPED * 2.0).abs() < px(0.001));
+        assert!((three - one - caption_line() * LINE_HEIGHT_WRAPPED * 2.0).abs() < px(0.001));
         assert!(panel_height(&summary(None, None, ""), 1, 1) < one);
     }
 }

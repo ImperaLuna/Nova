@@ -25,9 +25,9 @@ use nova_look::Theme;
 use nova_look::motion::ease;
 use nova_look::tokens::{
     BAR_HEIGHT, CHIP_HEIGHT, CHIP_PAD, DIM_OPACITY, DURATION_FADE, DURATION_FILL, DURATION_PANEL, FONT_MONO, FONT_SANS,
-    FONT_SIZE_HERO, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE, ICON_SIZE_SMALL, LABEL_NUDGE, LINE_HEIGHT_HERO,
-    LINE_HEIGHT_WRAPPED, METER_HEIGHT, METER_HEIGHT_SMALL, PAD, PANEL_PAD, PANEL_PAD_BOTTOM, PANEL_WIDTH, RADIUS_ROW,
-    REVEAL_FILL, ROW_HEIGHT, ROW_INSET, SECTION_GAP, WEIGHT_LABEL, WEIGHT_TITLE,
+    FONT_SIZE_HERO, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE, ICON_SIZE_SMALL, LABEL_NUDGE, LINE_HEIGHT,
+    LINE_HEIGHT_HERO, LINE_HEIGHT_WRAPPED, METER_HEIGHT, METER_HEIGHT_SMALL, PAD, PANEL_PAD, PANEL_PAD_BOTTOM,
+    PANEL_WIDTH, RADIUS_ROW, REVEAL_FILL, ROW_HEIGHT, ROW_INSET, SECTION_GAP, WEIGHT_LABEL, WEIGHT_TITLE,
 };
 use nova_stage::{Screen, Stage};
 use nova_ui_client::{Daemon, Live};
@@ -223,11 +223,12 @@ impl Render for UsagePanel {
         self.follow_open(Stage::is_open(NAME, self.screen.id, cx), window, cx);
         let now = Instant::now();
         let fill = self.fill(now);
-        if self.opened.is_some() && fill < 1.0 {
-            window.request_animation_frame();
-        }
         let usage = self.data(cx).cloned();
         let summary = self.summary_of(usage.as_ref().and_then(shown));
+        // Frames only while a meter fills.
+        if self.opened.is_some() && fill < 1.0 && summary.main.is_some() {
+            window.request_animation_frame();
+        }
         let height = self.height(Self::lines(&summary.message, window), cx);
         self.ask_for(height, cx);
         let theme = Theme::of(cx).clone();
@@ -241,7 +242,7 @@ impl Render for UsagePanel {
             .flex()
             .flex_col()
             .child(self.header(&summary, &theme, cx))
-            .child(hero(&summary, &theme))
+            .child(hero(&summary, baseline_share(window), &theme))
             .child(details(&summary, fill, &theme))
             .child(div().flex_1())
             .child(
@@ -331,21 +332,41 @@ impl UsagePanel {
     }
 }
 
-/// The headline: the pill's number, big, with a smaller `%`.
-fn hero(summary: &Summary, theme: &Theme) -> Div {
+/// Where text's baseline sits in its line, as a share of its size: GPUI
+/// centers the face's ascent and descent in the line box and the running
+/// text's line height is a share of the size too, so it is the same share
+/// at every size.
+fn baseline_share(window: &Window) -> f32 {
+    let text = window.text_system();
+    let mut face = font(FONT_MONO);
+    face.weight = WEIGHT_LABEL;
+    let id = text.resolve_font(&face);
+    let (ascent, descent) = (text.ascent(id, FONT_SIZE_HERO), text.descent(id, FONT_SIZE_HERO).abs());
+    (LINE_HEIGHT - (ascent + descent) / FONT_SIZE_HERO) / 2.0 + ascent / FONT_SIZE_HERO
+}
+
+/// The headline: the pill's number, big, with a smaller `%` on its
+/// baseline, the number's line centered in the headline's height as
+/// today's shell centers it.
+fn hero(summary: &Summary, baseline: f32, theme: &Theme) -> Div {
     let color = percent_color(summary.main.as_ref(), theme);
-    let unit = summary.main.as_ref().map(|_| div().text_size(FONT_SIZE_HERO * HERO_UNIT_SCALE).child("%"));
+    let top = (LINE_HEIGHT_HERO - FONT_SIZE_HERO * LINE_HEIGHT) / 2.0;
+    let unit_size = FONT_SIZE_HERO * HERO_UNIT_SCALE;
+    let unit = summary
+        .main
+        .as_ref()
+        .map(|_| div().mt(top + (FONT_SIZE_HERO - unit_size) * baseline).text_size(unit_size).child("%"));
     div()
         .mt(GAP)
         .h(LINE_HEIGHT_HERO)
         .flex_none()
         .px(PANEL_PAD)
         .flex()
-        .items_baseline()
+        .items_start()
         .font_family(FONT_MONO)
         .font_weight(WEIGHT_LABEL)
         .text_color(color)
-        .child(div().text_size(FONT_SIZE_HERO).child(summary.hero.clone()))
+        .child(div().mt(top).text_size(FONT_SIZE_HERO).child(summary.hero.clone()))
         .children(unit)
 }
 
@@ -364,7 +385,8 @@ fn details(summary: &Summary, fill: f32, theme: &Theme) -> Div {
         }
     }
     if !summary.message.is_empty() {
-        primary = primary.child(caption(summary.message.clone(), theme).line_height(relative(LINE_HEIGHT_WRAPPED)));
+        primary = primary
+            .child(caption(summary.message.clone(), theme).line_height(relative(LINE_HEIGHT * LINE_HEIGHT_WRAPPED)));
     }
     let second = summary.second.as_ref().map(|second| {
         let reset = (!second.reset.is_empty()).then(|| caption(second.reset.clone(), theme));
