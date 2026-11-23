@@ -276,7 +276,7 @@ an entity of its own that no pill's `render` reads (GPUI hands a view's
 window callbacks the window that read it last).
 
 A part: a view for a host another feature draws (`central-pill.parts`,
-`right-pill.buttons`, `quick-settings.tiles`). The host's owner keeps a
+`right-pill.buttons`, `right-pill.tray`, `quick-settings.tiles`). The host's owner keeps a
 `Parts` per screen, calls `sync` when `Stage::slots` notifies and draws
 `views()` in slot order:
 
@@ -294,6 +294,25 @@ let parts = Parts::new("central-pill.parts", screen, cx);
 A part draws its content only, edge to edge: the host adds what goes
 between parts (the central pill's dividers) and keeps each end
 `Part::inset` from the first and last part (`PAD` by default).
+
+A part with nothing to show sets `Part::shown_while(shown)` false and the
+host leaves it out (the tray's strip in `right-pill.tray` while no app is
+in the tray); the host reads `Part::is_shown` each time it draws.
+
+A panel drawn where it stands: `Panel::in_place()` is a panel the stage
+opens, closes on Esc, a click outside or another panel opening, and
+reports through `Stage::is_open`, but never draws: a part draws its open
+look in place (the tray opening inside the right pill, `features/tray/ui`).
+`Stage::place(name, screen, left)` sets a panel's left edge across the
+screen before it opens, kept inside the bar's margins, for one that drops
+below the thing clicked (the tray's menu below an app's icon).
+
+A panel with pages (quick settings): a part turns it with
+`Stage::show_page(name, screen, Some("<part's view id>"))`, and its back
+button with `None` (the first page). The stage only keeps the page; the
+panel's view reads `Stage::page`, draws it, and goes back to the first page
+once it has closed. `features/quick-settings/ui` lists the hosts a
+feature's tile, slider, card or page goes in.
 
 An overlay (host `shell.overlays`): something with windows of its own over
 the screens, like pop-ups or the volume capsule. `build` runs once while
@@ -330,9 +349,6 @@ frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
 - The contract's flags are on `Panel`: `.exclusive(false)` to stay open
   beside the others, `.closes_on_click_outside(false)`, `.takes_typing`,
   `.top` and `.radius` for a panel that isn't the usual shape.
-  `.covers_screen()` is a panel over the whole screen that draws all of
-  it (the wallpaper carousel): no glass and no blur, every click on that
-  screen is its own, and it fades with the morph.
 - A panel changes size only with `Stage::resize(name, screen, size, cx)`,
   open or not; an open one eases there. The view never sizes its own glass.
 - A view redraws by itself (`cx.notify()` when what it shows changed) and

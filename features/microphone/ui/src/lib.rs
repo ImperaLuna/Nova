@@ -47,7 +47,11 @@ impl Mic {
         let sound = Live::follow(TOPIC, cx, |Event::Sound(sound)| Some(sound));
         let followed = cx.observe(&sound, |mic, _, cx| {
             if let Some(shown) = &mic.slider {
-                shown.set(!recorders(mic.sound.read(cx).get()).is_empty());
+                // The drawer doesn't draw it while hidden, so it wouldn't
+                // see this view's notify.
+                if shown.set(!recorders(mic.sound.read(cx).get()).is_empty()) {
+                    cx.refresh_windows();
+                }
             }
             cx.notify();
         });

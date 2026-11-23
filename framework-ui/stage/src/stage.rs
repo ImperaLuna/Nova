@@ -39,6 +39,8 @@ pub(crate) struct Panels {
     known: HashMap<DisplayId, Vec<PanelRules>>,
     /// The size a feature last asked a panel to be ([`Stage::resize`]).
     sizes: HashMap<(DisplayId, SharedString), Size<Pixels>>,
+    /// Where a feature last put a panel's left edge ([`Stage::place`]).
+    places: HashMap<(DisplayId, SharedString), Pixels>,
     /// The outputs whose shown workspace has a fullscreen window
     /// ([`Stage::set_fullscreen`]).
     fullscreen: Vec<SharedString>,
@@ -62,6 +64,7 @@ impl Panels {
         let closed = self.open.retain(|on, open| on != screen || panels.iter().any(|panel| panel.name == open.name));
         self.sizes.retain(|(on, name), _| *on != screen || panels.iter().any(|panel| panel.name == *name));
         self.pages.retain(|(on, name), _| *on != screen || panels.iter().any(|panel| panel.name == *name));
+        self.places.retain(|(on, name), _| *on != screen || panels.iter().any(|panel| panel.name == *name));
         let names = |list: &[PanelRules]| list.iter().map(|panel| panel.name.clone()).collect::<Vec<_>>();
         let before = self.known.insert(screen, panels.clone());
         closed || before.is_none_or(|before| names(&before) != names(&panels))
@@ -76,11 +79,16 @@ impl Panels {
         self.known.retain(|screen, _| here.contains(screen));
         self.sizes.retain(|(screen, _), _| here.contains(screen));
         self.pages.retain(|(screen, _), _| here.contains(screen));
+        self.places.retain(|(screen, _), _| here.contains(screen));
         self.open.retain(|screen, _| here.contains(&screen))
     }
 
     pub fn size(&self, name: &SharedString, screen: DisplayId) -> Option<Size<Pixels>> {
         self.sizes.get(&(screen, name.clone())).copied()
+    }
+
+    pub fn place(&self, name: &SharedString, screen: DisplayId) -> Option<Pixels> {
+        self.places.get(&(screen, name.clone())).copied()
     }
 
     /// Whether the output called `output` shows a fullscreen window.
@@ -212,6 +220,18 @@ impl Stage {
     pub fn page(name: &str, screen: DisplayId, cx: &App) -> Option<SharedString> {
         let state = cx.try_global::<StageState>()?;
         state.panels.read(cx).pages.get(&(screen, SharedString::from(name.to_owned()))).cloned()
+    }
+
+    /// Puts the left edge of the panel called `name` on `screen` at `left`
+    /// across the screen once open, for a panel that grows out of no pill
+    /// (a tray app's menu under its icon): it rises into place there rather
+    /// than in the middle, still inside the bar's margins.
+    pub fn place(name: &str, screen: DisplayId, left: Pixels, cx: &mut App) {
+        change(cx, |panels| {
+            panels
+                .rules(name, screen)
+                .is_some_and(|panel| panels.places.insert((screen, panel.name), left) != Some(left))
+        });
     }
 
     /// The outputs whose shown workspace has a window over the whole

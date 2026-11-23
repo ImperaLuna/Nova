@@ -17,7 +17,9 @@
 
 use crate::Theme;
 use crate::tokens::{ICON_GRID, ICON_SIZE, ICON_STROKE};
-use gpui::{App, AssetSource, Hsla, IntoElement, Pixels, RenderOnce, SharedString, Styled, Window, svg};
+use gpui::{
+    App, AssetSource, Hsla, IntoElement, Pixels, RenderOnce, SharedString, Styled, Transformation, Window, radians, svg,
+};
 use std::borrow::Cow;
 
 /// A line drawing on the icon grid.
@@ -161,11 +163,13 @@ pub struct Icon {
     size: Pixels,
     stroke: f32,
     color: Option<Hsla>,
+    /// Clockwise, in degrees.
+    turned: f32,
 }
 
 impl Icon {
     pub fn new(glyph: Glyph) -> Self {
-        Self { glyph, fill: None, size: ICON_SIZE, stroke: ICON_STROKE, color: None }
+        Self { glyph, fill: None, size: ICON_SIZE, stroke: ICON_STROKE, color: None, turned: 0.0 }
     }
 
     /// Draws `glyph` solid under the strokes.
@@ -191,6 +195,13 @@ impl Icon {
         self
     }
 
+    /// Turns it `degrees` clockwise about its middle, like a chevron that
+    /// turns as what it opens does.
+    pub fn turned(mut self, degrees: f32) -> Self {
+        self.turned = degrees;
+        self
+    }
+
     fn asset_path(&self) -> String {
         let fill = self.fill.map_or(NO_FILL, |glyph| glyph.name);
         let stroke = (self.stroke * STROKE_STEPS_PER_UNIT).round() as u32;
@@ -201,7 +212,12 @@ impl Icon {
 impl RenderOnce for Icon {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let color = self.color.unwrap_or(Theme::of(cx).fg);
-        svg().path(self.asset_path()).size(self.size).flex_none().text_color(color)
+        svg()
+            .path(self.asset_path())
+            .size(self.size)
+            .flex_none()
+            .text_color(color)
+            .with_transformation(Transformation::rotate(radians(self.turned.to_radians())))
     }
 }
 

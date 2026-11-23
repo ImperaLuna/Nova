@@ -18,20 +18,22 @@ pub enum Align {
 
 /// Where a panel of `size` is once open: `top` down the screen, and across
 /// it lined up with the pill it grows out of (`from`, with the way its row
-/// keeps), or centered. A panel of the center row is centered on the
-/// screen, not on its pill: the central pill sits off the middle when it
-/// keeps its time there (the launcher opens in the middle, as today). It
-/// never leaves the bar's margins.
+/// keeps), or at `left` where a feature placed it, or centered. A panel of
+/// the center row is centered on the screen, not on its pill: the central
+/// pill sits off the middle when it keeps its time there (the launcher
+/// opens in the middle, as today). It never leaves the bar's margins.
 pub fn open_box(
     from: Option<(Bounds<Pixels>, Align)>,
+    left: Option<Pixels>,
     size: Size<Pixels>,
     top: Pixels,
     screen_width: Pixels,
 ) -> Bounds<Pixels> {
-    let left = match from {
-        Some((pill, Align::Left)) => pill.left(),
-        Some((pill, Align::Right)) => pill.right() - size.width,
-        Some((_, Align::Center)) | None => (screen_width - size.width) / 2.0,
+    let left = match (from, left) {
+        (Some((pill, Align::Left)), _) => pill.left(),
+        (Some((pill, Align::Right)), _) => pill.right() - size.width,
+        (None, Some(left)) => left,
+        (Some((_, Align::Center)), _) | (None, None) => (screen_width - size.width) / 2.0,
     };
     let furthest = (screen_width - BAR_MARGIN - size.width).max(BAR_MARGIN);
     Bounds { origin: point(left.clamp(BAR_MARGIN, furthest), top), size }
@@ -159,7 +161,7 @@ mod tests {
     #[test]
     fn a_panel_keeps_to_its_pill_the_way_its_row_does() {
         let panel = size(px(300.0), px(400.0));
-        let open = |pill, align| open_box(Some((pill, align)), panel, BAR_GAP, SCREEN);
+        let open = |pill, align| open_box(Some((pill, align)), None, panel, BAR_GAP, SCREEN);
         assert_eq!(open(pill(100.0, 120.0), Align::Left), rect(100.0, 4.0, 300.0, 400.0));
         assert_eq!(open(pill(900.0, 120.0), Align::Center), rect(810.0, 4.0, 300.0, 400.0));
         assert_eq!(open(pill(700.0, 120.0), Align::Center), rect(810.0, 4.0, 300.0, 400.0), "the screen's middle");
@@ -169,16 +171,25 @@ mod tests {
     #[test]
     fn a_panel_never_leaves_the_bar_s_margins() {
         let panel = size(px(300.0), px(400.0));
-        let right_of_a_pill_at_the_edge = open_box(Some((pill(8.0, 60.0), Align::Right)), panel, BAR_GAP, SCREEN);
+        let right_of_a_pill_at_the_edge = open_box(Some((pill(8.0, 60.0), Align::Right)), None, panel, BAR_GAP, SCREEN);
         assert_eq!(right_of_a_pill_at_the_edge.left(), BAR_MARGIN);
-        let past_the_right = open_box(Some((pill(1800.0, 112.0), Align::Left)), panel, BAR_GAP, SCREEN);
+        let past_the_right = open_box(Some((pill(1800.0, 112.0), Align::Left)), None, panel, BAR_GAP, SCREEN);
         assert_eq!(past_the_right.right(), SCREEN - BAR_MARGIN);
     }
 
     #[test]
     fn a_panel_without_a_pill_is_centered_at_its_top() {
-        let open = open_box(None, size(px(620.0), px(440.0)), px(60.0), SCREEN);
+        let open = open_box(None, None, size(px(620.0), px(440.0)), px(60.0), SCREEN);
         assert_eq!(open, rect(650.0, 60.0, 620.0, 440.0));
+    }
+
+    #[test]
+    fn a_placed_panel_keeps_its_left_edge_inside_the_margins() {
+        let menu = size(px(230.0), px(300.0));
+        assert_eq!(open_box(None, Some(px(1500.0)), menu, px(48.0), SCREEN), rect(1500.0, 48.0, 230.0, 300.0));
+        assert_eq!(open_box(None, Some(px(1800.0)), menu, px(48.0), SCREEN).right(), SCREEN - BAR_MARGIN);
+        let from_a_pill = open_box(Some((pill(100.0, 120.0), Align::Left)), Some(px(1500.0)), menu, BAR_GAP, SCREEN);
+        assert_eq!(from_a_pill.left(), px(100.0), "a pill's panel keeps to its pill");
     }
 
     #[test]

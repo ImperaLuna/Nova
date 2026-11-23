@@ -82,6 +82,8 @@ pub(crate) struct PanelItem {
     pub reveal: Reveal,
     pub width: Eased,
     pub height: Eased,
+    /// Its left edge once open, when a feature placed it ([`crate::Stage::place`]).
+    pub left: Option<Pixels>,
     /// Off the strip: whether the panels' window has it on screen. The
     /// pill it grows out of is on the strip, and two windows never draw in
     /// the same frame, so the pill stays until the panel is drawn over it,
@@ -100,6 +102,7 @@ impl PanelItem {
             reveal: Reveal::hidden(now),
             width: resizing(spec.size.width),
             height: resizing(spec.size.height),
+            left: None,
             cover: Rc::default(),
             spec,
         }
@@ -128,13 +131,18 @@ impl PanelItem {
         changed
     }
 
-    /// Whether it is closed and at rest: nothing of it is drawn.
+    /// Whether it is closed and at rest: nothing of it is drawn. One that
+    /// opens in place ([`Panel::in_place`]) is never drawn.
     pub fn closed(&self, now: Instant) -> bool {
-        self.morph.target() == 0.0 && self.morph.settled(now)
+        self.spec.in_place || (self.morph.target() == 0.0 && self.morph.settled(now))
     }
 
     pub fn moving(&self, now: Instant) -> bool {
-        !(self.morph.settled(now) && self.reveal.settled(now) && self.width.settled(now) && self.height.settled(now))
+        !self.spec.in_place
+            && !(self.morph.settled(now)
+                && self.reveal.settled(now)
+                && self.width.settled(now)
+                && self.height.settled(now))
     }
 
     /// How far down the screen it reaches once open: at the size it is
@@ -187,9 +195,6 @@ pub(crate) struct StageView {
     /// The glass drawn in the frame under way, and what the compositor was
     /// last told of it (`draw.rs`).
     pub shapes: Rc<RefCell<Vec<Shape>>>,
-    /// What panels that cover the screen drew in the frame under way: it
-    /// takes clicks, but has no glass to blur behind.
-    pub covers: Rc<RefCell<Vec<Shape>>>,
     pub sent: Rc<RefCell<Sent>>,
     /// Whether every screen takes clicks everywhere right now.
     pub catching: bool,
@@ -228,11 +233,11 @@ pub(crate) struct StageView {
     _observers: Vec<Subscription>,
 }
 
-/// The glass, what covers the screen, whether clicks were caught everywhere, whether the strip
+/// The glass, whether clicks were caught everywhere, whether the strip
 /// along the top edge took the pointer and how wide the panels' window
 /// beside was, as the compositor was last told. `None` before the first
 /// frame.
-pub(crate) type Sent = Option<(Vec<Shape>, Vec<Shape>, bool, bool, Pixels)>;
+pub(crate) type Sent = Option<(Vec<Shape>, bool, bool, Pixels)>;
 
 /// What every screen's stage is opened with.
 pub(crate) struct Shared {
@@ -266,7 +271,6 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 rows: Default::default(),
                 standalone: Kept::default(),
                 shapes: Rc::default(),
-                covers: Rc::default(),
                 sent: Rc::default(),
                 catching: false,
                 focus: cx.focus_handle(),
@@ -381,16 +385,20 @@ impl StageView {
         let held = Held { keyboard: panels.open.needs_keyboard(id, true), overlay };
         let catching = panels.open.catches_clicks();
         let beside = Hold { keyboard: panels.open.needs_keyboard(id, false), catching };
-        let targets: Vec<(bool, Option<Size<Pixels>>)> = self
+        let targets: Vec<(bool, Option<Size<Pixels>>, Option<Pixels>)> = self
             .panel_items()
-            .map(|panel| (panels.open.is_open(&panel.spec.name, id), panels.size(&panel.spec.name, id)))
+            .map(|panel| {
+                let name = &panel.spec.name;
+                (panels.open.is_open(name, id), panels.size(name, id), panels.place(name, id))
+            })
             .collect();
         // The field that gets the keyboard, in this window and in the one
         // beside it, and whether a panel drawn there heads elsewhere now.
         let (mut focus, mut beside_focus, mut beside_moved) = (None, None, false);
-        for (panel, (open, size)) in self.panel_items_mut().zip(targets) {
+        for (panel, (open, size, left)) in self.panel_items_mut().zip(targets) {
             let opened = open && panel.morph.target() == 0.0;
             let moved = panel.set_open(open, now) | size.is_some_and(|size| panel.set_size(size, now));
+            panel.left = left;
             beside_moved |= moved && !panel.on_strip();
             if opened && panel.spec.rules().closes_on_esc() {
                 let field = Some(panel.spec.focus.clone());
@@ -592,9 +600,7 @@ impl StageView {
     fn fit(&mut self, window: &mut Window, cx: &mut App, may_shrink: bool) {
         let now = Instant::now();
         let drawn = self.panel_items().filter(|panel| panel.on_strip() && !panel.closed(now));
-        let screen_height = self.screen.size.height;
-        let reaches = drawn.map(|panel| if panel.spec.covers_screen { screen_height } else { panel.reach(now) });
-        let wanted = within_screen(stage_height(reaches), screen_height);
+        let wanted = stage_height(drawn.map(|panel| panel.reach(now)));
         let height = self.height.get();
         if wanted == height || (wanted < height && !may_shrink) {
             return;
@@ -673,11 +679,4 @@ impl StageView {
         }
         self.close_panel_window(cx);
     }
-}
-
-/// A stage `height` tall, but never taller than its screen (a panel near
-/// the bottom gives up its shadow's room there). A screen that says no
-/// height gets what was asked.
-fn within_screen(height: Pixels, screen_height: Pixels) -> Pixels {
-    if screen_height > px(0.0) { height.min(screen_height.floor()) } else { height }
 }
