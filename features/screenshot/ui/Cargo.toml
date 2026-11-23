@@ -1,26 +1,30 @@
 # nova-screenshot-ui
 #
-# What the screenshot feature draws with GPUI: the region picker and the
-# card a saved shot lands in (`capture.overlay`, an overlay with windows of
-# its own on each screen). `image` reads the frozen frames and the saved
-# shots off the main thread: GPUI's own image loading keeps a picture by its
-# path for good, and novad writes each screen's frame to the same path. It
-# is already in the tree through GPUI, with the same features.
+# What the screenshot and recording features draw with GPUI: the region
+# picker, the card a saved shot or recording lands in and the marks around a
+# recorded region (`capture.overlay`, an overlay with windows of its own on
+# each screen, shared by both), and the recording pill (`recording.pill`).
+# `image` reads the frozen frames and the saved shots off the main thread:
+# GPUI's own image loading keeps a picture by its path for good, and novad
+# writes each screen's frame to the same path. It is already in the tree
+# through GPUI, with the same features.
 #
 # Allowed outside crates:
 # - gpui
 # - image
 #
 # Allowed workspace crates:
+# - nova-daemon-info
 # - nova-desktop-info
 # - nova-look
+# - nova-recording-api
 # - nova-screenshot-api
 # - nova-stage
 # - nova-ui-client
 
 [package]
 name = "nova-screenshot-ui"
-description = "The screenshot region picker and card, drawn with GPUI"
+description = "The screenshot and recording picker, card, marks and recording pill, drawn with GPUI"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -31,8 +35,10 @@ workspace = "../../../app-ui"
 [dependencies]
 gpui.workspace = true
 image.workspace = true
+nova-daemon-info.workspace = true
 nova-desktop-info.workspace = true
 nova-look.workspace = true
+nova-recording-api.workspace = true
 nova-screenshot-api.workspace = true
 nova-stage.workspace = true
 nova-ui-client.workspace = true

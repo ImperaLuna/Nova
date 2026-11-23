@@ -2941,6 +2941,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-bluetooth-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-bluetooth-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-bluetooth-api",
+ "nova-desktop-info",
+ "nova-look",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-carrier"
 version = "0.1.0"
 dependencies = [
@@ -3050,6 +3070,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-network-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-network-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-look",
+ "nova-network-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-notifications-api"
 version = "0.1.0"
 dependencies = [
@@ -3098,6 +3137,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-recording-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "nova-screenshot-api",
+ "serde",
+]
+
+[[package]]
 name = "nova-screenshot-api"
 version = "0.1.0"
 dependencies = [
@@ -3111,8 +3159,10 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "image",
+ "nova-daemon-info",
  "nova-desktop-info",
  "nova-look",
+ "nova-recording-api",
  "nova-screenshot-api",
  "nova-stage",
  "nova-ui-client",
@@ -3190,6 +3240,7 @@ dependencies = [
  "nova-ai-usage-ui",
  "nova-bar-api",
  "nova-bar-ui",
+ "nova-bluetooth-ui",
  "nova-clock-ui",
  "nova-daemon-info",
  "nova-desktop-info",
@@ -3197,6 +3248,7 @@ dependencies = [
  "nova-look",
  "nova-media-ui",
  "nova-microphone-ui",
+ "nova-network-ui",
  "nova-notifications-ui",
  "nova-quick-settings-ui",
  "nova-screenshot-ui",

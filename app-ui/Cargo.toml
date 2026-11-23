@@ -23,6 +23,7 @@
 # - nova-ai-usage-ui
 # - nova-bar-api
 # - nova-bar-ui
+# - nova-bluetooth-ui
 # - nova-clock-ui
 # - nova-daemon-info
 # - nova-desktop-info
@@ -30,6 +31,7 @@
 # - nova-look
 # - nova-media-ui
 # - nova-microphone-ui
+# - nova-network-ui
 # - nova-notifications-ui
 # - nova-quick-settings-ui
 # - nova-screenshot-ui
@@ -56,6 +58,7 @@ gpui_platform.workspace = true
 nova-ai-usage-ui.workspace = true
 nova-bar-api.workspace = true
 nova-bar-ui.workspace = true
+nova-bluetooth-ui.workspace = true
 nova-clock-ui.workspace = true
 nova-daemon-info.workspace = true
 nova-desktop-info.workspace = true
@@ -63,6 +66,7 @@ nova-launcher-ui.workspace = true
 nova-look.workspace = true
 nova-media-ui.workspace = true
 nova-microphone-ui.workspace = true
+nova-network-ui.workspace = true
 nova-notifications-ui.workspace = true
 nova-quick-settings-ui.workspace = true
 nova-screenshot-ui.workspace = true
@@ -125,10 +129,12 @@ nova-ui-client = { path = "../framework-ui/client" }
 # Each feature's ui, sorted by feature id.
 nova-ai-usage-ui = { path = "../features/ai-usage/ui" }
 nova-bar-ui = { path = "../features/bar/ui" }
+nova-bluetooth-ui = { path = "../features/bluetooth/ui" }
 nova-clock-ui = { path = "../features/clock/ui" }
 nova-launcher-ui = { path = "../features/launcher/ui" }
 nova-media-ui = { path = "../features/media/ui" }
 nova-microphone-ui = { path = "../features/microphone/ui" }
+nova-network-ui = { path = "../features/network/ui" }
 nova-notifications-ui = { path = "../features/notifications/ui" }
 nova-quick-settings-ui = { path = "../features/quick-settings/ui" }
 nova-screenshot-ui = { path = "../features/screenshot/ui" }
@@ -142,14 +148,17 @@ nova-ai-usage-api = { path = "../features/ai-usage/api" }
 nova-app-info = { path = "../framework/app-info" }
 nova-carrier = { path = "../framework/carrier" }
 nova-bar-api = { path = "../features/bar/api" }
+nova-bluetooth-api = { path = "../features/bluetooth/api" }
 nova-daemon-info = { path = "../framework/daemon-info" }
 nova-desktop-info = { path = "../framework/desktop-info" }
 nova-host-info = { path = "../framework/host-info" }
 nova-launcher-api = { path = "../features/launcher/api" }
 nova-media-api = { path = "../features/media/api" }
+nova-network-api = { path = "../features/network/api" }
 nova-nova-files-api = { path = "../features/nova-files/api" }
 nova-notifications-api = { path = "../features/notifications/api" }
 nova-peripherals-api = { path = "../features/peripherals/api" }
+nova-recording-api = { path = "../features/recording/api" }
 nova-screenshot-api = { path = "../features/screenshot/api" }
 nova-sound-api = { path = "../features/sound/api" }
 nova-test-support = { path = "../framework/test-support" }
