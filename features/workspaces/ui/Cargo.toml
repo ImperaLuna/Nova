@@ -1,0 +1,36 @@
+# nova-workspaces-ui
+#
+# The workspaces feature's part of the central pill (`workspaces.list`):
+# the screen's workspace numbers, the capsule on the one it shows, the
+# "wants attention" dot, and a click to go to one.
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-desktop-info
+# - nova-look
+# - nova-stage
+# - nova-ui-client
+# - nova-workspaces-api
+
+[package]
+name = "nova-workspaces-ui"
+description = "The workspaces' part of the central pill for the GPUI program: numbers, the shown one's capsule, click to go there"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-desktop-info.workspace = true
+nova-look.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+nova-workspaces-api.workspace = true
+
+[lints]
+workspace = true

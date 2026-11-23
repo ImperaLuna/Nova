@@ -68,6 +68,7 @@ fn main() -> ExitCode {
 /// `nova_<id>_ui::register(cx);`
 fn register_features(cx: &mut App) {
     nova_clock_ui::register(cx);
+    nova_workspaces_ui::register(cx);
 }
 
 /// What novad sends that no feature's ui follows: the theme's colors, which

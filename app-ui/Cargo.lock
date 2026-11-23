@@ -2982,6 +2982,7 @@ dependencies = [
  "nova-stage",
  "nova-theme-info",
  "nova-ui-client",
+ "nova-workspaces-ui",
 ]
 
 [[package]]
@@ -2995,6 +2996,26 @@ dependencies = [
  "nova-test-support",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "nova-workspaces-api"
+version = "0.1.0"
+dependencies = [
+ "nova-desktop-info",
+ "serde",
+]
+
+[[package]]
+name = "nova-workspaces-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-desktop-info",
+ "nova-look",
+ "nova-stage",
+ "nova-ui-client",
+ "nova-workspaces-api",
 ]
 
 [[package]]
