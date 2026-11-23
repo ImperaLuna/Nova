@@ -113,11 +113,14 @@ impl Capture {
         capture
     }
 
-    /// novad went away: an open pick ends with it.
+    /// novad went away: an open pick ends with it, and frames still being
+    /// read are dropped when they arrive.
     fn follow_connection(&mut self, connected: bool, cx: &mut Context<Self>) {
-        if !connected && self.frames.is_some() {
+        if !connected {
             self.generation += 1;
-            self.drop_frames(cx);
+            if self.frames.is_some() {
+                self.drop_frames(cx);
+            }
         }
     }
 
