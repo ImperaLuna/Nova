@@ -1,0 +1,37 @@
+# nova-launcher-ui
+#
+# What the launcher draws, with GPUI: the search field, the pinned apps and
+# the list on the stage's `launcher` panel.
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-app-info
+# - nova-launcher-api
+# - nova-look
+# - nova-nova-files-api
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-launcher-ui"
+description = "The launcher's UI for the GPUI program: its panel with the search field, pinned apps and results"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-app-info.workspace = true
+nova-launcher-api.workspace = true
+nova-look.workspace = true
+nova-nova-files-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

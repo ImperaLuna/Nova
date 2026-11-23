@@ -460,6 +460,8 @@ QtObject {
     // The text cursor in a field: the accent, and steady, so an open field
     // doesn't redraw twice a second.
     readonly property int caretWidth: 2
+    // The line under text an input method is still composing (GPUI side).
+    readonly property int composingUnderline: 1
 
     // Screenshots: the dim over the frozen screens outside the region, the
     // region's outline, the toolbar at the top (the
