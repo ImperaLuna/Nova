@@ -7,6 +7,15 @@ use nova_carrier::{Published, Topic};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+/// The font families Nova's look is drawn in, the same in every theme:
+/// running text, numbers, and display text. The look tokens name them
+/// (`nova-look`, `ui/theme/Tokens.qml`), Nova's Nix modules install them
+/// (`packaging/nix/fonts.nix`) and `nova doctor` checks that each is there.
+pub const FONT_SANS: &str = "Inter";
+pub const FONT_MONO: &str = "JetBrains Mono";
+pub const FONT_DISPLAY: &str = "Instrument Serif";
+pub const FONTS: [&str; 3] = [FONT_SANS, FONT_MONO, FONT_DISPLAY];
+
 /// The topic a client subscribes to for [`Event::Theme`].
 pub const TOPIC: Topic = Topic::named("theme");
 
