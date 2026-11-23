@@ -1,16 +1,18 @@
 //! One screen's pop-up window: on the overlay layer at the top right,
 //! taking no keyboard and no space, only as big as the stack plus its
-//! shadow, with blur and clicks only on the cards. It draws the stack only
-//! on the screen the pop-ups came out on, and asks for frames only while a
-//! card moves.
+//! shadow, with blur and clicks only on the cards. Only the one on the
+//! screen the pop-ups came out on draws at all, and it asks for frames only
+//! while a card moves. It changes size while nothing moves: it grows before
+//! new cards open and shrinks once those leaving have gone, since a resize
+//! in a motion costs that motion frames.
 
 use crate::card::{Look, card};
 use crate::popups::{Heights, Popups, Reach};
 use crate::stack::Entry;
-use crate::tokens::{ACTION_HEIGHT, AVATAR, PAD_BOTTOM, WIDTH};
+use crate::tokens::{ACTION_HEIGHT, AVATAR, COUNTDOWN_TICK, GROW_WAIT, PAD_BOTTOM, WIDTH};
 use gpui::{
-    AnyElement, App, AppContext, Context, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, WeakEntity,
-    Window, WindowHandle, canvas, div,
+    AnyElement, App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Pixels, Render, Styled,
+    Subscription, Task, WeakEntity, Window, WindowHandle, canvas, div,
     layer_shell::{Anchor, Layer},
     px, size,
 };
@@ -34,7 +36,13 @@ pub struct PopupWindow {
     /// The shapes drawn this frame, and those the compositor has.
     shapes: Rc<RefCell<Vec<Shape>>>,
     sent: Rc<RefCell<Option<Vec<Shape>>>>,
+    /// The height it last asked for, and when.
     height: Pixels,
+    resized: Option<Instant>,
+    /// The stack is this screen's to draw, as the pop-ups last said.
+    shows: bool,
+    /// Wakes it for the draining lines' next step.
+    countdown: Option<Task<()>>,
     frames: Option<FrameLog>,
     _followed: Option<Subscription>,
 }
@@ -61,7 +69,12 @@ impl PopupWindow {
             .then(|| FrameLog::new(format!("{}/notifications", screen.name), screen.refresh, Instant::now()));
         let opened = cx.open_window(shell.options(), move |_, cx| {
             cx.new(|cx: &mut Context<Self>| {
-                let followed = popups.upgrade().map(|popups| cx.observe(&popups, |_, _, cx| cx.notify()));
+                // Whether there's anything to draw is found out here, not
+                // while drawing: GPUI redraws a window whenever something
+                // its last frame read changes, so a window that read the
+                // pop-ups to learn it has none would commit a frame, on a
+                // screen that shows no card, each time they change.
+                let followed = popups.upgrade().map(|popups| cx.observe(&popups, Self::follow));
                 Self {
                     screen,
                     popups,
@@ -69,6 +82,9 @@ impl PopupWindow {
                     shapes: Rc::default(),
                     sent: Rc::default(),
                     height: RESTING_HEIGHT,
+                    resized: None,
+                    shows: false,
+                    countdown: None,
                     frames,
                     _followed: followed,
                 }
@@ -83,12 +99,53 @@ impl PopupWindow {
         }
     }
 
-    fn fit(&mut self, height: Pixels, window: &mut Window) {
-        let height = if height < RESTING_HEIGHT { RESTING_HEIGHT } else { height.ceil() };
-        if height != self.height {
-            self.height = height;
-            window.resize(size(window_width(), height));
+    /// The pop-ups changed: draws when the stack is this screen's, and
+    /// once more when it no longer is.
+    fn follow(&mut self, popups: Entity<Popups>, cx: &mut Context<Self>) {
+        let shows = popups.read(cx).shows_on(self.screen.id);
+        if shows || self.shows {
+            self.shows = shows;
+            cx.notify();
         }
+    }
+
+    /// Makes the window `height` tall: taller at once, shorter only when
+    /// `may_shrink` (nothing moves).
+    fn fit(&mut self, height: Pixels, may_shrink: bool, now: Instant, window: &mut Window) {
+        let height = if height < RESTING_HEIGHT { RESTING_HEIGHT } else { height.ceil() };
+        if height == self.height || (height < self.height && !may_shrink) {
+            return;
+        }
+        self.height = height;
+        self.resized = Some(now);
+        window.resize(size(window_width(), height));
+    }
+
+    /// The window has the height it last asked for, or the compositor has
+    /// had long enough to give it and chose another.
+    fn fitted(&self, now: Instant, window: &Window) -> bool {
+        window.viewport_size().height == self.height
+            || self.resized.is_none_or(|at| now.saturating_duration_since(at) > GROW_WAIT)
+    }
+
+    /// Nothing to draw: as small as it gets, with no wake-up left.
+    fn rest(&mut self, now: Instant, window: &mut Window) -> Div {
+        self.countdown = None;
+        self.fit(RESTING_HEIGHT, true, now, window);
+        self.log_frame(false, now);
+        div().child(self.regions())
+    }
+
+    /// While a card's time drains and nothing moves, the next step of its
+    /// line comes [`COUNTDOWN_TICK`] after this frame, whatever drew it, so
+    /// no step lands in a motion or right behind one.
+    fn keep_countdown(&mut self, stepping: bool, cx: &mut Context<Self>) {
+        self.countdown = stepping.then(|| {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(COUNTDOWN_TICK).await;
+                let _ = this.update(cx, |_, cx| cx.notify());
+            })
+        });
     }
 
     /// Hands this frame's shapes to the compositor when they changed: it
@@ -139,25 +196,43 @@ impl PopupWindow {
 impl Render for PopupWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
-        let Some(popups) = self.popups.upgrade() else { return div().child(self.regions()) };
-        popups.update(cx, |popups, cx| popups.step(now, cx));
+        let Some(popups) = self.popups.upgrade().filter(|_| self.shows) else { return self.rest(now, window) };
+        popups.update(cx, |popups, _| popups.step(now));
         let popups_now = popups.read(cx);
-        if popups_now.target() != Some(self.screen.id) || !popups_now.stack().busy() {
-            self.fit(RESTING_HEIGHT, window);
-            self.log_frame(false, now);
-            return div().child(self.regions());
+        if !popups_now.shows_on(self.screen.id) {
+            // The last card went in this frame, which read the pop-ups:
+            // one more, which reads nothing, lets go of them.
+            self.shows = false;
+            window.request_animation_frame();
+            return self.rest(now, window);
         }
         let top = popups_now.top(cx);
         let stack = popups_now.stack();
-        let (entries, waiting, moving) = (stack.entries().to_vec(), stack.waiting(), stack.moving(now));
+        let (entries, waiting, counting) = (stack.entries().to_vec(), stack.waiting(), stack.counting());
+        let (mut moving, arrivals) = (stack.moving(now), stack.arrivals().to_vec());
         let heights = self.heights.borrow().clone();
         let height_of = |entry: &Entry| heights.get(&entry.key).copied().unwrap_or(AVATAR + PAD + PAD_BOTTOM);
 
-        // The room every card takes once in place, counting those growing
-        // in or leaving, so the window keeps one size through the motion.
-        let chip_room = if waiting > 0 { ACTION_HEIGHT } else { px(0.0) };
-        let full = entries.iter().fold(chip_room, |total, entry| total + height_of(entry) + GAP);
-        self.fit(top + full + SHADOW_ROOM, window);
+        // The room every card takes once in place, counting those not
+        // opened yet and those leaving, so the window keeps one size
+        // through a motion. New ones are laid out unseen first: the window
+        // grows once, to their real heights, and they open in the frame
+        // after it has.
+        let measured = arrivals.iter().all(|key| heights.contains_key(key));
+        if measured {
+            let chip_room = if waiting > 0 { ACTION_HEIGHT } else { px(0.0) };
+            let full = entries.iter().fold(chip_room, |total, entry| total + height_of(entry) + GAP);
+            self.fit(top + full + SHADOW_ROOM, !moving, now, window);
+        }
+        if !arrivals.is_empty() {
+            if measured && self.fitted(now, window) {
+                popups.update(cx, |popups, _| popups.open_arrivals(now));
+                moving = true;
+            } else {
+                window.request_animation_frame();
+            }
+        }
+        self.keep_countdown(counting && !moving, cx);
 
         let wall = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs().cast_signed());
         let mut slot_top = top;

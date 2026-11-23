@@ -23,11 +23,14 @@ pub const ACTIONS_GAP: Pixels = px(8.0);
 pub const ACTION_HEIGHT: Pixels = px(28.0);
 pub const PROGRESS_HEIGHT: Pixels = px(6.0);
 /// The line along a card's bottom that drains over its time, moving every
-/// COUNTDOWN_TICK (12 a second): smooth to the eye, a few frames, not one
-/// each vblank.
+/// COUNTDOWN_TICK (12 a second) while nothing else does: smooth to the eye,
+/// a few frames, not one each vblank.
 pub const TIMER_HEIGHT: Pixels = px(2.0);
 pub const COUNTDOWN_TICK: Duration = Duration::from_millis(83);
 pub const TIMER_OPACITY: f32 = 0.35;
+/// The longest new pop-ups wait for their window to grow before they open
+/// in the one it has: a compositor answers within a frame or two.
+pub const GROW_WAIT: Duration = Duration::from_millis(100);
 /// A critical one's rim, in the error color.
 pub const CRITICAL_RIM: Pixels = px(1.5);
 /// A low battery alert's icon: the device's glyph on a rounded tile, its
