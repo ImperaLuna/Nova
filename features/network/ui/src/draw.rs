@@ -30,6 +30,9 @@ use std::time::Instant;
 impl Render for NetworkPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
+        if std::mem::take(&mut self.focus_password) && self.asked.is_some() {
+            window.focus(&self.password_focus(cx), cx);
+        }
         let network = self.network(cx).cloned();
         let network = network.as_ref();
         let traffic = self.traffic.read(cx).get().cloned();

@@ -44,7 +44,10 @@ impl Render for BluetoothPage {
         }
         self.focus_question(pairing, window, cx);
 
-        let buttons = Stage::slots(cx).map_or(0, |slots| slots.read(cx).for_host(PILL_BUTTONS, cx).len());
+        // The pill's buttons the drawer draws: those some ui registered.
+        let buttons = Stage::slots(cx).map_or(0, |slots| {
+            slots.read(cx).for_host(PILL_BUTTONS, cx).iter().filter(|view| nova_stage::has_part(view, cx)).count()
+        });
         let switchable = matches!(radio, BluetoothRadio::On | BluetoothRadio::Off);
         let switch = div()
             .id("power")
@@ -308,13 +311,13 @@ impl BluetoothPage {
         let (closed, retried) = (device.clone(), device.clone());
         let close = {
             let page = page.clone();
-            PromptButton::new("close", "Close")
+            PromptButton::new(("close", crate::hash(&device.address)), "Close")
                 .on_click(move |_, _, cx| page.update(cx, |page, cx| page.close_failure(&closed, cx)))
         };
         let mut buttons = vec![close.into_any_element()];
         if device.status != BluetoothStatus::Connected {
             buttons.push(
-                PromptButton::new("retry", "Try again")
+                PromptButton::new(("retry", crate::hash(&device.address)), "Try again")
                     .accent(true)
                     .on_click(move |_, _, cx| page.update(cx, |page, cx| page.act(&retried, cx)))
                     .into_any_element(),

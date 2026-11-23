@@ -48,6 +48,8 @@ pub struct Pairing {
     /// The screen it shows on, picked when a question comes.
     target: Option<DisplayId>,
     asking: bool,
+    /// The question the PIN field was last typed for.
+    pin_for: Option<u64>,
     /// A PIN being typed.
     pin: Entity<TextField>,
     windows: Vec<(DisplayId, WindowHandle<PairingWindow>)>,
@@ -81,6 +83,7 @@ impl Pairing {
                 desktop,
                 target: None,
                 asking: false,
+                pin_for: None,
                 pin,
                 windows: Vec::new(),
                 opening: Vec::new(),
@@ -116,12 +119,18 @@ impl Pairing {
     /// A question came: it shows on the screen with focus. One that's over
     /// takes what was typed for it.
     fn follow(&mut self, cx: &mut Context<Self>) {
-        let asking = self.request(cx).is_some();
+        let id = self.request(cx).map(|request| request.id);
+        let asking = id.is_some();
         if asking != self.asking {
             self.asking = asking;
             if asking {
                 self.target = self.focused_screen(cx);
-            } else {
+            }
+        }
+        // What was typed goes with its question.
+        if id != self.pin_for {
+            self.pin_for = id;
+            if !self.pin.read(cx).text().is_empty() {
                 self.pin.update(cx, |field, cx| field.set_text("", cx));
             }
         }
@@ -324,6 +333,10 @@ impl PairingWindow {
         }
         let Some(pairing) = self.pairing.upgrade() else { return };
         let Some(request) = pairing.read(cx).request(cx).cloned() else { return };
+        // Only a typed answer goes with Enter; a yes takes a click.
+        if !logic::typed(&request.ask) {
+            return;
+        }
         let pin = pairing.read(cx).pin().clone();
         prompt::accept(&request, &pin, cx);
         cx.stop_propagation();

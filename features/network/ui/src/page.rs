@@ -37,6 +37,8 @@ pub struct NetworkPage {
     pub menu_for: Option<String>,
     /// The last connect outcome acted on.
     handled: Option<(String, AttemptOutcome)>,
+    /// The next frame gives the password field the focus.
+    pub focus_password: bool,
     /// Where Wi-Fi's switch knob is, sliding as it flips.
     pub wifi_knob: Eased,
     _followed: Vec<Subscription>,
@@ -84,6 +86,7 @@ impl NetworkPage {
             show_password: false,
             menu_for: None,
             handled: None,
+            focus_password: false,
             wifi_knob: Eased::lasting(if on { 1.0 } else { 0.0 }, DURATION_COLOR, Instant::now()),
             _followed: followed,
         }
@@ -139,6 +142,8 @@ impl NetworkPage {
                     self.password.update(cx, |field, cx| field.set_placeholder(placeholder, cx));
                     self.asked = Some(ssid);
                     self.wrong = true;
+                    // The field takes the keys again, for the fix.
+                    self.focus_password = true;
                 }
                 Some((_, AttemptOutcome::Connected)) => {
                     self.password.update(cx, |field, cx| field.set_text("", cx));

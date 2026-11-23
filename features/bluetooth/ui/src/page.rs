@@ -36,6 +36,8 @@ pub struct BluetoothPage {
     pub pin: Entity<TextField>,
     /// The question whose field was given the focus.
     pub focused_for: Option<u64>,
+    /// The question the PIN field was last typed for.
+    pin_for: Option<u64>,
     /// Where the switch's knob is, sliding as it flips.
     pub power_knob: Eased,
     _followed: Vec<Subscription>,
@@ -69,6 +71,7 @@ impl BluetoothPage {
             hovered: None,
             pin,
             focused_for: None,
+            pin_for: None,
             power_knob: Eased::lasting(on, DURATION_COLOR, Instant::now()),
             _followed: followed,
         }
@@ -108,12 +111,23 @@ impl BluetoothPage {
             // Out of sight it is just there.
             false => self.power_knob = Eased::lasting(on, DURATION_COLOR, now),
         }
-        // A question over takes what was typed for it.
-        if self.state(cx).is_none_or(|state| state.pairing.is_none()) {
-            self.focused_for = None;
+        // What was typed goes with its question.
+        let id = self.state(cx).and_then(|state| state.pairing.as_ref()).map(|request| request.id);
+        if id != self.pin_for {
+            self.pin_for = id;
+            if id.is_none() {
+                self.focused_for = None;
+            }
             if !self.pin.read(cx).text().is_empty() {
                 self.pin.update(cx, |field, cx| field.set_text("", cx));
             }
+        }
+        // A closed failure shows again once it's gone and comes back.
+        if let Some(state) = self.bluetooth.read(cx).get() {
+            let failing = |address: &String, error: &String| {
+                state.devices.iter().any(|device| &device.address == address && device.error.as_ref() == Some(error))
+            };
+            self.closed.retain(|address, error| failing(address, error));
         }
         cx.notify();
     }
