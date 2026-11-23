@@ -94,10 +94,7 @@ pub(crate) fn frame(
 ) -> PanelFrame {
     let progress = panel.morph.value(now);
     let open_size = size(px(panel.width.value(now)), px(panel.height.value(now)));
-    // A panel that covers the screen from the strip (`Panel::covers_screen`,
-    // until IMP-442) is laid out as one placed over the whole screen.
-    let placement = if panel.spec.covers_screen { Placement::WholeScreen } else { panel.spec.placement };
-    match (placement, from) {
+    match (panel.spec.placement, from) {
         (Placement::Top, Some((pill, _))) => {
             let open = open_box(from, open_size, panel.spec.top, screen.width);
             PanelFrame::grown(pill, open, open, panel, now)
@@ -372,8 +369,7 @@ impl StageView {
     /// stage (but where the panels' window beside is) while a panel that a
     /// click outside closes is open.
     fn regions(&self, now: Instant) -> impl IntoElement + use<> {
-        let (shapes, covers, sent, catching) =
-            (self.shapes.clone(), self.covers.clone(), self.sent.clone(), self.catching);
+        let (shapes, sent, catching) = (self.shapes.clone(), self.sent.clone(), self.catching);
         let (beside, hand_back) = (self.beside.get(), self.hand_back(now));
         // A row placed by a mark that is drawn this frame expects it again.
         let placed_by_middle = self.middle_from_right.is_some() && self.center_drawn;
@@ -387,11 +383,10 @@ impl StageView {
                     window.request_animation_frame();
                 }
                 hand_back(cx);
-                let drawn = (shapes.take(), covers.take(), catching, strip, beside);
+                let drawn = (shapes.take(), catching, strip, beside);
                 if sent.borrow().as_ref() != Some(&drawn) {
                     set_blur_region(window, &drawn.0);
                     let mut clicks = region(&drawn.0);
-                    clicks.extend(region(&drawn.1));
                     if strip {
                         clicks.push(Bounds { origin: point(px(0.0), px(0.0)), size: size(screen.width, REVEAL_STRIP) });
                     }
@@ -404,9 +399,7 @@ impl StageView {
                     sent.replace(Some(drawn.clone()));
                 }
                 if catching {
-                    let (mut on_something, covered) = (drawn.0, drawn.1);
-                    on_something.extend(covered);
-                    dismiss_outside(on_something, window);
+                    dismiss_outside(drawn.0, window);
                 }
             },
         )
@@ -465,17 +458,11 @@ impl Render for StageView {
             }
         }
         self.shapes.borrow_mut().clear();
-        self.covers.borrow_mut().clear();
 
         let origin = point(px(0.0), px(0.0));
         let on_strip = self.panel_items().filter(|panel| panel.on_strip() && !panel.closed(now));
-        let panels: Vec<AnyElement> = on_strip
-            .map(|each| {
-                let frame = self.panel_frame(each, now);
-                let shapes = if frame.glassy { &self.shapes } else { &self.covers };
-                panel(each, &frame, origin, shapes, cx)
-            })
-            .collect();
+        let panels: Vec<AnyElement> =
+            on_strip.map(|each| panel(each, &self.panel_frame(each, now), origin, &self.shapes, cx)).collect();
         div()
             .id("stage")
             .size_full()
