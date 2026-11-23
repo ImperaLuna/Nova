@@ -7,9 +7,12 @@
 //!   draws in place, so the stage closes it as it does any panel.
 //! - `tray.menu` (host `stage.panels`): an app's menu below its icon
 //!   ([`menu`]).
+//! - `tray.card` (host `quick-settings.cards`): every app in quick
+//!   settings, with an app's menu drawn over the drawer ([`card`]).
 //!
 //! [`model`] is what they work out, without GPUI.
 
+mod card;
 mod menu;
 mod model;
 mod strip;
@@ -28,6 +31,11 @@ pub fn register(cx: &mut App) {
         Panel::new(strip::TRAY, size(gpui::px(0.0), gpui::px(0.0)), cx.new(|_| Empty)).in_place()
     });
     nova_stage::panel("tray.menu", cx, menu::panel);
+    nova_stage::part("tray.card", cx, |screen, cx| {
+        let shown = Shown::new(false);
+        let card = cx.new(|cx| card::Card::new(screen, shown.clone(), cx));
+        Part::new(card).shown_while(shown)
+    });
 }
 
 /// The open tray's panel draws nothing of its own: the strip draws it.

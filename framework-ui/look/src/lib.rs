@@ -17,8 +17,8 @@
 //! - [`Segments`]: a row of tabs, one of them picked.
 //! - Quick settings' controls, which other features fill it with:
 //!   [`Tile`], [`Slider`] (with [`VolumeGlyph`] for a volume),
-//!   [`ListRow`] and a page's [`PageHeader`]; and [`PillButton`], a round
-//!   button in a pill.
+//!   [`ListRow`], a card's [`CardTitle`] and a page's [`PageHeader`];
+//!   and [`PillButton`], a round button in a pill.
 //! - [`Spinner`]: the loading spinner, and the dashed ring of something
 //!   that isn't there.
 //! - [`Glass`]: the smoked glass pills and panels are made of, with its
@@ -34,6 +34,7 @@
 //! and to screenshot.
 
 mod app_icon;
+mod card_title;
 mod field;
 mod glass;
 mod icon;
@@ -54,6 +55,7 @@ mod wheel;
 mod window;
 
 pub use app_icon::AppIcon;
+pub use card_title::CardTitle;
 pub use field::{Editing, FieldEvent, TextField};
 pub use glass::Glass;
 pub use icon::{Glyph, Icon, IconAssets};

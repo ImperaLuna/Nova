@@ -71,11 +71,14 @@ fn register_features(cx: &mut App) {
     nova_ai_usage_ui::register(cx);
     nova_bar_ui::register(cx);
     nova_clock_ui::register(cx);
+    nova_keep_awake_ui::register(cx);
     nova_launcher_ui::register(cx);
     nova_media_ui::register(cx);
     nova_microphone_ui::register(cx);
     nova_notifications_ui::register(cx);
+    nova_peripherals_ui::register(cx);
     nova_quick_settings_ui::register(cx);
+    nova_resources_ui::register(cx);
     nova_screenshot_ui::register(cx);
     nova_sound_ui::register(cx);
     nova_tray_ui::register(cx);
