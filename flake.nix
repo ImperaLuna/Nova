@@ -84,6 +84,9 @@
             ./ui/theme/icons.js
             # The slot hosts, which nova-stage's test holds equal to its own.
             ./ui/slots/slots.js
+            # The AI usage marks and countdown, held equal to today's.
+            ./ui/ai_usage/AiUsage.qml
+            ./ui/ai_usage/ProviderLogo.qml
           ];
         };
 

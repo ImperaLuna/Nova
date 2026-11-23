@@ -2893,6 +2893,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-ai-usage-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-ai-usage-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "jiff",
+ "nova-ai-usage-api",
+ "nova-look",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-app-info"
 version = "0.1.0"
 dependencies = [
@@ -3045,6 +3065,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-screenshot-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-screenshot-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "image",
+ "nova-desktop-info",
+ "nova-look",
+ "nova-screenshot-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-stage"
 version = "0.1.0"
 dependencies = [
@@ -3072,6 +3113,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui_platform",
+ "nova-ai-usage-ui",
  "nova-bar-api",
  "nova-bar-ui",
  "nova-clock-ui",
@@ -3081,6 +3123,7 @@ dependencies = [
  "nova-look",
  "nova-media-ui",
  "nova-notifications-ui",
+ "nova-screenshot-ui",
  "nova-stage",
  "nova-theme-info",
  "nova-ui-client",

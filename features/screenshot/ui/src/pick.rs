@@ -1,0 +1,223 @@
+//! The region picker's and the card's sums, without GPUI's windows:
+//! `ui/capture/capture.js` and `ui/theme/Countdown.qml` in today's shell.
+//! Every rectangle is in a window's logical pixels unless it says frame
+//! pixels.
+
+use gpui::{Bounds, Pixels, Point, Size, bounds, point, px, size};
+use nova_screenshot_api::PixelRect;
+use std::time::{Duration, Instant};
+
+/// The rectangle between where a drag started and where it is now.
+pub fn region(from: Point<Pixels>, to: Point<Pixels>) -> Bounds<Pixels> {
+    bounds(point(from.x.min(to.x), from.y.min(to.y)), size((to.x - from.x).abs(), (to.y - from.y).abs()))
+}
+
+/// Whether a drag's region is too small either way to be one (a click).
+pub fn is_click(region: Bounds<Pixels>, min_drag: Pixels) -> bool {
+    region.size.width < min_drag || region.size.height < min_drag
+}
+
+/// A region as the frame's pixels (`save_capture`'s rect): the frame is the
+/// screen at its own scale, `scale` its width over the window's. Rounded
+/// outward, so every pixel the outline touches is in, and kept on the
+/// frame.
+pub fn to_pixels(region: Bounds<Pixels>, scale: f32, frame: Size<u32>) -> PixelRect {
+    let edge = |value: Pixels, round: fn(f32) -> f32, most: u32| -> u32 {
+        // In the frame's range first, so the cast neither wraps nor saturates.
+        round(f32::from(value) * scale).clamp(0.0, most as f32) as u32
+    };
+    let left = edge(region.origin.x, f32::floor, frame.width);
+    let top = edge(region.origin.y, f32::floor, frame.height);
+    let right = edge(region.origin.x + region.size.width, f32::ceil, frame.width);
+    let bottom = edge(region.origin.y + region.size.height, f32::ceil, frame.height);
+    PixelRect { x: left, y: top, width: right.saturating_sub(left), height: bottom.saturating_sub(top) }
+}
+
+/// The size a picture of `picture` pixels is drawn at to fit in `room`
+/// whole, keeping its shape (the card's shot).
+pub fn contain(picture: Size<u32>, room: Size<Pixels>) -> Size<Pixels> {
+    if picture.width == 0 || picture.height == 0 {
+        return size(px(0.0), px(0.0));
+    }
+    let scale = (f32::from(room.width) / picture.width as f32).min(f32::from(room.height) / picture.height as f32);
+    size(px(picture.width as f32 * scale), px(picture.height as f32 * scale))
+}
+
+/// "960 × 560", for the size badge and the card.
+pub fn size_label(width: u32, height: u32) -> String {
+    format!("{width} × {height}")
+}
+
+/// The folder a saved shot is in, as the card says it: its last two parts
+/// (`Pictures/Screenshots`).
+pub fn folder_label(path: &str) -> String {
+    let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+    let end = parts.len().saturating_sub(1);
+    parts[end.saturating_sub(2)..end].join("/")
+}
+
+/// Where the size badge sits: its right edge on the region's, just under
+/// it, or just inside its bottom when that is off the screen.
+pub fn under_region(region: Bounds<Pixels>, item: Size<Pixels>, screen: Size<Pixels>, gap: Pixels) -> Point<Pixels> {
+    let x = (region.origin.x + region.size.width - item.width).max(px(0.0));
+    let bottom = region.origin.y + region.size.height;
+    let below = bottom + gap;
+    let y = if below + item.height <= screen.height { below } else { (bottom - item.height - gap).max(px(0.0)) };
+    point(x, y)
+}
+
+/// The four rectangles of `screen` around `clear`, the veil's pieces (the
+/// whole screen in the first when `clear` is empty).
+pub fn around(clear: Bounds<Pixels>, screen: Size<Pixels>) -> [Bounds<Pixels>; 4] {
+    let zero = px(0.0);
+    let (top, bottom) = (clear.origin.y, clear.origin.y + clear.size.height);
+    let (left, right) = (clear.origin.x, clear.origin.x + clear.size.width);
+    let piece = |x: Pixels, y: Pixels, width: Pixels, height: Pixels| {
+        bounds(point(x, y), size(width.max(zero), height.max(zero)))
+    };
+    [
+        piece(zero, zero, screen.width, top),
+        piece(zero, bottom, screen.width, screen.height - bottom),
+        piece(zero, top, left, clear.size.height),
+        piece(right, top, screen.width - right, clear.size.height),
+    ]
+}
+
+/// A card's time: it drains over `duration`, and holds while the pointer
+/// is on the card. `Countdown.qml` in today's shell.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Countdown {
+    duration: Duration,
+    /// Time counted before the current run, and when that run started
+    /// (none while held).
+    spent: Duration,
+    since: Option<Instant>,
+}
+
+impl Countdown {
+    /// A full one, running from `now`.
+    pub fn start(duration: Duration, now: Instant) -> Self {
+        Self { duration, spent: Duration::ZERO, since: Some(now) }
+    }
+
+    pub fn set_held(&mut self, held: bool, now: Instant) {
+        match (held, self.since) {
+            (true, Some(since)) => {
+                self.spent = (self.spent + now.saturating_duration_since(since)).min(self.duration);
+                self.since = None;
+            }
+            (false, None) => self.since = Some(now),
+            _ => {}
+        }
+    }
+
+    /// The pointer holds it.
+    pub fn held(&self) -> bool {
+        self.since.is_none()
+    }
+
+    /// The share of its time left, 1 to 0.
+    pub fn remaining(&self, now: Instant) -> f32 {
+        if self.duration.is_zero() {
+            return 0.0;
+        }
+        let running = self.since.map_or(Duration::ZERO, |since| now.saturating_duration_since(since));
+        let spent = (self.spent + running).min(self.duration);
+        1.0 - spent.as_secs_f32() / self.duration.as_secs_f32()
+    }
+
+    /// It is running (not held, not out).
+    pub fn running(&self, now: Instant) -> bool {
+        self.since.is_some() && self.remaining(now) > 0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(x: f32, y: f32, width: f32, height: f32) -> Bounds<Pixels> {
+        bounds(point(px(x), px(y)), size(px(width), px(height)))
+    }
+
+    #[test]
+    fn a_drag_up_and_left_is_the_same_region_as_down_and_right() {
+        let up = region(point(px(50.0), px(40.0)), point(px(10.0), px(10.0)));
+        assert_eq!(up, rect(10.0, 10.0, 40.0, 30.0));
+        assert_eq!(region(point(px(10.0), px(10.0)), point(px(50.0), px(40.0))), up);
+    }
+
+    #[test]
+    fn a_region_thinner_than_the_least_drag_either_way_is_a_click() {
+        assert!(is_click(rect(0.0, 0.0, 3.0, 100.0), px(4.0)));
+        assert!(is_click(rect(0.0, 0.0, 100.0, 3.5), px(4.0)));
+        assert!(!is_click(rect(0.0, 0.0, 4.0, 4.0), px(4.0)));
+    }
+
+    #[test]
+    fn frame_pixels_round_outward_at_the_screens_scale_and_stay_on_the_frame() {
+        let frame = size(2560, 1600);
+        assert_eq!(
+            to_pixels(rect(10.25, 20.5, 100.0, 50.0), 2.0, frame),
+            PixelRect { x: 20, y: 41, width: 201, height: 100 }
+        );
+        assert_eq!(
+            to_pixels(rect(-5.0, 1590.0, 1400.0, 40.0), 1.0, frame),
+            PixelRect { x: 0, y: 1590, width: 1395, height: 10 }
+        );
+        assert_eq!(to_pixels(rect(3000.0, 0.0, 10.0, 10.0), 1.0, frame).width, 0);
+    }
+
+    #[test]
+    fn a_shot_fits_the_card_whole() {
+        let room = size(px(330.0), px(184.0));
+        assert_eq!(contain(size(1280, 800), room), size(px(294.4), px(184.0)));
+        assert_eq!(contain(size(660, 184), room), size(px(330.0), px(92.0)));
+        assert_eq!(contain(size(0, 10), room), size(px(0.0), px(0.0)));
+    }
+
+    #[test]
+    fn labels_read_as_the_card_says_them() {
+        assert_eq!(size_label(960, 560), "960 × 560");
+        assert_eq!(folder_label("/home/me/Pictures/Screenshots/shot.png"), "Pictures/Screenshots");
+        assert_eq!(folder_label("/shot.png"), "");
+        assert_eq!(folder_label("/tmp/shot.png"), "tmp");
+    }
+
+    #[test]
+    fn the_badge_goes_inside_the_region_when_it_would_leave_the_screen() {
+        let screen = size(px(1000.0), px(800.0));
+        let badge = size(px(80.0), px(26.0));
+        let low = under_region(rect(100.0, 600.0, 200.0, 190.0), badge, screen, px(6.0));
+        assert_eq!(low, point(px(220.0), px(758.0)));
+        let high = under_region(rect(10.0, 10.0, 50.0, 50.0), badge, screen, px(6.0));
+        assert_eq!(high, point(px(0.0), px(66.0)));
+    }
+
+    #[test]
+    fn the_veil_covers_all_but_the_clear_region() {
+        let screen = size(px(100.0), px(80.0));
+        let [top, bottom, left, right] = around(rect(10.0, 20.0, 30.0, 40.0), screen);
+        assert_eq!(top, rect(0.0, 0.0, 100.0, 20.0));
+        assert_eq!(bottom, rect(0.0, 60.0, 100.0, 20.0));
+        assert_eq!(left, rect(0.0, 20.0, 10.0, 40.0));
+        assert_eq!(right, rect(40.0, 20.0, 60.0, 40.0));
+        let none = around(Bounds::default(), screen);
+        assert_eq!(none[1], rect(0.0, 0.0, 100.0, 80.0));
+    }
+
+    #[test]
+    fn a_held_countdown_keeps_its_time() {
+        let start = Instant::now();
+        let mut countdown = Countdown::start(Duration::from_secs(6), start);
+        assert!((countdown.remaining(start + Duration::from_secs(3)) - 0.5).abs() < 1e-4);
+        countdown.set_held(true, start + Duration::from_secs(3));
+        assert!(!countdown.running(start + Duration::from_secs(60)));
+        assert!((countdown.remaining(start + Duration::from_secs(60)) - 0.5).abs() < 1e-4);
+        assert!(countdown.held());
+        countdown.set_held(false, start + Duration::from_secs(60));
+        assert!(countdown.running(start + Duration::from_secs(62)));
+        assert_eq!(countdown.remaining(start + Duration::from_secs(63)), 0.0);
+        assert!(!countdown.running(start + Duration::from_secs(63)));
+    }
+}
