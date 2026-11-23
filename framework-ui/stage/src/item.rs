@@ -201,7 +201,6 @@ pub struct Panel {
     pub(crate) wants_keyboard: bool,
     pub(crate) closes_on_click_outside: bool,
     pub(crate) in_place: bool,
-    pub(crate) covers_screen: bool,
 }
 
 impl Panel {
@@ -224,7 +223,6 @@ impl Panel {
             wants_keyboard: false,
             closes_on_click_outside: true,
             in_place: false,
-            covers_screen: false,
         }
     }
 
@@ -298,17 +296,6 @@ impl Panel {
     /// [`crate::Stage::is_open`] says so; its `size` and `content` go unused.
     pub fn in_place(mut self) -> Self {
         self.in_place = true;
-        self
-    }
-
-    /// A panel over the whole screen that draws all of it itself (the
-    /// wallpaper carousel, which covers the screen with its preview): edge
-    /// to edge from the screen's top left at the screen's size, whatever
-    /// `size` said, with no glass, shadow or blur, and taking every click
-    /// on the screen. It fades in and out with the morph, its content
-    /// showing all the way.
-    pub fn covers_screen(mut self) -> Self {
-        self.covers_screen = true;
         self
     }
 

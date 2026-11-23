@@ -195,9 +195,6 @@ pub(crate) struct StageView {
     /// The glass drawn in the frame under way, and what the compositor was
     /// last told of it (`draw.rs`).
     pub shapes: Rc<RefCell<Vec<Shape>>>,
-    /// What panels that cover the screen drew in the frame under way: it
-    /// takes clicks, but has no glass to blur behind.
-    pub covers: Rc<RefCell<Vec<Shape>>>,
     pub sent: Rc<RefCell<Sent>>,
     /// Whether every screen takes clicks everywhere right now.
     pub catching: bool,
@@ -236,11 +233,11 @@ pub(crate) struct StageView {
     _observers: Vec<Subscription>,
 }
 
-/// The glass, what covers the screen, whether clicks were caught everywhere, whether the strip
+/// The glass, whether clicks were caught everywhere, whether the strip
 /// along the top edge took the pointer and how wide the panels' window
 /// beside was, as the compositor was last told. `None` before the first
 /// frame.
-pub(crate) type Sent = Option<(Vec<Shape>, Vec<Shape>, bool, bool, Pixels)>;
+pub(crate) type Sent = Option<(Vec<Shape>, bool, bool, Pixels)>;
 
 /// What every screen's stage is opened with.
 pub(crate) struct Shared {
@@ -274,7 +271,6 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 rows: Default::default(),
                 standalone: Kept::default(),
                 shapes: Rc::default(),
-                covers: Rc::default(),
                 sent: Rc::default(),
                 catching: false,
                 focus: cx.focus_handle(),
@@ -604,9 +600,7 @@ impl StageView {
     fn fit(&mut self, window: &mut Window, cx: &mut App, may_shrink: bool) {
         let now = Instant::now();
         let drawn = self.panel_items().filter(|panel| panel.on_strip() && !panel.closed(now));
-        let screen_height = self.screen.size.height;
-        let reaches = drawn.map(|panel| if panel.spec.covers_screen { screen_height } else { panel.reach(now) });
-        let wanted = within_screen(stage_height(reaches), screen_height);
+        let wanted = stage_height(drawn.map(|panel| panel.reach(now)));
         let height = self.height.get();
         if wanted == height || (wanted < height && !may_shrink) {
             return;
@@ -685,11 +679,4 @@ impl StageView {
         }
         self.close_panel_window(cx);
     }
-}
-
-/// A stage `height` tall, but never taller than its screen (a panel near
-/// the bottom gives up its shadow's room there). A screen that says no
-/// height gets what was asked.
-fn within_screen(height: Pixels, screen_height: Pixels) -> Pixels {
-    if screen_height > px(0.0) { height.min(screen_height.floor()) } else { height }
 }
