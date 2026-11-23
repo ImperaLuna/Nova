@@ -2,7 +2,8 @@
 //! defined once here and every feature's ui draws with it, so the shell
 //! reads as one thing:
 //!
-//! - [`tokens`]: every size, opacity and timing, named.
+//! - [`tokens`]: every size, opacity and timing, named, and the font
+//!   families ([`Family`]: the face this system draws each with).
 //! - [`Theme`]: the active theme's colors and the fills derived from them.
 //!   Views read it while they render ([`Theme::of`]); [`Theme::set`] swaps
 //!   it and redraws, so a theme change needs nothing from a view.
@@ -34,6 +35,7 @@
 //! and to screenshot.
 
 mod app_icon;
+mod family;
 mod field;
 mod glass;
 mod icon;
@@ -54,6 +56,7 @@ mod wheel;
 mod window;
 
 pub use app_icon::AppIcon;
+pub use family::Family;
 pub use field::{Editing, FieldEvent, TextField};
 pub use glass::Glass;
 pub use icon::{Glyph, Icon, IconAssets};
