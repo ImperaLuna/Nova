@@ -14,7 +14,7 @@ use gpui::{Context, Entity, SharedString, Subscription, Task};
 use nova_host_info::{Event, Host, TOPIC};
 use nova_look::motion::Eased;
 use nova_look::tokens::{DURATION_FADE, DURATION_PANEL};
-use nova_stage::{Parts, Screen, Stage};
+use nova_stage::{Parts, Screen, Shown, Stage};
 use nova_ui_client::Live;
 use std::time::{Duration, Instant};
 
@@ -63,6 +63,12 @@ impl Drawer {
         let mut followed = vec![cx.observe(&host, |_, _, cx| cx.notify())];
         followed.extend(Stage::observe_panels(cx, |drawer, cx| drawer.follow_stage(cx)));
         followed.extend(Stage::slots(cx).map(|slots| cx.observe(&slots, |drawer, _, cx| drawer.follow_slots(cx))));
+        // A part came or went (the microphone's slider while an app records).
+        followed.push(Shown::observe(cx, |drawer, cx| {
+            if drawer.hosts().into_iter().fold(false, |changed, parts| parts.shown_changed() | changed) {
+                cx.notify();
+            }
+        }));
         let now = Instant::now();
         Self {
             screen: screen.clone(),
@@ -162,11 +168,9 @@ impl Drawer {
         }));
     }
 
-    /// The features changed: keep each host in step, and leave a page
-    /// whose feature went.
-    fn follow_slots(&mut self, cx: &mut Context<Self>) {
-        let mut changed = false;
-        for parts in [
+    /// Every host it draws.
+    fn hosts(&mut self) -> [&mut Parts; 7] {
+        [
             &mut self.tiles,
             &mut self.sliders,
             &mut self.cards,
@@ -174,7 +178,14 @@ impl Drawer {
             &mut self.foot,
             &mut self.pages,
             &mut self.buttons,
-        ] {
+        ]
+    }
+
+    /// The features changed: keep each host in step, and leave a page
+    /// whose feature went.
+    fn follow_slots(&mut self, cx: &mut Context<Self>) {
+        let mut changed = false;
+        for parts in self.hosts() {
             changed |= parts.sync(cx);
         }
         let gone = self.shown_page().is_some_and(|page| self.pages.get(page).is_none());

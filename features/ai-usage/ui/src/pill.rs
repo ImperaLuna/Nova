@@ -31,7 +31,8 @@ impl UsagePill {
     pub fn new(screen: &Screen, cx: &mut Context<Self>) -> Self {
         let usage = Live::follow(TOPIC, cx, |Event::AiUsage(usage)| Some(usage));
         let followed = cx.observe(&usage, |pill: &mut Self, usage, cx| {
-            pill.shown.set(usage.read(cx).get().is_some());
+            let has = usage.read(cx).get().is_some();
+            pill.shown.set(has, cx);
             cx.notify();
         });
         Self { screen: screen.clone(), usage, shown: Shown::new(false), _followed: followed }

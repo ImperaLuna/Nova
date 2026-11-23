@@ -29,7 +29,7 @@ struct RightPill {
     buttons: Parts,
     /// Shown while it has a button or a tray part is shown.
     shown: Shown,
-    _slots: Option<Subscription>,
+    _observers: Vec<Subscription>,
 }
 
 impl RightPill {
@@ -38,21 +38,28 @@ impl RightPill {
             cx.observe(&slots, |pill, _, cx| {
                 pill.tray.sync(cx);
                 pill.buttons.sync(cx);
-                pill.follow();
+                pill.follow(cx);
                 cx.notify();
             })
         });
+        // An app came to the tray or left it: the stage shows or hides
+        // this pill for it, this redraws it with the tray or without.
+        let tray_shown = Shown::observe(cx, |pill, cx| {
+            if pill.tray.shown_changed() {
+                cx.notify();
+            }
+        });
         let tray = Parts::new(TRAY, screen, cx);
         let buttons = Parts::new(BUTTONS, screen, cx);
-        let pill = Self { tray, buttons, shown, _slots: slots };
-        pill.follow();
+        let pill = Self { tray, buttons, shown, _observers: slots.into_iter().chain([tray_shown]).collect() };
+        pill.follow(cx);
         pill
     }
 
     /// Shown with its buttons, or a tray part: an app in the tray.
-    fn follow(&self) {
+    fn follow(&self, cx: &mut App) {
         let buttons = Shown::new(!self.buttons.is_empty());
-        self.shown.follow(self.tray.parts().map(Part::shown).chain([buttons]).collect());
+        self.shown.follow(self.tray.parts().map(Part::shown).chain([buttons]).collect(), cx);
     }
 }
 

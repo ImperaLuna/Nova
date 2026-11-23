@@ -4,7 +4,7 @@
 //! them, morphs one into the other and keeps the regions.
 
 use crate::rules::PanelRules;
-use gpui::{AnyView, FocusHandle, Pixels, SharedString, Size};
+use gpui::{AnyView, App, AppContext, Context, Entity, FocusHandle, Global, Pixels, SharedString, Size, Subscription};
 use nova_look::tokens::{BAR_GAP, PAD, RADIUS_PANEL};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -45,7 +45,8 @@ impl Pill {
     /// the launcher, workspaces and clock all off): while `shown` says no,
     /// the stage draws no glass for it, gives it no room in its row and no
     /// region, and a panel that grows out of it rises into place instead.
-    /// The view sets it as what it shows changes, and redraws.
+    /// The view sets it as what it shows changes ([`Shown::set`]); the
+    /// stage redraws the bar when that shows or hides the pill.
     pub fn shown_while(mut self, shown: Shown) -> Self {
         self.shown = Some(shown);
         self
@@ -56,6 +57,11 @@ impl Pill {
 /// Clones share the one flag. One made with [`Shown::any`] is shown while
 /// any of its flags is, so a pill whose parts come and go (the right
 /// pill's tray) is shown with them though it isn't drawn meanwhile.
+///
+/// A pill or part that isn't drawn is read by no frame, so its own
+/// `cx.notify()` redraws nothing. Each change of a flag is told instead
+/// ([`Shown::observe`]): the stage and the hosts that draw parts look
+/// whether what they show changed, and only then redraw.
 #[derive(Debug, Clone)]
 pub struct Shown(Rc<Flag>);
 
@@ -63,6 +69,25 @@ pub struct Shown(Rc<Flag>);
 enum Flag {
     Own(Cell<bool>),
     Any(RefCell<Vec<Shown>>),
+}
+
+/// What is notified each time a flag changes, anywhere. No frame reads it,
+/// so it redraws nothing by itself.
+struct Changes(Entity<()>);
+
+impl Global for Changes {}
+
+fn changes(cx: &mut App) -> Entity<()> {
+    if let Some(Changes(changes)) = cx.try_global::<Changes>() {
+        return changes.clone();
+    }
+    let changes = cx.new(|_| ());
+    cx.set_global(Changes(changes.clone()));
+    changes
+}
+
+fn tell(cx: &mut App) {
+    changes(cx).update(cx, |_, cx| cx.notify());
 }
 
 impl Shown {
@@ -76,20 +101,40 @@ impl Shown {
     }
 
     /// Sets a flag made with [`Shown::new`], and returns whether it
-    /// changed, so the view redraws (`cx.notify()`). One made with
+    /// changed. A change is told to whoever observes flags, so the stage
+    /// shows or hides the pill though the view isn't drawn. One made with
     /// [`Shown::any`] follows its flags and isn't set.
-    pub fn set(&self, shown: bool) -> bool {
+    pub fn set(&self, shown: bool, cx: &mut App) -> bool {
+        let changed = self.put(shown);
+        if changed {
+            tell(cx);
+        }
+        changed
+    }
+
+    /// Gives one made with [`Shown::any`] new flags to follow, and tells
+    /// whoever observes flags when that changes whether it is shown.
+    pub fn follow(&self, flags: Vec<Shown>, cx: &mut App) {
+        if self.refollow(flags) {
+            tell(cx);
+        }
+    }
+
+    /// [`Shown::set`] without telling anyone.
+    fn put(&self, shown: bool) -> bool {
         match &*self.0 {
             Flag::Own(flag) => flag.replace(shown) != shown,
             Flag::Any(_) => false,
         }
     }
 
-    /// Gives one made with [`Shown::any`] new flags to follow.
-    pub fn follow(&self, flags: Vec<Shown>) {
-        if let Flag::Any(followed) = &*self.0 {
-            followed.replace(flags);
-        }
+    /// [`Shown::follow`] without telling anyone. Returns whether that
+    /// changed whether it is shown.
+    fn refollow(&self, flags: Vec<Shown>) -> bool {
+        let Flag::Any(followed) = &*self.0 else { return false };
+        let before = self.get();
+        followed.replace(flags);
+        self.get() != before
     }
 
     pub fn get(&self) -> bool {
@@ -97,6 +142,18 @@ impl Shown {
             Flag::Own(flag) => flag.get(),
             Flag::Any(flags) => flags.borrow().iter().any(Shown::get),
         }
+    }
+
+    /// Calls `changed` after any flag changed, anywhere, for as long as
+    /// the subscription is kept. It looks whether what its view shows
+    /// changed and redraws only then: a window at rest draws nothing for a
+    /// flag on another screen or in another host.
+    pub fn observe<V: 'static>(
+        cx: &mut Context<V>,
+        mut changed: impl FnMut(&mut V, &mut Context<V>) + 'static,
+    ) -> Subscription {
+        let changes = changes(cx);
+        cx.observe(&changes, move |view, _, cx| changed(view, cx))
     }
 }
 
@@ -126,8 +183,9 @@ impl Part {
     /// For a part that has nothing to show at times (the tray with no app
     /// in it): while `shown` says no, its host leaves it out, as the stage
     /// does a pill ([`Pill::shown_while`]). The view sets it as what it
-    /// shows changes and redraws every window (`cx.refresh_windows()`): a
-    /// host shown only for it isn't drawn meanwhile, to see the change.
+    /// shows changes ([`Shown::set`]); the host redraws when that shows or
+    /// hides the part ([`crate::Parts::shown_changed`]), and the stage
+    /// when it shows or hides the host's pill ([`Shown::any`]).
     pub fn shown_while(mut self, shown: Shown) -> Self {
         self.shown = Some(shown);
         self
@@ -319,10 +377,11 @@ mod tests {
         let (tray, buttons) = (Shown::new(false), Shown::new(false));
         let pill = Shown::any(vec![tray.clone(), buttons.clone()]);
         assert!(!pill.get());
-        assert!(tray.set(true));
+        assert!(tray.put(true));
         assert!(pill.get());
-        assert!(!pill.set(false), "it follows its flags and isn't set");
-        pill.follow(vec![buttons]);
+        assert!(!pill.put(false), "it follows its flags and isn't set");
+        assert!(pill.refollow(vec![buttons]), "it stops being shown");
         assert!(!pill.get());
+        assert!(!pill.refollow(Vec::new()), "still not shown");
     }
 }

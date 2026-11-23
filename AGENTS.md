@@ -358,8 +358,14 @@ frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
   at rest, one a second for a clock that shows seconds, and for each
   motion how many of its frames came late.
 - A pill that has nothing to show at times passes a `Shown` with
-  `Pill::shown_while` and sets it as that changes: hidden, it takes no
-  room and no region, and a panel from it rises into place instead.
+  `Pill::shown_while` and sets it as that changes (`Shown::set`): hidden,
+  it takes no room and no region, and a panel from it rises into place
+  instead. A hidden view is drawn by no frame, so its own `cx.notify()`
+  can't bring it back: `Shown::set` tells the stage, which redraws only
+  when one of its pills came or went. A host that draws parts
+  (`Parts`) does the same for `Part::shown_while`: it keeps a
+  `Shown::observe` and redraws when `Parts::shown_changed` says so. No
+  `cx.refresh_windows()` for it.
 - The bar's center row is centered, unless a view in it wraps one thing in
   `nova_stage::middle(...)` (the clock part's time): then that thing's
   middle is the screen's middle, and the row grows to the left of it.
