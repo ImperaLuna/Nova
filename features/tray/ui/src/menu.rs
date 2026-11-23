@@ -8,11 +8,15 @@
 //! novad reads the menu and runs its entries (`tray_menu`,
 //! `run_tray_menu_entry`): the stage owns the glass, the drop in, Esc and
 //! a click outside.
+//!
+//! The tray card in quick settings draws the same menu inside the drawer
+//! (`TrayMenu::in_drawer`): there the card places it and dismisses it, and
+//! an entry that ran closes quick settings too.
 
 use crate::model::{self, Entry};
 use crate::strip::TRAY;
 use crate::tokens::{
-    MENU_CHECK_ICON_SIZE, MENU_CHECK_RADIUS, MENU_CHECK_SIZE, MENU_GAP, MENU_PAD, MENU_ROW_HEIGHT, MENU_ROW_RADIUS,
+    MENU_CHECK_ICON_SIZE, MENU_CHECK_RADIUS, MENU_CHECK_SIZE, MENU_GAP, MENU_ROW_HEIGHT, MENU_ROW_RADIUS,
     MENU_SEPARATOR_INSET, MENU_WIDTH, TRAY_ICON_SIZE,
 };
 use gpui::{
@@ -20,7 +24,7 @@ use gpui::{
     ParentElement, Pixels, Render, SharedString, Size, StatefulInteractiveElement, Styled, Task, Window, div, size,
 };
 use nova_look::tokens::{
-    BAR_GAP, BAR_HEIGHT, BAR_MARGIN, DIVIDER_WIDTH, ICON_GAP, ICON_SIZE_SMALL, PILL_BUTTON_SIZE, ROW_INSET,
+    BAR_GAP, BAR_HEIGHT, BAR_MARGIN, DIVIDER_WIDTH, ICON_GAP, ICON_SIZE_SMALL, MENU_PAD, PILL_BUTTON_SIZE, ROW_INSET,
     STROKE_THIN, WEIGHT_TITLE,
 };
 use nova_look::{AppIcon, Glyph, Icon, Theme};
@@ -31,6 +35,8 @@ use std::collections::HashMap;
 
 /// The panel's name, as today's shell calls it.
 pub const MENU: &str = "tray-menu";
+/// Quick settings' drawer, by its name, which a menu drawn over it closes.
+const QUICK_SETTINGS: &str = "quick-settings";
 
 /// How far down the screen the menu's top is: below the bar.
 fn top() -> Pixels {
@@ -64,6 +70,9 @@ pub fn panel(screen: &Screen, cx: &mut App) -> Panel {
 
 pub struct TrayMenu {
     screen: Screen,
+    /// Drawn over quick settings' Tray card instead of as a panel below
+    /// the bar ([`TrayMenu::in_drawer`]).
+    in_drawer: bool,
     /// The app whose menu it shows.
     entry: Option<Entry>,
     /// Submenus opened, the innermost last.
@@ -78,6 +87,7 @@ impl TrayMenu {
     fn new(screen: &Screen) -> Self {
         Self {
             screen: screen.clone(),
+            in_drawer: false,
             entry: None,
             stack: Vec::new(),
             level: TrayMenuLevel::default(),
@@ -86,10 +96,38 @@ impl TrayMenu {
         }
     }
 
+    /// A menu the Tray card in quick settings draws over the drawer
+    /// itself: it is no panel, an entry that ran closes quick settings
+    /// (hiding or showing the app leaves it open, to see the change), and
+    /// the card closes it on a click beside it ([`TrayMenu::dismiss`]).
+    pub fn in_drawer(screen: &Screen) -> Self {
+        Self { in_drawer: true, ..Self::new(screen) }
+    }
+
+    /// Whether it shows an app's menu now.
+    pub fn is_showing(&self) -> bool {
+        self.entry.is_some()
+    }
+
+    /// The key of the app whose menu it shows now.
+    pub fn showing(&self) -> Option<&str> {
+        self.entry.as_ref().map(|entry| entry.key.as_str())
+    }
+
+    /// Stops showing it (a click beside a menu in the drawer).
+    pub fn dismiss(&mut self, cx: &mut Context<Self>) {
+        if self.entry.take().is_some() {
+            cx.notify();
+        }
+    }
+
     /// The tallest it may be: down to the bar's margin above the screen's
-    /// bottom.
+    /// bottom, or the drawer's height.
     fn max_height(&self) -> Pixels {
-        self.screen.size.height - top() - BAR_MARGIN
+        match self.in_drawer {
+            true => self.screen.size.height - BAR_GAP - BAR_MARGIN * 2.0,
+            false => self.screen.size.height - top() - BAR_MARGIN,
+        }
     }
 
     pub fn size(&self) -> Size<Pixels> {
@@ -106,11 +144,13 @@ impl TrayMenu {
         self.stack.clear();
         self.level = TrayMenuLevel::default();
         self.read(cx);
-        self.resize(cx);
-        cx.defer(move |cx| {
-            Stage::place(MENU, screen, left, cx);
-            Stage::open(MENU, screen, cx);
-        });
+        if !self.in_drawer {
+            self.resize(cx);
+            cx.defer(move |cx| {
+                Stage::place(MENU, screen, left, cx);
+                Stage::open(MENU, screen, cx);
+            });
+        }
         cx.notify();
     }
 
@@ -136,6 +176,10 @@ impl TrayMenu {
     }
 
     fn resize(&self, cx: &mut Context<Self>) {
+        if self.in_drawer {
+            // Not a panel: its view takes the room it needs.
+            return;
+        }
         let (screen, size) = (self.screen.id, self.size());
         cx.defer(move |cx| Stage::resize(MENU, screen, size, cx));
     }
@@ -169,19 +213,27 @@ impl TrayMenu {
             }
         }));
         if !flips {
-            self.done(cx);
+            self.done(false, cx);
         }
     }
 
     fn hide(&mut self, cx: &mut Context<Self>) {
         let Some(entry) = &self.entry else { return };
         Daemon::send(Command::HideTrayApp { id: entry.key.clone(), hidden: !entry.hidden }, cx);
-        self.done(cx);
+        self.done(true, cx);
     }
 
-    /// Closes the menu and the tray with it.
-    fn done(&self, cx: &mut Context<Self>) {
+    /// Closes the menu and the tray with it; in the drawer, quick settings
+    /// too unless `stay` (the app was hidden or shown).
+    fn done(&mut self, stay: bool, cx: &mut Context<Self>) {
         let screen = self.screen.id;
+        if self.in_drawer {
+            self.dismiss(cx);
+            if !stay {
+                cx.defer(move |cx| Stage::close(QUICK_SETTINGS, screen, cx));
+            }
+            return;
+        }
         cx.defer(move |cx| {
             Stage::close(MENU, screen, cx);
             Stage::close(TRAY, screen, cx);
