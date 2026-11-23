@@ -7,9 +7,12 @@
 //! room fades out at its end and scrolls through once when the track
 //! changes, and again and again while the pill is hovered.
 //!
-//! The equalizer eases between the model's steps every frame while it
-//! moves (`equalizer`), drawn as one smooth shape, and asks for no frames
-//! once its bars have arrived.
+//! The equalizer eases between the model's steps (`equalizer`), drawn as
+//! one smooth shape, at most `EQ_FRAMES_PER_SECOND` whatever the screen's
+//! rate: each frame it draws on screen arms a timer for the next, so a
+//! pill the stage leaves out, slides away or clips asks for no more. The
+//! model's steps redraw nothing: these frames read them while it steps,
+//! and stop once it doesn't and the bars have arrived.
 
 use crate::art::Art;
 use crate::equalizer::{Levels, outline};
@@ -18,7 +21,8 @@ use crate::measure;
 use crate::model::NowPlaying;
 use crate::tokens::{
     APP_ICON, ART, ARTIST_MAX, DURATION_EQ_FALL, DURATION_EQ_RISE, DURATION_MARQUEE_REST, EQ_BAR_WIDTH, EQ_BARS,
-    EQ_GAP, EQ_HIGH, EQ_LEAD, EQ_LOW, EQ_OUTLINE_SAMPLES, FADE, MARQUEE_SPEED, PAUSED_OPACITY, PILL_START, TITLE_MAX,
+    EQ_FRAMES_PER_SECOND, EQ_GAP, EQ_HIGH, EQ_LEAD, EQ_LOW, EQ_OUTLINE_SAMPLES, FADE, MARQUEE_SPEED, PAUSED_OPACITY,
+    PILL_START, TITLE_MAX,
 };
 use gpui::{
     App, Bounds, Context, Div, Entity, HighlightStyle, Hsla, InteractiveElement, IntoElement, LineLayout,
@@ -31,8 +35,10 @@ use nova_look::tokens::{
 };
 use nova_look::{Theme, mix};
 use nova_media_api::MediaPlayer;
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct MediaPill {
     model: Entity<NowPlaying>,
@@ -53,6 +59,14 @@ pub struct MediaPill {
     resting: Option<(Instant, Task<()>)>,
     /// The equalizer's heights as drawn, easing toward the model's.
     levels: Levels,
+    /// Whether the equalizer's last paint was on screen and not clipped
+    /// away: only then does it ask for its next frame.
+    eq_seen: Rc<Cell<bool>>,
+    /// The timer for the equalizer's next frame, while it moves, and when
+    /// that frame is due: one step after the one before, so the wait for
+    /// the screen's next frame doesn't add up.
+    eq_frame: Option<Task<()>>,
+    eq_due: Instant,
 }
 
 impl MediaPill {
@@ -70,6 +84,9 @@ impl MediaPill {
             wants_scroll: false,
             resting: None,
             levels: Levels::default(),
+            eq_seen: Rc::new(Cell::new(false)),
+            eq_frame: None,
+            eq_due: now,
         }
     }
 
@@ -166,9 +183,12 @@ impl Render for MediaPill {
         measured.offset = self.scrolled(&player.title, running, over, now);
         // Paused, the bars lie flat.
         let targets = if playing { model.bars.clone() } else { vec![EQ_LOW.into(); EQ_BARS] };
+        let stepping = model.stepping();
         self.levels.ease(&targets, DURATION_EQ_RISE, DURATION_EQ_FALL, now);
-        let moving =
-            !(out.settled(now) && self.width.settled(now) && self.lit.settled(now)) || !self.levels.settled(&targets);
+        if stepping || !self.levels.settled(&targets) {
+            self.next_eq_frame(cx);
+        }
+        let moving = !(out.settled(now) && self.width.settled(now) && self.lit.settled(now));
         if moving || self.title_moves(over, now, cx) {
             window.request_animation_frame();
         }
@@ -239,9 +259,21 @@ impl MediaPill {
         });
         let bar_color = if playing { primary } else { dim };
         let bars = self.levels.heights().to_vec();
+        let seen = self.eq_seen.clone();
         let equalizer = div().ml(EQ_LEAD).w(bars_width()).h(EQ_HIGH).flex_none().child(
-            canvas(|_, _, _| {}, move |bounds, _, window, _| paint_equalizer(&bars, bounds, bar_color, window))
-                .size_full(),
+            canvas(
+                |_, _, _| {},
+                move |bounds, _, window, _| {
+                    let shows = on_screen(bounds, window);
+                    // Back in sight: one frame to start its own frames again.
+                    if shows && !seen.replace(shows) {
+                        window.request_animation_frame();
+                    }
+                    seen.set(shows);
+                    paint_equalizer(&bars, bounds, bar_color, window);
+                },
+            )
+            .size_full(),
         );
         div()
             .w(measured.face_width)
@@ -256,6 +288,35 @@ impl MediaPill {
             .children(artist)
             .child(equalizer)
     }
+}
+
+impl MediaPill {
+    /// Asks for the equalizer's next frame one `EQ_FRAMES_PER_SECOND` step
+    /// from now, if its last paint was seen and none is asked for yet.
+    fn next_eq_frame(&mut self, cx: &mut Context<Self>) {
+        if self.eq_frame.is_some() || !self.eq_seen.get() {
+            return;
+        }
+        let now = Instant::now();
+        // After a pause, or when frames came late, the next is due at once.
+        self.eq_due = (self.eq_due + Duration::from_secs(1) / EQ_FRAMES_PER_SECOND).max(now);
+        let wait = self.eq_due - now;
+        self.eq_frame = Some(cx.spawn(async move |pill, cx| {
+            cx.background_executor().timer(wait).await;
+            let _ = pill.update(cx, |pill, cx| {
+                pill.eq_frame = None;
+                cx.notify();
+            });
+        }));
+    }
+}
+
+/// Whether `bounds` shows: inside the window and not clipped away by what
+/// holds it (the pill sliding out from nothing, or the stage's rows).
+fn on_screen(bounds: Bounds<Pixels>, window: &Window) -> bool {
+    let screen = Bounds { origin: point(px(0.0), px(0.0)), size: window.viewport_size() };
+    let shown = bounds.intersect(&window.content_mask().bounds).intersect(&screen);
+    shown.size.width > Pixels::ZERO && shown.size.height > Pixels::ZERO
 }
 
 /// How wide the equalizer is: its bars and the gaps between them.
