@@ -6,18 +6,24 @@
 //! eases to a new width when the track changes. A title too long for its
 //! room fades out at its end and scrolls through once when the track
 //! changes, and again and again while the pill is hovered.
+//!
+//! The equalizer eases between the model's steps every frame while it
+//! moves (`equalizer`), drawn as one smooth shape, and asks for no frames
+//! once its bars have arrived.
 
 use crate::art::Art;
+use crate::equalizer::{Levels, outline};
 use crate::logic;
 use crate::measure;
 use crate::model::NowPlaying;
 use crate::tokens::{
-    APP_ICON, ART, ARTIST_MAX, DURATION_MARQUEE_REST, EQ_BAR_WIDTH, EQ_BARS, EQ_GAP, EQ_HIGH, EQ_LEAD, EQ_LOW, FADE,
-    MARQUEE_SPEED, PAUSED_OPACITY, PILL_START, TITLE_MAX,
+    APP_ICON, ART, ARTIST_MAX, DURATION_EQ_FALL, DURATION_EQ_RISE, DURATION_MARQUEE_REST, EQ_BAR_WIDTH, EQ_BARS,
+    EQ_GAP, EQ_HIGH, EQ_LEAD, EQ_LOW, EQ_OUTLINE_SAMPLES, FADE, MARQUEE_SPEED, PAUSED_OPACITY, PILL_START, TITLE_MAX,
 };
 use gpui::{
-    App, Context, Div, Entity, HighlightStyle, InteractiveElement, IntoElement, LineLayout, ParentElement, Pixels,
-    Render, SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window, div, px,
+    App, Bounds, Context, Div, Entity, HighlightStyle, Hsla, InteractiveElement, IntoElement, LineLayout,
+    ParentElement, PathBuilder, Pixels, Render, SharedString, StatefulInteractiveElement, Styled, StyledText, Task,
+    Window, canvas, div, point, px,
 };
 use nova_look::motion::Eased;
 use nova_look::tokens::{
@@ -45,6 +51,8 @@ pub struct MediaPill {
     /// The redraw at the end of the rest the title is in, for the scroll
     /// that started then.
     resting: Option<(Instant, Task<()>)>,
+    /// The equalizer's heights as drawn, easing toward the model's.
+    levels: Levels,
 }
 
 impl MediaPill {
@@ -61,6 +69,7 @@ impl MediaPill {
             hovered: false,
             wants_scroll: false,
             resting: None,
+            levels: Levels::default(),
         }
     }
 
@@ -155,7 +164,11 @@ impl Render for MediaPill {
 
         let running = out.target() == 1.0 && out.settled(now) && !open;
         measured.offset = self.scrolled(&player.title, running, over, now);
-        let moving = !(out.settled(now) && self.width.settled(now) && self.lit.settled(now));
+        // Paused, the bars lie flat.
+        let targets = if playing { model.bars.clone() } else { vec![EQ_LOW.into(); EQ_BARS] };
+        self.levels.ease(&targets, DURATION_EQ_RISE, DURATION_EQ_FALL, now);
+        let moving =
+            !(out.settled(now) && self.width.settled(now) && self.lit.settled(now)) || !self.levels.settled(&targets);
         if moving || self.title_moves(over, now, cx) {
             window.request_animation_frame();
         }
@@ -188,8 +201,6 @@ impl MediaPill {
         let theme = Theme::of(cx);
         let (fg, dim, primary) = (theme.fg, theme.fg_dim(), theme.primary);
         let playing = logic::playing(Some(player));
-        // Paused, they lie flat.
-        let bars = if playing { self.model.read(cx).bars.clone() } else { vec![EQ_LOW.into(); EQ_BARS] };
         let lit = self.lit.value(now);
         let ink = mix(dim, fg, lit);
         let icon = div()
@@ -227,13 +238,11 @@ impl MediaPill {
                 .child(SharedString::from(player.artist.clone()))
         });
         let bar_color = if playing { primary } else { dim };
-        let equalizer = div()
-            .ml(EQ_LEAD)
-            .h(EQ_HIGH)
-            .flex()
-            .items_end()
-            .gap(EQ_GAP)
-            .children(bars.into_iter().map(|bar| div().w(EQ_BAR_WIDTH).h(px(bar)).rounded_full().bg(bar_color)));
+        let bars = self.levels.heights().to_vec();
+        let equalizer = div().ml(EQ_LEAD).w(bars_width()).h(EQ_HIGH).flex_none().child(
+            canvas(|_, _, _| {}, move |bounds, _, window, _| paint_equalizer(&bars, bounds, bar_color, window))
+                .size_full(),
+        );
         div()
             .w(measured.face_width)
             .h(BAR_HEIGHT)
@@ -246,6 +255,24 @@ impl MediaPill {
             .child(title)
             .children(artist)
             .child(equalizer)
+    }
+}
+
+/// How wide the equalizer is: its bars and the gaps between them.
+fn bars_width() -> Pixels {
+    EQ_BAR_WIDTH * EQ_BARS as f32 + EQ_GAP * (EQ_BARS - 1) as f32
+}
+
+/// Fills the equalizer's smooth outline through `bars` (heights in px),
+/// standing on the bottom of `bounds`.
+fn paint_equalizer(bars: &[f32], bounds: Bounds<Pixels>, color: Hsla, window: &mut Window) {
+    let shape = outline(bars, EQ_BAR_WIDTH.into(), EQ_GAP.into(), EQ_HIGH.into(), EQ_OUTLINE_SAMPLES);
+    let foot = bounds.bottom();
+    let points: Vec<_> = shape.iter().map(|(x, y)| point(bounds.origin.x + px(*x), foot - px(*y))).collect();
+    let mut path = PathBuilder::fill();
+    path.add_polygon(&points, true);
+    if let Ok(path) = path.build() {
+        window.paint_path(path, color);
     }
 }
 
@@ -268,7 +295,6 @@ impl Measured {
         let over = (title.width - TITLE_MAX).max(Pixels::ZERO);
         let artist = logic::pill_artist(player)
             .then(|| measure::line(&player.artist, FONT_SIZE_SMALL, WEIGHT_BODY, window, cx).width.min(ARTIST_MAX));
-        let bars_width = EQ_BAR_WIDTH * EQ_BARS as f32 + EQ_GAP * (EQ_BARS - 1) as f32;
         let face_width = PILL_START
             + ART
             + GAP
@@ -276,7 +302,7 @@ impl Measured {
             + artist.map_or(Pixels::ZERO, |artist| GAP + artist)
             + GAP
             + EQ_LEAD
-            + bars_width
+            + bars_width()
             + PAD;
         Self { title, title_width, over, artist, face_width, offset: 0.0 }
     }
