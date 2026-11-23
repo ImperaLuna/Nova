@@ -8,7 +8,9 @@
 //!   there. It sits on the overlay layer, over a fullscreen window too.
 //! - The bar's room: an empty surface that reserves the bar's height at
 //!   the top of the screen, so app windows sit below the pills. The stage
-//!   itself reserves nothing, so a panel opening never moves a window.
+//!   itself reserves nothing, so a panel opening never moves a window. It
+//!   gives the room back while the bar steps aside for a fullscreen window
+//!   (`crate::aside`), without closing: a new window would cost frames.
 
 use crate::geometry::below_stage;
 use crate::screens::Screen;
@@ -18,7 +20,7 @@ use gpui::{
     AnyWindowHandle, App, AppContext, Context, InteractiveElement, IntoElement, Pixels, Render, Size, Styled, Window,
     div,
     layer_shell::{Anchor, Layer},
-    size,
+    px, size,
 };
 use nova_look::tokens::{BAR_GAP, BAR_HEIGHT};
 use nova_look::{ShellWindow, set_blur_region};
@@ -69,12 +71,27 @@ impl Render for BarRoom {
     }
 }
 
-/// Opens the surface that keeps the bar's room on `screen`.
-pub(crate) fn open_bar_room(screen: &Screen, cx: &mut App) -> Option<AnyWindowHandle> {
+/// The room the bar's surface keeps: all of it, or none.
+fn kept_room(kept: bool) -> Pixels {
+    if kept { bar_room() } else { px(0.0) }
+}
+
+/// Opens the surface that keeps the bar's room on `screen`, or keeps none
+/// yet when `kept` is false.
+pub(crate) fn open_bar_room(screen: &Screen, kept: bool, cx: &mut App) -> Option<AnyWindowHandle> {
     let mut shell = ShellWindow::new(screen.id, size(screen.size.width, BAR_ROOM_HEIGHT));
-    shell.exclusive_zone = bar_room();
+    shell.exclusive_zone = kept_room(kept);
     shell.namespace = BAR_ROOM_NAMESPACE;
     opened(cx.open_window(shell.options(), |_, cx| cx.new(|_| BarRoom)), "bar's room")
+}
+
+/// Keeps the bar's room, or gives it back to the windows. The change goes
+/// out with the surface's next frame, so it asks for one.
+pub(crate) fn keep_bar_room(room: AnyWindowHandle, kept: bool, cx: &mut App) {
+    let _ = room.update(cx, |_, window, _| {
+        window.set_exclusive_zone(kept_room(kept));
+        window.refresh();
+    });
 }
 
 fn opened<V: 'static>(window: gpui::Result<gpui::WindowHandle<V>>, what: &str) -> Option<AnyWindowHandle> {

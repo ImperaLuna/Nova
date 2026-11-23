@@ -22,6 +22,7 @@
 # Allowed workspace crates:
 # - nova-bar-api
 # - nova-daemon-info
+# - nova-desktop-info
 # - nova-look
 # - nova-stage
 # - nova-theme-info
@@ -41,6 +42,7 @@ gpui.workspace = true
 gpui_platform.workspace = true
 nova-bar-api.workspace = true
 nova-daemon-info.workspace = true
+nova-desktop-info.workspace = true
 nova-look.workspace = true
 nova-stage.workspace = true
 nova-theme-info.workspace = true
@@ -90,6 +92,7 @@ nova-ui-client = { path = "../framework-ui/client" }
 nova-carrier = { path = "../framework/carrier" }
 nova-bar-api = { path = "../features/bar/api" }
 nova-daemon-info = { path = "../framework/daemon-info" }
+nova-desktop-info = { path = "../framework/desktop-info" }
 nova-sound-api = { path = "../features/sound/api" }
 nova-test-support = { path = "../framework/test-support" }
 nova-theme-info = { path = "../framework/theme-info" }

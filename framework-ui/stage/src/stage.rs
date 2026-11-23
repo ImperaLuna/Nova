@@ -37,6 +37,9 @@ pub(crate) struct Panels {
     known: HashMap<DisplayId, Vec<PanelRules>>,
     /// The size a feature last asked a panel to be ([`Stage::resize`]).
     sizes: HashMap<(DisplayId, SharedString), Size<Pixels>>,
+    /// The outputs whose shown workspace has a fullscreen window
+    /// ([`Stage::set_fullscreen`]).
+    fullscreen: Vec<SharedString>,
 }
 
 impl Panels {
@@ -66,6 +69,11 @@ impl Panels {
 
     pub fn size(&self, name: &SharedString, screen: DisplayId) -> Option<Size<Pixels>> {
         self.sizes.get(&(screen, name.clone())).copied()
+    }
+
+    /// Whether the output called `output` shows a fullscreen window.
+    pub fn fullscreen(&self, output: &str) -> bool {
+        self.fullscreen.iter().any(|each| each.as_ref() == output)
     }
 }
 
@@ -148,6 +156,17 @@ impl Stage {
             panels
                 .rules(name, screen)
                 .is_some_and(|panel| panels.sizes.insert((screen, panel.name), size) != Some(size))
+        });
+    }
+
+    /// The outputs whose shown workspace has a window over the whole
+    /// screen, by the names novad gives them: the bar steps aside there
+    /// (`crate::aside`). Every other output's bar comes back.
+    pub fn set_fullscreen(outputs: Vec<SharedString>, cx: &mut App) {
+        change(cx, |panels| {
+            let changed = panels.fullscreen != outputs;
+            panels.fullscreen = outputs;
+            changed
         });
     }
 
