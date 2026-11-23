@@ -2870,7 +2870,6 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "nova-bar-api",
- "nova-daemon-info",
  "nova-desktop-info",
  "nova-look",
  "nova-stage",

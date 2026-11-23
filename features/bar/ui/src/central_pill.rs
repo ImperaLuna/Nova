@@ -21,7 +21,6 @@ use gpui::{
     Subscription, Window, div,
 };
 use nova_bar_api::Panel as BarPanel;
-use nova_daemon_info::{Event as DaemonEvent, FeatureState, FeatureStatus, topics};
 use nova_desktop_info::{Capability, Desktop, Event as DesktopEvent, Step};
 use nova_look::motion::Eased;
 use nova_look::tokens::{
@@ -50,7 +49,6 @@ pub(crate) fn register(cx: &mut App) {
 struct CentralPill {
     screen: Screen,
     parts: Parts,
-    features: Entity<Live<Vec<FeatureState>>>,
     desktop: Entity<Live<Desktop>>,
     /// Whether it has something to show, for the stage.
     shown: Shown,
@@ -66,12 +64,10 @@ struct CentralPill {
 
 impl CentralPill {
     fn new(screen: &Screen, shown: Shown, cx: &mut Context<Self>) -> Self {
-        let features = Live::follow(topics::FEATURES, cx, |event| match event {
-            DaemonEvent::Features { features } => Some(features),
-            _ => None,
-        });
         let desktop = Live::follow(nova_desktop_info::TOPIC, cx, |DesktopEvent::Compositor(desktop)| Some(desktop));
-        let mut observers = vec![cx.observe(&features, |pill, _, cx| pill.changed(cx))];
+        // The launcher's panel comes and goes with its feature.
+        let mut observers: Vec<Subscription> =
+            Stage::observe_panels(cx, |pill, cx| pill.changed(cx)).into_iter().collect();
         if let Some(slots) = Stage::slots(cx) {
             observers.push(cx.observe(&slots, |pill, _, cx| {
                 pill.parts.sync(cx);
@@ -81,7 +77,6 @@ impl CentralPill {
         let pill = Self {
             screen: screen.clone(),
             parts: Parts::new(PARTS, screen, cx),
-            features,
             desktop,
             shown,
             search_hover: Eased::lasting(0.0, DURATION_FAST, Instant::now()),
@@ -93,12 +88,10 @@ impl CentralPill {
         pill
     }
 
-    /// The launcher is ready, so the search button shows.
+    /// The launcher's panel is on this screen's stage (its feature is
+    /// ready and its ui registered it), so the search button shows.
     fn can_search(&self, cx: &App) -> bool {
-        let launcher = BarPanel::Launcher.name();
-        self.features.read(cx).get().is_some_and(|features| {
-            features.iter().any(|feature| feature.id == launcher && feature.status == FeatureStatus::Ready)
-        })
+        Stage::has_panel(BarPanel::Launcher.name(), self.screen.id, cx)
     }
 
     fn can_step(&self, cx: &App) -> bool {
@@ -110,7 +103,7 @@ impl CentralPill {
         self.can_search(cx) || !self.parts.is_empty()
     }
 
-    /// The features or the parts changed.
+    /// The panels or the parts changed.
     fn changed(&mut self, cx: &mut Context<Self>) {
         self.shown.set(self.has_content(cx));
         cx.notify();
