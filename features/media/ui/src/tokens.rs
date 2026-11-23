@@ -97,7 +97,7 @@ tokens! {
 pub const DURATION_EQ_RISE: Duration = Duration::from_millis(40);
 pub const DURATION_EQ_FALL: Duration = Duration::from_millis(160);
 pub const EQ_OUTLINE_SAMPLES: usize = 6;
-pub const EQ_FRAMES_PER_SECOND: u32 = 60;
+pub const EQ_FRAMES_PER_SECOND: u32 = 30;
 
 #[cfg(test)]
 mod tests {
