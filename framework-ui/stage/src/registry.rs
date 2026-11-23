@@ -3,7 +3,7 @@
 //! that builds it. Nothing is built until a slot of a ready feature asks
 //! for the view, so a feature that is off costs one map entry.
 
-use crate::item::{Panel, Pill};
+use crate::item::{Panel, Part, Pill};
 use crate::kept::Kept;
 use crate::screens::Screen;
 use crate::slots::Slots;
@@ -20,7 +20,7 @@ type BuildOverlay = Rc<dyn Fn(&mut App) -> Box<dyn Any>>;
 struct Registry {
     pills: HashMap<SharedString, Build<Pill>>,
     panels: HashMap<SharedString, Build<Panel>>,
-    parts: HashMap<SharedString, Build<AnyView>>,
+    parts: HashMap<SharedString, Build<Part>>,
     overlays: HashMap<SharedString, BuildOverlay>,
 }
 
@@ -40,8 +40,9 @@ pub fn panel(view: &'static str, cx: &mut App, build: impl Fn(&Screen, &mut App)
 
 /// Registers a view for a host some feature draws itself (the central
 /// pill's parts, the right pill's buttons, quick settings' tiles). That
-/// feature shows its host's views with [`Parts`].
-pub fn part(view: &'static str, cx: &mut App, build: impl Fn(&Screen, &mut App) -> AnyView + 'static) {
+/// feature shows its host's views with [`Parts`]. `build` returns a
+/// [`Part`]: `cx.new(View::new).into()`, or [`Part::new`] with its flags.
+pub fn part(view: &'static str, cx: &mut App, build: impl Fn(&Screen, &mut App) -> Part + 'static) {
     cx.default_global::<Registry>().parts.insert(view.into(), Rc::new(build));
 }
 
@@ -94,7 +95,7 @@ pub struct Parts {
     screen: Screen,
     /// `None` before the stage started: there are no slots to fill yet.
     slots: Option<Entity<Slots>>,
-    views: Kept<AnyView>,
+    views: Kept<Part>,
 }
 
 impl Parts {
@@ -116,6 +117,15 @@ impl Parts {
     }
 
     pub fn views(&self) -> impl Iterator<Item = &AnyView> {
+        self.views.iter().map(Part::view)
+    }
+
+    /// The parts with their flags, in order.
+    pub fn parts(&self) -> impl Iterator<Item = &Part> {
         self.views.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.views.is_empty()
     }
 }
