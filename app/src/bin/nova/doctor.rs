@@ -9,6 +9,7 @@ use crate::host::{Distro, Host};
 use crate::login_apps::{self, AUTOSTART_DIR, StartupCommand};
 use nova_cli::client::{Client, RESTART_COMMAND, Unreachable};
 use nova_daemon_info::{FeatureState, FeatureStatus};
+use nova_desktop_info::HYPRLAND_LOCK_RESTORE;
 use nova_features::Gpu;
 use nova_quickshell::Range;
 use nova_tray_api::TrayItem;
@@ -19,6 +20,8 @@ use std::path::{Path, PathBuf};
 /// Qt's render loop variable, and the value that keeps the UI's memory down
 /// on NVIDIA's driver.
 const SETUP_COMMAND: &str = "nova setup";
+/// Where Nova's NixOS module puts its Hyprland rules (`packaging/nix/nixos.nix`).
+const NIXOS_HYPRLAND_RULES: &str = "/etc/xdg/nova/hyprland.lua";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {
@@ -78,6 +81,9 @@ pub struct Facts {
     pub features: Result<Vec<FeatureState>, String>,
     /// What the compositor starts at login.
     pub startup: Vec<StartupCommand>,
+    /// Whether the compositor lets a restarted lock screen lock again, or
+    /// why it couldn't be asked; `None` with no compositor.
+    pub lock_restore: Option<Result<bool, String>>,
 }
 
 impl Facts {
@@ -93,6 +99,7 @@ impl Facts {
             config: checks::read_config(&config_dir.join("config.toml"), &checks::default_themes_dir()),
             features: features(&nova_features::default_dir(), &nova_paths::config_files("features.toml"), &path_var),
             startup: config_dir.parent().map(login_apps::read).unwrap_or_default(),
+            lock_restore: checks::restores_session_lock(|name| std::env::var_os(name)),
         }
     }
 }
@@ -136,6 +143,7 @@ pub fn lines(facts: &Facts) -> Vec<Line> {
     ];
     lines.extend(features_lines(&facts.features, &facts.host.distro));
     lines.extend(login_apps_line(&facts.daemon, &facts.startup));
+    lines.extend(lock_restore_line(facts));
     lines
 }
 
@@ -302,6 +310,41 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro)
     vec![Line::new(Level::Ok, "features", format!("{} on, nothing missing", on.join(", ")))]
 }
 
+/// While the lock is on: a compositor that won't let the lock screen lock
+/// again after it crashed (Hyprland without Nova's rules) leaves the user
+/// locked out, with no bar, until a TTY.
+fn lock_restore_line(facts: &Facts) -> Option<Line> {
+    let on = facts.features.as_ref().is_ok_and(|features| {
+        features.iter().any(|feature| feature.id == nova_lock::FEATURE_ID && feature.status != FeatureStatus::Off)
+    });
+    let compositor = facts.compositor.filter(|_| on)?;
+    match facts.lock_restore.as_ref()? {
+        Ok(true) => None,
+        Err(problem) => Some(Line::new(
+            Level::Warn,
+            "lock",
+            format!("can't tell whether a lock screen that crashed can lock again: {problem}"),
+        )),
+        Ok(false) => {
+            let load = match facts.host.distro {
+                Distro::NixOs => format!(
+                    "Nova's home-manager module loads them, or with its NixOS module add `require(\"{NIXOS_HYPRLAND_RULES}\")` to \
+                     hyprland.lua"
+                ),
+                _ => format!("`{SETUP_COMMAND}` loads them"),
+            };
+            Some(Line::new(
+                Level::Fail,
+                "lock",
+                format!(
+                    "{compositor}'s {HYPRLAND_LOCK_RESTORE} is off, so a lock screen that crashes leaves you locked out until a \
+                     TTY; Nova's Hyprland rules turn it on, and {load}"
+                ),
+            ))
+        }
+    }
+}
+
 /// Tray apps the compositor starts at login, which may come up before the
 /// tray and miss it.
 fn login_apps_line(daemon: &Daemon, startup: &[StartupCommand]) -> Option<Line> {
@@ -354,6 +397,7 @@ mod tests {
                 feature("recording", FeatureStatus::Off, &[]),
             ]),
             startup: vec![],
+            lock_restore: Some(Ok(true)),
         }
     }
 
@@ -389,6 +433,31 @@ mod tests {
 
     fn rendered(facts: &Facts) -> String {
         lines(facts).iter().map(|line| format!("{line}\n")).collect()
+    }
+
+    #[test]
+    fn hyprland_that_wont_let_the_lock_screen_back_fails_while_the_lock_is_on() {
+        let mut facts = healthy();
+        (facts.host.distro, facts.compositor, facts.lock_restore) = (Distro::NixOs, Some("Hyprland"), Some(Ok(false)));
+        assert!(!rendered(&facts).contains("lock        "), "the lock is off: no line");
+        facts.features = Ok(vec![feature("lock", FeatureStatus::Ready, &[])]);
+        let text = rendered(&facts);
+        assert!(
+            text.contains(
+                "FAIL  lock        Hyprland's misc:allow_session_lock_restore is off, so a lock screen that crashes \
+                 leaves you locked out until a TTY"
+            ),
+            "{text}"
+        );
+        assert!(text.contains(r#"add `require("/etc/xdg/nova/hyprland.lua")` to hyprland.lua"#), "{text}");
+        facts.host.distro = Distro::Arch;
+        assert!(rendered(&facts).contains("`nova setup` loads them"));
+        facts.lock_restore = Some(Err("can't reach Hyprland".into()));
+        assert!(
+            rendered(&facts).contains("warn  lock        can't tell whether a lock screen that crashed can lock again")
+        );
+        facts.lock_restore = Some(Ok(true));
+        assert!(!rendered(&facts).contains("lock        "), "{}", rendered(&facts));
     }
 
     #[test]

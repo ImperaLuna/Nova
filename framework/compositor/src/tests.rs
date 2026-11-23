@@ -313,6 +313,21 @@ fn the_compositor_comes_from_its_variables() {
 }
 
 #[test]
+fn hyprland_says_whether_a_new_lock_screen_may_take_the_lock_over() {
+    // As Hyprland's `getoption` formats them (src/ipc/s1/Commands.cpp,
+    // 0.57.2): an INTEGER option on 0.56, a BOOL one on 0.57's Lua config.
+    // Not recorded: Hyprland can't run in a cloud session.
+    let int = |value| format!(r#"{{"option": "misc:allow_session_lock_restore", "int": {value}, "set": false }}"#);
+    let boolean = |value| format!(r#"{{"option": "misc:allow_session_lock_restore", "bool": {value}, "set": true }}"#);
+    assert_eq!(hyprland::lock_restore_in(&int(0)), Ok(false));
+    assert_eq!(hyprland::lock_restore_in(&int(1)), Ok(true));
+    assert_eq!(hyprland::lock_restore_in(&boolean(false)), Ok(false));
+    assert_eq!(hyprland::lock_restore_in(&boolean(true)), Ok(true));
+    let unknown = hyprland::lock_restore_in("no such option").unwrap_err();
+    assert!(unknown.contains("misc:allow_session_lock_restore"), "{unknown}");
+}
+
+#[test]
 fn stepping_stops_at_either_end() {
     let followed = follow_niri(&Recording::load("niri"));
     let desktop = step(&followed, "focus the previous workspace");
@@ -447,6 +462,10 @@ impl Backend for Arc<Shown> {
 
     fn window_workspace(&self, _: &[String], _: &Workspace) -> Result<Option<WorkspaceId>, String> {
         Ok(None)
+    }
+
+    fn restores_session_lock(&self) -> Result<bool, String> {
+        Ok(true)
     }
 }
 

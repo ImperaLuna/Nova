@@ -29,3 +29,10 @@ pub fn read_config(path: &Path, themes_dir: &Path) -> Result<Vec<String>, String
 pub fn compositor(env: impl Fn(&str) -> Option<OsString>) -> Option<&'static str> {
     nova_compositor::detect(env).map(|backend| backend.name())
 }
+
+/// Whether that compositor lets a lock screen that restarted take the
+/// session lock over, asked of it now. `None` with no compositor novad
+/// knows.
+pub fn restores_session_lock(env: impl Fn(&str) -> Option<OsString>) -> Option<Result<bool, String>> {
+    nova_compositor::detect(env).map(|backend| backend.restores_session_lock())
+}

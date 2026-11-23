@@ -63,6 +63,11 @@ pub trait Backend: Send + Sync {
     /// The workspace of the window [`Backend::focus_window`] would focus
     /// for `app_ids` and `here`, `None` when no window has one of them.
     fn window_workspace(&self, app_ids: &[String], here: &Workspace) -> Result<Option<WorkspaceId>, String>;
+    /// Whether a lock screen that starts while the session is locked, after
+    /// the one holding the lock stopped, may take the lock over. When it
+    /// may not, a lock screen that crashes leaves the session locked with
+    /// nothing to type the password into (`nova doctor` checks it).
+    fn restores_session_lock(&self) -> Result<bool, String>;
 }
 
 /// The backend for the compositor this session runs, from its variables in
