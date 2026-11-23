@@ -8,3 +8,17 @@ daemon = "tray"
 host = "quick-settings.cards"
 view = "tray.card"
 order = 20
+
+# nova-ui: the chevron and icons in the right pill, the open tray (drawn by
+# the strip in place, a panel so the stage closes it), and an app's menu.
+[[slot]]
+host = "right-pill.tray"
+view = "tray.strip"
+
+[[slot]]
+host = "stage.panels"
+view = "tray.panel"
+
+[[slot]]
+host = "stage.panels"
+view = "tray.menu"

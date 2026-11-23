@@ -33,6 +33,7 @@
 # - nova-screenshot-ui
 # - nova-stage
 # - nova-theme-info
+# - nova-tray-ui
 # - nova-ui-client
 # - nova-workspaces-ui
 
@@ -61,6 +62,7 @@ nova-notifications-ui.workspace = true
 nova-screenshot-ui.workspace = true
 nova-stage.workspace = true
 nova-theme-info.workspace = true
+nova-tray-ui.workspace = true
 nova-ui-client.workspace = true
 nova-workspaces-ui.workspace = true
 
@@ -117,6 +119,7 @@ nova-launcher-ui = { path = "../features/launcher/ui" }
 nova-media-ui = { path = "../features/media/ui" }
 nova-notifications-ui = { path = "../features/notifications/ui" }
 nova-screenshot-ui = { path = "../features/screenshot/ui" }
+nova-tray-ui = { path = "../features/tray/ui" }
 nova-workspaces-ui = { path = "../features/workspaces/ui" }
 
 # The daemon side's crates the UI side may use, by path: api and -info crates.
@@ -135,6 +138,7 @@ nova-screenshot-api = { path = "../features/screenshot/api" }
 nova-sound-api = { path = "../features/sound/api" }
 nova-test-support = { path = "../framework/test-support" }
 nova-theme-info = { path = "../framework/theme-info" }
+nova-tray-api = { path = "../features/tray/api" }
 nova-workspaces-api = { path = "../features/workspaces/api" }
 
 [workspace.lints.clippy]

@@ -14,6 +14,7 @@ var HOST_BAR_LEFT = "bar.left";
 var HOST_BAR_CENTER = "bar.center";
 var HOST_BAR_RIGHT = "bar.right";
 var HOST_RIGHT_PILL_BUTTONS = "right-pill.buttons";
+var HOST_RIGHT_PILL_TRAY = "right-pill.tray";
 var HOST_CENTRAL_PILL_PARTS = "central-pill.parts";
 var HOST_STAGE_PANELS = "stage.panels";
 var HOST_SHELL_OVERLAYS = "shell.overlays";

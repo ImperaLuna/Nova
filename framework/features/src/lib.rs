@@ -84,6 +84,9 @@ pub const HOSTS: &[Host] = &[
     // The buttons at the right pill's end (and on quick settings, in the
     // same place).
     Host { name: "right-pill.buttons", owner: Some("bar"), views: Views::Ui },
+    // The tray in the right pill, before a divider and its buttons. Today's
+    // right pill draws the tray itself; nova-ui's draws this host's views.
+    Host { name: "right-pill.tray", owner: Some("bar"), views: Views::Ui },
     // The central pill's parts beside the launcher's search button: the
     // workspaces and the day and time.
     Host { name: "central-pill.parts", owner: Some("bar"), views: Views::Ui },
