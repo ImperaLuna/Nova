@@ -490,6 +490,32 @@
             touch $out
           '';
 
+          # No Rust comment outside the keep list in AGENTS.md, Comments (scripts/check-comments.sh).
+          comments =
+            pkgs.runCommand "nova-comments"
+              {
+                nativeBuildInputs = [
+                  pkgs.ast-grep
+                  pkgs.shellcheck
+                ];
+              }
+              ''
+                cp -r ${
+                  pkgs.lib.fileset.toSource {
+                    root = ./.;
+                    fileset = pkgs.lib.fileset.unions [
+                      ./scripts/check-comments.sh
+                      ./scripts/ast-grep/comments
+                      (pkgs.lib.fileset.fileFilter (file: file.hasExt "rs" || file.name == "Cargo.toml") ./.)
+                    ];
+                  }
+                }/. src
+                cd src
+                shellcheck scripts/check-comments.sh
+                bash scripts/check-comments.sh
+                touch $out
+              '';
+
           # The fonts Nova's modules install (packaging/nix/fonts.nix) give
           # fontconfig a face for each family the look names (nova-theme-info's
           # FONT_* constants), so a renamed family or package can't silently

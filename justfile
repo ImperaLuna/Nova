@@ -7,11 +7,11 @@ default:
     @just --list
 
 # Everything CI runs
-check: fmt-check layout test-layout lint lint-nix lint-traps file-length deny test test-install test-stack
+check: fmt-check layout test-layout lint lint-nix lint-traps file-length comments deny test test-install test-stack
 
 # What scripts/stack.sh restack runs on each branch of a stack before pushing it:
 # `check` without the slow advisory fetch and the script tests
-check-branch: fmt-check layout lint lint-nix file-length test
+check-branch: fmt-check layout lint lint-nix file-length comments test
 
 # The UI side: nova-ui and the crates that use GPUI, in their own cargo
 # workspace (AGENTS.md, Layout). Its recipes run inside `nix develop .#ui`.
