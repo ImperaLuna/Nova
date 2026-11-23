@@ -97,7 +97,7 @@ impl WorkspaceList {
         let on_capsule = number.workspace.active && self.numbers.output_focused();
         let hover = theme.hover();
         let mut cell = div()
-            .id(("workspace", number.id().unsigned_abs()))
+            .id(SharedString::from(format!("workspace{}", number.id())))
             .size(size)
             .rounded(size / 2.0)
             .flex()
