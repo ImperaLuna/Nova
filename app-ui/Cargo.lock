@@ -3098,6 +3098,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-recording-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "nova-screenshot-api",
+ "serde",
+]
+
+[[package]]
 name = "nova-screenshot-api"
 version = "0.1.0"
 dependencies = [
@@ -3111,8 +3120,10 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "image",
+ "nova-daemon-info",
  "nova-desktop-info",
  "nova-look",
+ "nova-recording-api",
  "nova-screenshot-api",
  "nova-stage",
  "nova-ui-client",

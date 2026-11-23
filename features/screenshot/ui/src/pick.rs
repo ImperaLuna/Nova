@@ -1,9 +1,11 @@
-//! The region picker's and the card's sums, without GPUI's windows:
-//! `ui/capture/capture.js` and `ui/theme/Countdown.qml` in today's shell.
+//! The region picker's, the card's and the recording's sums, without
+//! GPUI's windows: `ui/capture/capture.js`, `ui/text/duration.js`'s
+//! `clock` and `ui/theme/Countdown.qml` in today's shell.
 //! Every rectangle is in a window's logical pixels unless it says frame
 //! pixels.
 
 use gpui::{Bounds, Pixels, Point, Size, bounds, point, px, size};
+use nova_recording_api::LayoutRect;
 use nova_screenshot_api::PixelRect;
 use std::time::{Duration, Instant};
 
@@ -31,6 +33,53 @@ pub fn to_pixels(region: Bounds<Pixels>, scale: f32, frame: Size<u32>) -> PixelR
     let right = edge(region.origin.x + region.size.width, f32::ceil, frame.width);
     let bottom = edge(region.origin.y + region.size.height, f32::ceil, frame.height);
     PixelRect { x: left, y: top, width: right.saturating_sub(left), height: bottom.saturating_sub(top) }
+}
+
+/// A region in a screen's logical pixels as a rectangle of the
+/// compositor's layout (`start_recording`'s region): moved by the screen's
+/// place in it, and rounded inward to an even size, which video encoders
+/// need.
+pub fn to_layout(region: Bounds<Pixels>, origin: Point<Pixels>) -> LayoutRect {
+    let (x, y) = (f32::from(region.origin.x), f32::from(region.origin.y));
+    let (left, top) = (x.ceil(), y.ceil());
+    let width = ((x + f32::from(region.size.width)).floor() - left).max(0.0) as u32;
+    let height = ((y + f32::from(region.size.height)).floor() - top).max(0.0) as u32;
+    LayoutRect {
+        x: (f32::from(origin.x) + left) as i32,
+        y: (f32::from(origin.y) + top) as i32,
+        width: width - width % 2,
+        height: height - height % 2,
+    }
+}
+
+/// A recording's length as its pill and card say it: "0:07", "12:34",
+/// "1:02:03".
+pub fn clock(ms: u64) -> String {
+    let total = ms / 1000;
+    let (hours, minutes, seconds) = (total / 3600, total / 60 % 60, total % 60);
+    if hours > 0 { format!("{hours}:{minutes:02}:{seconds:02}") } else { format!("{minutes}:{seconds:02}") }
+}
+
+/// The marks around a recorded region's corners, just outside it (`gap`
+/// away) so they aren't in the recording: two bars a corner, each `length`
+/// along and `width` thick, meeting on the corner.
+pub fn marks(region: Bounds<Pixels>, gap: Pixels, length: Pixels, width: Pixels) -> [Bounds<Pixels>; 8] {
+    let outer = region.dilate(gap);
+    let (left, top) = (outer.origin.x, outer.origin.y);
+    let (right, bottom) = (left + outer.size.width, top + outer.size.height);
+    let arm = length + width;
+    let across = |x: Pixels, y: Pixels| bounds(point(x, y), size(arm, width));
+    let down = |x: Pixels, y: Pixels| bounds(point(x, y), size(width, arm));
+    [
+        across(left - width, top - width),
+        down(left - width, top - width),
+        across(right - length, top - width),
+        down(right, top - width),
+        across(left - width, bottom),
+        down(left - width, bottom - length),
+        across(right - length, bottom),
+        down(right, bottom - length),
+    ]
 }
 
 /// The size a picture of `picture` pixels is drawn at to fit in `room`
@@ -204,6 +253,36 @@ mod tests {
         assert_eq!(right, rect(40.0, 20.0, 60.0, 40.0));
         let none = around(Bounds::default(), screen);
         assert_eq!(none[1], rect(0.0, 0.0, 100.0, 80.0));
+    }
+
+    #[test]
+    fn a_recorded_region_is_on_the_layout_and_even() {
+        let origin = point(px(1920.0), px(0.0));
+        assert_eq!(
+            to_layout(rect(10.5, 20.0, 101.0, 51.9), origin),
+            LayoutRect { x: 1931, y: 20, width: 100, height: 50 }
+        );
+        assert_eq!(to_layout(rect(0.0, 0.0, 1.0, 1.0), point(px(0.0), px(0.0))).width, 0);
+    }
+
+    #[test]
+    fn a_recording_s_length_reads_as_a_clock() {
+        assert_eq!(clock(7_900), "0:07");
+        assert_eq!(clock(754_000), "12:34");
+        assert_eq!(clock(3_723_000), "1:02:03");
+    }
+
+    #[test]
+    fn the_marks_sit_outside_the_region_s_corners() {
+        let region = rect(100.0, 100.0, 200.0, 100.0);
+        let marks = marks(region, px(4.0), px(18.0), px(3.0));
+        // The top left corner's bar runs right from just outside the corner.
+        assert_eq!(marks[0], rect(93.0, 93.0, 21.0, 3.0));
+        assert_eq!(marks[1], rect(93.0, 93.0, 3.0, 21.0));
+        // The bottom right corner's: ending on it.
+        assert_eq!(marks[6], rect(286.0, 204.0, 21.0, 3.0));
+        assert_eq!(marks[7], rect(304.0, 186.0, 3.0, 21.0));
+        assert!(marks.iter().all(|mark| !mark.intersects(&region)));
     }
 
     #[test]
