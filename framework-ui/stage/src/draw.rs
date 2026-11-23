@@ -7,6 +7,9 @@
 //! panel starts, its content fades out, and the panel's content, laid out
 //! at its open size and clipped to the glass, fades in once there is room.
 //! A pill an open panel lies over fades away, since glass is see-through.
+//! While the bar steps aside for a fullscreen window (`crate::aside`) its
+//! rows slide up out of sight and fade, and only a strip along the top edge
+//! takes the pointer, which brings them back.
 //!
 //! No feature tells the compositor where anything is. Every glass records
 //! its box while the frame is laid out, and the frame's last element hands
@@ -21,9 +24,10 @@ use crate::tokens::{PANEL_ENTER_RISE, PILL_FADE_OUT};
 use crate::view::{PanelItem, PillBox, PillItem, ROWS, StageView};
 use gpui::{
     AnyElement, App, Bounds, Context, DispatchPhase, Div, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Render, ScrollEvent, Styled, Window, canvas, div, point, px, size,
+    MouseDownEvent, MouseExitEvent, MouseMoveEvent, ParentElement, Pixels, Render, ScrollEvent, Styled, Window, canvas,
+    div, point, px, size,
 };
-use nova_look::tokens::{BAR_GAP, BAR_HEIGHT, BAR_MARGIN, GAP};
+use nova_look::tokens::{BAR_GAP, BAR_HEIGHT, BAR_MARGIN, GAP, REVEAL_STRIP, SHADOW_ROOM};
 use nova_look::{Glass, LookStyled, Shape, region, set_blur_region};
 use std::rc::Rc;
 use std::time::Instant;
@@ -92,7 +96,8 @@ impl StageView {
     }
 
     pub(crate) fn moving(&self, now: Instant) -> bool {
-        self.panel_items().any(|panel| panel.moving(now))
+        self.aside.moving(now)
+            || self.panel_items().any(|panel| panel.moving(now))
             || self.rows.iter().flat_map(|row| row.iter()).any(|pill| !pill.shown.settled(now))
     }
 
@@ -188,8 +193,13 @@ impl StageView {
     }
 
     /// The bar: the left row from the left margin, the right row up to the
-    /// right margin, the center row in the middle of the screen.
-    fn rows(&self, now: Instant, cx: &mut Context<Self>) -> Div {
+    /// right margin, the center row in the middle of the screen. Nothing
+    /// while it is out of sight for a fullscreen window, so its pills take
+    /// no clicks and need no blur.
+    fn rows(&self, now: Instant, cx: &mut Context<Self>) -> Option<Div> {
+        if self.aside.gone(now) {
+            return None;
+        }
         let mut rows = ROWS.iter().zip(&self.rows).map(|((_, align), row)| {
             let pills: Vec<AnyElement> = row.iter().map(|pill| self.pill(pill, now, cx)).collect();
             let row = div().flex().items_center().gap(GAP).children(pills);
@@ -199,8 +209,19 @@ impl StageView {
                 Align::Right => row.flex_1().justify_end(),
             }
         });
-        let bar = div().absolute().top(BAR_GAP).left(BAR_MARGIN).right(BAR_MARGIN).h(BAR_HEIGHT).flex().items_center();
-        bar.children(rows.by_ref())
+        // Slid up with its shadow, so nothing of it shows at the top edge.
+        let slid = self.aside.slid(now);
+        let above = (BAR_GAP + BAR_HEIGHT + SHADOW_ROOM) * slid;
+        let bar = div()
+            .absolute()
+            .top(BAR_GAP - above)
+            .left(BAR_MARGIN)
+            .right(BAR_MARGIN)
+            .h(BAR_HEIGHT)
+            .flex()
+            .items_center()
+            .opacity(1.0 - slid);
+        Some(bar.children(rows.by_ref()))
     }
 
     /// Hands this frame's shapes to the compositor, when they changed: it
@@ -208,13 +229,18 @@ impl StageView {
     /// stage while a panel that a click outside closes is open.
     fn regions(&self) -> impl IntoElement {
         let (shapes, sent, catching) = (self.shapes.clone(), self.sent.clone(), self.catching);
+        let strip = self.aside.fullscreen();
+        let width = self.screen.size.width;
         canvas(
             |_, _, _| {},
             move |_, (), window, _| {
-                let drawn = (shapes.take(), catching);
+                let drawn = (shapes.take(), catching, strip);
                 if sent.borrow().as_ref() != Some(&drawn) {
                     set_blur_region(window, &drawn.0);
-                    let clicks = region(&drawn.0);
+                    let mut clicks = region(&drawn.0);
+                    if strip {
+                        clicks.push(Bounds { origin: point(px(0.0), px(0.0)), size: size(width, REVEAL_STRIP) });
+                    }
                     window.set_input_region(if catching { None } else { Some(&clicks) });
                     sent.replace(Some(drawn.clone()));
                 }
@@ -247,6 +273,21 @@ fn dismiss_outside(shapes: Vec<Shape>, window: &mut Window) {
     });
 }
 
+impl StageView {
+    /// The pointer came onto the stage or left it: over a fullscreen window
+    /// that brings the pills back, or lets them go again.
+    fn hover(&mut self, hovered: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.aside.hovered() == hovered {
+            return;
+        }
+        self.aside.set_hovered(hovered, Instant::now());
+        if self.aside.fullscreen() {
+            self.follow_aside(window, cx);
+            cx.notify();
+        }
+    }
+}
+
 impl Render for StageView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
@@ -268,13 +309,19 @@ impl Render for StageView {
             .size_full()
             .body_text(cx)
             .track_focus(&self.focus)
+            // On the strip along the top edge or a pill: the window takes
+            // the pointer nowhere else. Not `on_hover`, which works from
+            // where the pointer last was, and that stays inside the window
+            // after it left.
+            .on_mouse_move(cx.listener(|stage, _: &MouseMoveEvent, window, cx| stage.hover(true, window, cx)))
+            .on_mouse_exit(cx.listener(|stage, _: &MouseExitEvent, window, cx| stage.hover(false, window, cx)))
             .on_key_down(cx.listener(|_, event: &KeyDownEvent, _, cx| {
                 if event.keystroke.key == ESCAPE {
                     Stage::dismiss(cx);
                 }
             }))
             .children(panels)
-            .child(self.rows(now, cx))
+            .children(self.rows(now, cx))
             .child(self.regions())
     }
 }

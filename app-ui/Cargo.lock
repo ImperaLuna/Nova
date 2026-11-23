@@ -2930,6 +2930,7 @@ dependencies = [
  "gpui_platform",
  "nova-bar-api",
  "nova-daemon-info",
+ "nova-desktop-info",
  "nova-look",
  "nova-stage",
  "nova-theme-info",

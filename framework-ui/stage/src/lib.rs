@@ -40,9 +40,10 @@
 //! - [`Screens`], [`Screen`]: the screens, looked for on a timer (GPUI has
 //!   no event for one that comes or goes).
 //! - [`Slots`]: which views the ready features' slots ask for.
-//! - `rules`, `geometry`, `reveal`, `kept`: the logic without drawing,
+//! - `rules`, `geometry`, `reveal`, `kept`, `aside`: the logic without drawing,
 //!   each tested alone. `view` and `draw` are one screen's stage.
 
+mod aside;
 mod draw;
 mod frames;
 mod geometry;
