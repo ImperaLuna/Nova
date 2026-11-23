@@ -28,7 +28,7 @@ use crate::stage::Panels;
 use crate::tokens::STAGE_NAMESPACE;
 use gpui::{
     AnyView, AnyWindowHandle, App, AppContext, Bounds, Context, Entity, FocusHandle, Pixels, SharedString, Size,
-    Subscription, Task, Window, WindowHandle,
+    Subscription, Task, WeakEntity, Window, WindowHandle,
     layer_shell::{KeyboardInteractivity, Layer},
     px, size,
 };
@@ -215,7 +215,8 @@ pub(crate) struct StageView {
     height: Rc<Cell<Pixels>>,
     held: Held,
     /// The window beside this one for the panels placed off the strip,
-    /// while this screen has one; what it was last told to hold; and how
+    /// opened just before this one and kept as long as it; what it was
+    /// last told to hold; and how
     /// wide it is on screen (nothing while none of its panels is out),
     /// which it says here for this window and the click catcher to leave
     /// it its clicks.
@@ -260,6 +261,13 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
     let height = stage_height([]);
     let mut shell = ShellWindow::new(screen.id, size(screen.size.width, height));
     shell.namespace = STAGE_NAMESPACE;
+    // The panels' window first: a compositor stacks the windows of one
+    // layer by when they opened, and the strip stays over its panels (the
+    // bar over the wallpaper carousel), as in today's shell.
+    let (off_strip, beside) = (OffStripPanels::default(), Rc::new(Cell::new(px(0.0))));
+    let shared_beside =
+        panel_window::Shared { stage: WeakEntity::new_invalid(), panels: off_strip.clone(), beside: beside.clone() };
+    let panel_window = panel_window::open(screen, shared_beside, log_frames, cx);
     let (screen, panels, slots, screens) = (screen.clone(), panels.clone(), slots.clone(), screens.clone());
     let opened = cx.open_window(shell.options(), move |window, cx| {
         cx.new(|cx| {
@@ -286,11 +294,11 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 center_drawn: true,
                 height: Rc::new(Cell::new(height)),
                 held: Held::default(),
-                panel_window: None,
+                panel_window,
                 panel_window_due: false,
                 beside_held: Hold::default(),
-                beside: Rc::default(),
-                off_strip: Rc::default(),
+                beside,
+                off_strip,
                 catcher: None,
                 bar_room: None,
                 aside: Aside::new(now),
@@ -309,9 +317,17 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
         })
     });
     match opened {
-        Ok(window) => Some(window),
+        Ok(window) => {
+            if let (Some(beside), Ok(stage)) = (panel_window, window.update(cx, |_, _, cx| cx.weak_entity())) {
+                let _ = beside.update(cx, |beside, _, _| beside.set_stage(stage));
+            }
+            Some(window)
+        }
         Err(error) => {
             eprintln!("ERROR nova-ui: can't open the stage: {error:#}");
+            if let Some(beside) = panel_window {
+                satellites::close(beside.into(), cx);
+            }
             None
         }
     }
@@ -537,16 +553,14 @@ impl StageView {
         self.panel_items().any(|panel| !panel.on_strip())
     }
 
-    /// Keeps the window for the panels placed off the strip while this
-    /// screen has such a panel. It is opened here, when a feature becomes
-    /// ready, and kept: a new window holds every window's frames up for a
-    /// moment, which must never be the start of a panel's morph. It opens
-    /// once this update is over: a window draws its first frame as it
-    /// opens, and tells this view when it changes size.
+    /// Opens the window for the panels placed off the strip when this
+    /// screen has such a panel and the one opened with the stage is gone
+    /// (it didn't open). It is kept: a new window holds every window's
+    /// frames up for a moment, which must never be the start of a panel's
+    /// morph. It opens once this update is over: a window draws its first
+    /// frame as it opens, and tells this view when it changes size.
     fn keep_panel_window(&mut self, cx: &mut Context<Self>) {
-        if !self.wants_panel_window() {
-            self.close_panel_window(cx);
-        } else if self.panel_window.is_none() && !self.panel_window_due {
+        if self.wants_panel_window() && self.panel_window.is_none() && !self.panel_window_due {
             self.panel_window_due = true;
             let (screen, beside, frames) = (self.screen.clone(), self.beside.clone(), self.frames.is_some());
             let (stage, panels) = (cx.weak_entity(), self.off_strip.clone());
@@ -693,8 +707,14 @@ impl StageView {
         }
         self.screen = screen;
         window.resize(size(self.screen.size.width, self.height.get()));
-        // The windows beside this one were opened at the old size.
-        self.leave(cx);
+        // The windows beside this one were opened at the old size. The
+        // panels' window stays (opened again it would land over this one)
+        // and lays its panels out by the new size.
+        self.close_satellites(cx);
+        let screen_size = self.screen.size;
+        if let Some(beside) = self.panel_window {
+            let _ = beside.update(cx, |beside, _, cx| beside.set_screen(screen_size, cx));
+        }
         if self.catching {
             self.catch_once_settled(window, cx);
         }
@@ -706,11 +726,17 @@ impl StageView {
         cx.notify();
     }
 
-    /// Closes the windows beside this one: the screen left, or changed.
+    /// Closes the windows beside this one: the screen left.
     pub fn leave(&mut self, cx: &mut App) {
+        self.close_satellites(cx);
+        self.close_panel_window(cx);
+    }
+
+    /// Closes the click catcher and the bar's room, which are opened at
+    /// the screen's size.
+    fn close_satellites(&mut self, cx: &mut App) {
         for window in [self.catcher.take(), self.bar_room.take()].into_iter().flatten() {
             satellites::close(window, cx);
         }
-        self.close_panel_window(cx);
     }
 }

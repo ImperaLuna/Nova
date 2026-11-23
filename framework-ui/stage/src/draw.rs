@@ -137,11 +137,15 @@ impl StageView {
         frame(panel, from, self.screen.size, now)
     }
 
-    /// Hides each pill an open panel lies over, and shows the others.
+    /// Hides each pill an open panel on the strip lies over, and shows the
+    /// others. The panels' window lies under the strip (it moves to the
+    /// overlay layer after that window), so its panels leave the pills
+    /// drawn over them: the bar stays over the wallpaper carousel, as in
+    /// today's shell (`StagePanels.underPanels`).
     fn give_way(&mut self, now: Instant) {
         let open: Vec<_> = self
             .panel_items()
-            .filter(|panel| !panel.spec.in_place && panel.morph.target() > 0.0)
+            .filter(|panel| panel.on_strip() && !panel.spec.in_place && panel.morph.target() > 0.0)
             .map(|panel| (self.panel_frame(panel, now).open, panel.from.clone()))
             .collect();
         for pill in self.rows.iter_mut().flat_map(|row| row.iter_mut()) {
