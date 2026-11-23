@@ -1,35 +1,20 @@
-//! Where desktop entries live and reading them all: `applications/` in each
-//! data folder (`crate::data_dirs`).
-//! The first folder with an id wins, as the spec says, so the user's own
-//! copy of an entry replaces the system's.
-
 use super::desktop_entry::{self, Context, Entry, Skipped};
 use nova_watch::WatchPoints;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 const ENTRY_EXTENSION: &str = "desktop";
-/// Folders below `applications/` that are looked in; deeper ones aren't.
 const MAX_DEPTH: usize = 8;
-/// A desktop entry is a few kilobytes; anything far bigger isn't one.
 const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
 
-/// What a look at the apps found.
 pub struct Found {
-    /// The apps the launcher lists, by id.
     pub apps: BTreeMap<String, Entry>,
-    /// Apps it doesn't list, by id, that a type's default may still name:
-    /// `NoDisplay` ones that open some type of file, and copies of a
-    /// listed app under another id.
     pub unlisted: BTreeMap<String, Entry>,
-    /// The problems with entries that aren't valid, for the log.
     pub problems: Vec<String>,
 }
 
-/// Every app in `data_dirs`.
 pub fn scan(data_dirs: &[PathBuf], context: &Context) -> Found {
     let mut apps = BTreeMap::new();
-    // Ids already decided, shown or not: later folders can't bring them back.
     let mut decided = BTreeSet::new();
     let mut problems = Vec::new();
     for dir in data_dirs {
@@ -64,10 +49,6 @@ pub fn scan(data_dirs: &[PathBuf], context: &Context) -> Found {
     Found { apps, unlisted, problems }
 }
 
-/// `apps` with one of each set of entries that show the same name and run
-/// the same command, like a package's entry and a copy the user's config
-/// adds under another id: the one that opens file or link types, else the
-/// first by id. The others come back apart.
 fn without_copies(apps: BTreeMap<String, Entry>) -> (BTreeMap<String, Entry>, Vec<Entry>) {
     let mut kept: BTreeMap<(String, Vec<String>, bool), Entry> = BTreeMap::new();
     let mut copies = Vec::new();
@@ -88,15 +69,11 @@ pub fn read_entry(file: &Path) -> std::io::Result<String> {
     Ok(text)
 }
 
-/// The `.desktop` files under `dir`, each with its desktop file id: its
-/// path below `root` with `/` turned into `-`. In name order, so a folder
-/// read twice gives the same ids the same files.
 fn entry_files(root: &Path, dir: &Path, depth: usize, found: &mut Vec<(String, PathBuf)>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     let mut paths: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
     paths.sort();
     for path in paths {
-        // Followed through links: Nix's folders are all links.
         if path.is_dir() {
             if depth < MAX_DEPTH {
                 entry_files(root, &path, depth + 1, found);
@@ -110,17 +87,8 @@ fn entry_files(root: &Path, dir: &Path, depth: usize, found: &mut Vec<(String, P
     }
 }
 
-/// Where apps install icons in the user's data folder (the first), which
-/// may come after their entry (Steam's game shortcuts): a change there
-/// counts too, so the icons are looked up again. The system's folders
-/// change with their entries (a package or profile switch).
 const USER_ICON_FOLDERS: [&str; 2] = ["icons/hicolor", "pixmaps"];
 
-/// Where to watch for `data_dirs`' apps and the user's own app icons. A
-/// NixOS rebuild or a Nix profile switch swaps a link far above
-/// `applications/` (`/run/current-system`,
-/// `~/.local/state/nix/profiles/profile`) and leaves the old folders as
-/// they were, so each link on the way there is watched in its folder.
 pub fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
     let mut points = WatchPoints::default();
     for dir in data_dirs {
@@ -186,7 +154,6 @@ mod tests {
 
     #[test]
     fn a_copy_of_an_app_under_another_id_shows_once() {
-        // Like a home-manager entry beside the package's own.
         let root = temp("copies");
         let share = root.join("share");
         write_app(&share, "obsidian.desktop", "Obsidian", "StartupWMClass=obsidian\n");
@@ -196,7 +163,6 @@ mod tests {
         write_app(&share, "other.desktop", "Other", "");
         let found = names(std::slice::from_ref(&share));
         assert_eq!(found.keys().collect::<Vec<_>>(), ["md.obsidian.Obsidian.desktop", "other.desktop"]);
-        // The copy is still there for a mimeapps.list that names it.
         let locale = Locale::default();
         let context = Context { locale: &locale, desktops: &[], path_var: "", autostart: false };
         let unlisted = scan(std::slice::from_ref(&share), &context).unlisted;
@@ -205,7 +171,6 @@ mod tests {
 
     #[test]
     fn apps_behind_links_are_found_and_the_links_watched() {
-        // Like NixOS: /run/current-system -> a generation, its share -> the store.
         let root = temp("links");
         let generation = root.join("store/system-1");
         write_app(&generation.join("sw/share"), "foot.desktop", "Foot", "");

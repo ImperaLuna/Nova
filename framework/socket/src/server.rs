@@ -1,7 +1,3 @@
-//! The socket: accepts clients, reads their request lines and writes their
-//! queues. Each client gets a thread that reads and one that writes, so a
-//! slow client never holds up another or novad.
-
 use crate::router::{Caller, Router};
 use nova_carrier::{Outcome, Response, read_request};
 use nova_hub::{ClientId, ClientQueue, Hub, Outgoing, Written};
@@ -15,28 +11,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
-/// Any local process can connect: longer request lines close the connection.
 pub const MAX_REQUEST_BYTES: u64 = nova_carrier::envelope::REQUEST_MAX_BYTES;
-/// How long a write may make no progress before the client counts as stalled
-/// and is disconnected. Only a client that stops reading with its socket
-/// buffer full gets there; the UI reconnects on its own.
 pub const WRITE_TIMEOUT: Duration =
     if cfg!(any(test, feature = "test-support")) { Duration::from_millis(300) } else { Duration::from_secs(10) };
 const SOCKET_DIR_MODE: u32 = 0o700;
 
 const LOG_SOURCE: &str = "server";
 
-/// The app behind the socket.
 pub trait Service: Send + Sync + Sized + 'static {
-    /// What every client is sent first.
     type Hello: Serialize;
 
     fn hub(&self) -> &Hub;
     fn logger(&self) -> &Arc<Logger>;
-    /// The routes requests go to.
     fn router(&self) -> &Router<Self>;
     fn hello(&self) -> Self::Hello;
-    /// The client `client` hung up; the hub has forgotten it already.
     fn client_gone(&self, client: ClientId);
 }
 
@@ -51,7 +39,6 @@ pub fn bind(socket: &Path) -> std::io::Result<UnixListener> {
             format!("another novad is already listening on {}", socket.display()),
         ));
     }
-    // A socket file left by a previous run would make bind fail.
     match std::fs::remove_file(socket) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
         _ => {}
@@ -59,8 +46,6 @@ pub fn bind(socket: &Path) -> std::io::Result<UnixListener> {
     UnixListener::bind(socket)
 }
 
-/// Accepts clients until `stopped` is set; the connection after that (one
-/// made to wake it) ends the loop.
 pub fn serve<S: Service>(listener: UnixListener, service: Arc<S>, stopped: &AtomicBool) {
     for stream in listener.incoming() {
         if stopped.load(Ordering::SeqCst) {
@@ -140,10 +125,6 @@ impl<S: Service> Drop for Connection<'_, S> {
     }
 }
 
-/// Writes a client's queue in order until it closes. A write that fails or
-/// stalls past [`WRITE_TIMEOUT`] hangs up on the client: the reader side ends
-/// too, so the connection unregisters, and dropping the queue answers any
-/// `flush` waiting on it.
 fn write_all_queued(mut writer: UnixStream, outgoing: mpsc::Receiver<Outgoing>, written: &Written, logger: &Logger) {
     for message in outgoing {
         match message {
@@ -167,12 +148,10 @@ fn write_all_queued(mut writer: UnixStream, outgoing: mpsc::Receiver<Outgoing>, 
     }
 }
 
-/// The `id` of a request that didn't parse, so the error can be answered.
 fn request_id(line: &str) -> Option<u64> {
     serde_json::from_str::<serde_json::Value>(line).ok()?.get("id")?.as_u64()
 }
 
-/// The pid of the process at the other end of `stream`.
 fn peer_pid(stream: &UnixStream) -> Option<u32> {
     use std::os::fd::AsRawFd;
     let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };

@@ -1,10 +1,3 @@
-//! novad's log: one file for novad and the UI, rotated per novad run, with
-//! crash snapshots and a live feed for `nova logs`.
-//!
-//! Only a novad start rotates the file, so a UI crash and its restart stay in
-//! one file. Crashes also get their own file under `crashes/`, which
-//! restarts never touch.
-
 use nova_base::lock;
 use nova_carrier::log::{LogEntry, LogLevel, Logs};
 use nova_hub::{ClientId, Hub};
@@ -15,25 +8,18 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// Earlier runs kept as `nova.log.1` to `nova.log.<KEPT_RUNS>`.
 const KEPT_RUNS: usize = 5;
-/// A run's file is rotated early once it grows past this.
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
-/// Entries kept in memory for `nova logs` backlogs and crash snapshots.
 const RECENT_ENTRIES: usize = 1000;
-/// Entries saved in a crash snapshot.
 const CRASH_ENTRIES: usize = 300;
 const KEPT_CRASHES: usize = 10;
-/// Logs can hold paths and window titles: owner-only, like the socket.
 const PRIVATE_DIR_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
-/// Keys whose values never reach the log.
 const SECRET_KEYS: &[&str] = &["password", "passwd", "secret", "token", "api_key", "apikey"];
 const REDACTED: &str = "<redacted>";
 
 pub struct Logger {
     min_level: LogLevel,
-    /// Also print entries to stderr: on when novad runs in a terminal.
     echo: bool,
     hub: Arc<Hub>,
     state: Mutex<State>,
@@ -47,7 +33,6 @@ struct State {
 }
 
 impl Logger {
-    /// Rotates the previous runs' files and starts a new one in `dir`.
     pub fn open(dir: &Path, min_level: LogLevel, echo: bool, hub: Arc<Hub>) -> std::io::Result<Self> {
         std::fs::DirBuilder::new().recursive(true).mode(PRIVATE_DIR_MODE).create(dir)?;
         let mut state = State { dir: dir.to_owned(), file: None, file_bytes: 0, recent: VecDeque::new() };
@@ -55,7 +40,6 @@ impl Logger {
         Ok(Self { min_level, echo, hub, state: Mutex::new(state) })
     }
 
-    /// The folder holding the log files and crash snapshots.
     pub fn dir(&self) -> PathBuf {
         lock(&self.state).dir.clone()
     }
@@ -72,8 +56,6 @@ impl Logger {
         self.log(LogLevel::Error, source, message);
     }
 
-    /// One line the UI printed, `LEVEL message`, logged as from `source`
-    /// (the UI's is `UI_LOG_SOURCE`).
     pub fn ui_line(&self, source: &str, line: &str) {
         let (level, message) = parse_ui_line(line);
         self.log(level, source, message);
@@ -94,12 +76,9 @@ impl Logger {
             }
             state.write(entry);
         }
-        // Published under the lock so subscribers never miss or repeat an
-        // entry between their backlog and the live feed.
         self.hub.publish(&Logs { backlog: false, entries }.event());
     }
 
-    /// Subscribes `client` to logs and sends it the recent entries first.
     pub fn subscribe(&self, client: ClientId) {
         let state = lock(&self.state);
         let backlog = Logs { backlog: true, entries: state.recent.iter().cloned().collect() };
@@ -107,13 +86,10 @@ impl Logger {
         self.hub.subscribe(client, nova_carrier::log::TOPIC);
     }
 
-    /// Saves the latest entries to `crashes/<time>.log` and returns its path.
     pub fn save_crash(&self) -> std::io::Result<PathBuf> {
         lock(&self.state).save_crash()
     }
 
-    /// For the panic hook: the panicking thread may hold the lock, so this
-    /// gives up instead of waiting.
     pub fn try_save_crash(&self, message: &str) -> Option<PathBuf> {
         let mut state = self.state.try_lock().ok()?;
         state.write(&LogEntry {
@@ -149,8 +125,6 @@ impl State {
         }
     }
 
-    /// `nova.log` becomes `nova.log.1`, `.1` becomes `.2`, and so on; the
-    /// oldest past [`KEPT_RUNS`] is dropped.
     fn start_new_file(&mut self) -> std::io::Result<()> {
         self.file = None;
         for runs_ago in (1..KEPT_RUNS).rev() {
@@ -168,7 +142,6 @@ impl State {
     fn save_crash(&mut self) -> std::io::Result<PathBuf> {
         let dir = nova_paths::crash_dir(&self.dir);
         std::fs::DirBuilder::new().recursive(true).mode(PRIVATE_DIR_MODE).create(&dir)?;
-        // ':' isn't allowed in file names everywhere the logs may be copied to.
         let path = dir.join(format!("{}.log", now().replace(':', "-")));
         let mut file = private_file(&path)?;
         let skip = self.recent.len().saturating_sub(CRASH_ENTRIES);
@@ -191,7 +164,6 @@ fn rename_if_present(from: &Path, to: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Keeps the newest [`KEPT_CRASHES`] files; names sort by time.
 fn prune_crashes(dir: &Path) -> std::io::Result<()> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)?.flatten().map(|entry| entry.path()).collect();
     files.sort();
@@ -202,13 +174,10 @@ fn prune_crashes(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// UTC with millisecond precision, the format of [`LogEntry::time`].
 pub fn now() -> String {
     jiff::Timestamp::now().strftime("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
 }
 
-/// Splits the UI's `WARN source: message` into level and the rest. Lines
-/// without a level (a library's raw prints) count as info.
 fn parse_ui_line(line: &str) -> (LogLevel, &str) {
     let line = line.trim_end();
     let trimmed = line.trim_start();
@@ -223,7 +192,6 @@ fn parse_ui_line(line: &str) -> (LogLevel, &str) {
     (level, rest.trim_start())
 }
 
-/// Replaces the value after `password=`, `token: ` and the like.
 fn redact(message: &str) -> String {
     let lower = message.to_ascii_lowercase();
     let mut out = String::with_capacity(message.len());
@@ -239,9 +207,6 @@ fn redact(message: &str) -> String {
     out
 }
 
-/// The next `<key><spaces>(=|:)<spaces><value>` at or after `from`, as
-/// (end of key, start of value, end of value). `lower` is ASCII-lowercased,
-/// so its byte offsets match the original message.
 fn next_secret(lower: &str, from: usize) -> Option<(usize, usize, usize)> {
     let mut best: Option<(usize, usize, usize)> = None;
     for key in SECRET_KEYS {
@@ -306,7 +271,6 @@ mod tests {
 
         for _ in 0..KEPT_CRASHES + 3 {
             log.save_crash().unwrap();
-            // Snapshot names have millisecond precision.
             nova_test_support::settle(std::time::Duration::from_millis(2));
         }
         assert_eq!(std::fs::read_dir(nova_paths::crash_dir(&dir)).unwrap().count(), KEPT_CRASHES);
