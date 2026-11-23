@@ -125,6 +125,18 @@ impl Parts {
         self.views.iter()
     }
 
+    /// Every slot of the host in order, by its view id, with its part:
+    /// `None` for a view no feature's ui registered yet, which a host may
+    /// still keep room for (quick settings' empty tiles).
+    pub fn slots(&self) -> impl Iterator<Item = (&SharedString, Option<&Part>)> {
+        self.views.entries()
+    }
+
+    /// The part whose view id is `view`, when it was built.
+    pub fn get(&self, view: &str) -> Option<&Part> {
+        self.slots().find(|(id, _)| id.as_ref() == view).and_then(|(_, part)| part)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.views.is_empty()
     }

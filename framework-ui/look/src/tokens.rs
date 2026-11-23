@@ -167,6 +167,31 @@ tokens! {
     PILL_BUTTON_SIZE: px = 28.0, "pillButtonSize";
     PILL_BUTTON_INSET: px = 4.0, "pillButtonInset";
     PILL_BUTTON_GAP: px = 2.0, "pillButtonGap";
+    /// A list row with a second line under its name (`crate::ListRow`).
+    LIST_ROW_HEIGHT: px = 46.0, "powerRowHeight";
+
+    // Quick settings' controls, which other features fill it with.
+    /// Its header's logo, and how tall every page's top row is
+    /// (`crate::PageHeader`).
+    LOGO_SIZE: px = 36.0, "logoSize";
+    /// Between the sections of its pages, its own and other features'.
+    QUICK_SETTINGS_GAP: px = 12.0, "quickSettingsGap";
+    /// A toggle tile (`crate::Tile`), and the arrow at its end that opens
+    /// its page.
+    TILE_HEIGHT: px = 58.0, "tileHeight";
+    TILE_ARROW_WIDTH: px = 22.0, "tileArrowWidth";
+    /// A thick slider (`crate::Slider`): its round icon button beside the
+    /// track, the gap between, the fill (the ink at this opacity, less
+    /// while muted) and the button after it that opens a page.
+    SLIDER_HEIGHT: px = 34.0, "sliderHeight";
+    SLIDER_GAP: px = 6.0, "sliderGap";
+    SLIDER_FILL_OPACITY: ratio = 0.22, "sliderFill";
+    SLIDER_MUTED_OPACITY: ratio = 0.3, "sliderMutedOpacity";
+    SLIDER_BUTTON_WIDTH: px = 30.0, "sliderButtonWidth";
+    /// An app's slider shows the app's icon, its corners less round, and
+    /// fainter while muted.
+    SLIDER_APP_RADIUS: px = 11.0, "appIconRadius";
+    SLIDER_APP_MUTED_OPACITY: ratio = 0.45, "appMutedOpacity";
 
     // The type scale: six steps, from labels up, then a panel's headline.
     /// Small caps labels and badges.

@@ -1,0 +1,39 @@
+# nova-quick-settings-ui
+#
+# What quick settings draws with GPUI: its button on the right pill
+# (`quick-settings.button`) and the drawer against the screen's right edge
+# (`quick-settings.panel`), with the header and the hosts other features
+# fill: tiles, sliders, cards, the fill, the foot and the pages.
+#
+# Allowed outside crates:
+# - gpui
+# - jiff
+#
+# Allowed workspace crates:
+# - nova-host-info
+# - nova-look
+# - nova-notifications-api
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-quick-settings-ui"
+description = "Quick settings for the GPUI program: the right pill's button and the drawer with its header, tiles, sliders, cards and pages"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+jiff.workspace = true
+nova-host-info.workspace = true
+nova-look.workspace = true
+nova-notifications-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

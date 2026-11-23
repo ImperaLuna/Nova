@@ -78,11 +78,27 @@ impl Shown {
 pub struct Part {
     pub(crate) view: AnyView,
     pub(crate) inset: Pixels,
+    pub(crate) shown: Option<Shown>,
 }
 
 impl Part {
     pub fn new(view: impl Into<AnyView>) -> Self {
-        Self { view: view.into(), inset: PAD }
+        Self { view: view.into(), inset: PAD, shown: None }
+    }
+
+    /// For a part that has nothing to show at times (the mic's slider
+    /// while no app records): while `shown` says no, its host leaves it
+    /// out, with the gap before it. The view sets it as that changes, and
+    /// redraws; a host that draws it follows ([`Part::is_shown`]).
+    pub fn shown_while(mut self, shown: Shown) -> Self {
+        self.shown = Some(shown);
+        self
+    }
+
+    /// Whether its host draws it now: always, unless
+    /// [`Part::shown_while`] says otherwise.
+    pub fn is_shown(&self) -> bool {
+        self.shown.as_ref().is_none_or(Shown::get)
     }
 
     /// How far its content sits from the host's end when it is the first

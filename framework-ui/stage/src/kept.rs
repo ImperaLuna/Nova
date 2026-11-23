@@ -37,6 +37,12 @@ impl<T> Kept<T> {
         self.items.iter().filter_map(|(_, item)| item.as_ref())
     }
 
+    /// Every view id in order, with its view, `None` for one nothing
+    /// registered.
+    pub fn entries(&self) -> impl Iterator<Item = (&SharedString, Option<&T>)> {
+        self.items.iter().map(|(view, item)| (view, item.as_ref()))
+    }
+
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.items.iter_mut().filter_map(|(_, item)| item.as_mut())
     }
