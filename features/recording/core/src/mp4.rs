@@ -37,16 +37,16 @@ struct Box {
     len: u64,
 }
 
-/// The boxes one after another in `bytes`, or from `at` to `end` of a file.
+/// The boxes one after another in `bytes`.
 fn boxes_in(bytes: &[u8]) -> Vec<Box> {
     let mut found = Vec::new();
     let mut at = 0usize;
-    while let Some(header) = bytes.get(at..at + 8) {
+    while let Some(header) = at.checked_add(8).and_then(|end| bytes.get(at..end)) {
         let size = u64::from(u32::from_be_bytes([header[0], header[1], header[2], header[3]]));
         let kind = [header[4], header[5], header[6], header[7]];
         let (head, size) = match size {
             0 => (8, (bytes.len() - at) as u64),
-            1 => match bytes.get(at + 8..at + 16) {
+            1 => match bytes.get(at + 8..at.saturating_add(16)) {
                 Some(large) => (16, u64::from_be_bytes(large.try_into().unwrap_or_default())),
                 None => break,
             },
@@ -56,6 +56,9 @@ fn boxes_in(bytes: &[u8]) -> Vec<Box> {
             break;
         }
         let Ok(end) = usize::try_from((at as u64).saturating_add(size)) else { break };
+        if end > bytes.len() {
+            break;
+        }
         found.push(Box { kind, start: (at as u64) + head, len: size - head });
         at = end;
     }
@@ -89,12 +92,6 @@ fn read(file: &mut File) -> std::io::Result<Contents> {
             return Ok(Contents::Unknown);
         }
         first = false;
-        if &kind == b"mdat" && size == head && at + size < file_len && !next_is_box(file, at + size)? {
-            // An empty media box with frames after it: the recorder was
-            // stopped before it closed the box (its size is still the
-            // header's), so the frames run to the end of the file.
-            return Ok(Contents::Recorded);
-        }
         match &kind {
             b"mdat" => media += size.saturating_sub(head),
             // Fragments: each carries its own frames, and the index has none.
@@ -110,7 +107,9 @@ fn read(file: &mut File) -> std::io::Result<Contents> {
     }
     let Some((start, len)) = moov else {
         // Cut off before the index: frames if anything was written after
-        // the header.
+        // the header. Without the index it can't tell sound from picture,
+        // so sound alone is kept too: better a file too many than a
+        // recording lost.
         return Ok(if media > 0 { Contents::Recorded } else { Contents::NoFrames });
     };
     if len > MOOV_MAX {
@@ -120,19 +119,6 @@ fn read(file: &mut File) -> std::io::Result<Contents> {
     file.seek(SeekFrom::Start(start))?;
     file.read_exact(&mut index)?;
     Ok(index_contents(&index))
-}
-
-/// Top-level boxes a recorder writes, for telling one from frames.
-const TOP_LEVEL: [&[u8; 4]; 8] = [b"moov", b"mdat", b"moof", b"mfra", b"free", b"skip", b"udta", b"uuid"];
-
-/// Whether a top-level box starts at `at`.
-fn next_is_box(file: &mut File, at: u64) -> std::io::Result<bool> {
-    let mut header = [0u8; 8];
-    file.seek(SeekFrom::Start(at))?;
-    if file.read(&mut header)? < header.len() {
-        return Ok(false);
-    }
-    Ok(TOP_LEVEL.iter().any(|kind| header[4..8] == kind[..]))
 }
 
 /// Whether the index lists a picture track with a frame.
@@ -218,8 +204,9 @@ mod tests {
     #[test]
     fn frames_after_a_media_box_left_open_are_kept() {
         let dir = nova_test_support::TempDir::new("mp4-open");
-        // The stalled recorder's header (its media box still the header's
-        // size), then the frames a recorder killed mid-way had written.
+        // The stalled recorder's header, whose media box says it runs to
+        // the end of the file until the recorder finishes it, then the
+        // frames a recorder killed mid-way had written.
         let mut file = std::fs::read(recorded("wf-recorder-stalled-on-sound.mp4")).unwrap();
         let whole = std::fs::read(recorded("wf-recorder-saved.mp4")).unwrap();
         let frames = whole.windows(4).position(|w| w == b"mdat").unwrap() + 4;
@@ -227,6 +214,16 @@ mod tests {
         let open = dir.join("open.mp4");
         std::fs::write(&open, &file).unwrap();
         assert_eq!(contents(&open), Contents::Recorded);
+    }
+
+    #[test]
+    fn a_box_claiming_more_than_there_is_ends_the_walk() {
+        // A box of 2^64 - 1 bytes (size 1: the size follows the type).
+        let mut index = vec![0, 0, 0, 1];
+        index.extend_from_slice(b"trak");
+        index.extend_from_slice(&u64::MAX.to_be_bytes());
+        assert!(boxes_in(&index).is_empty());
+        assert_eq!(index_contents(&index), Contents::NoFrames);
     }
 
     #[test]

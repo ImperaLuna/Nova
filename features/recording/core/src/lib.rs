@@ -537,7 +537,10 @@ impl Keeper {
                 format!("{} stopped before it recorded a frame", active.recorder.name())
             };
             self.logger.warn(LOG_SOURCE, &format!("nothing was recorded: {reason}"));
-            self.hub.publish(&Event::RecordingFailed { reason });
+            // Turning the feature off stops a recording too: no card then.
+            if lock(&self.state).allowed {
+                self.hub.publish(&Event::RecordingFailed { reason });
+            }
             return;
         }
         match self.files.place(&active.file, &active.stem, EXTENSION) {
