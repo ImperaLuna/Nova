@@ -21,6 +21,7 @@
 #
 # Allowed workspace crates:
 # - nova-bar-api
+# - nova-bar-ui
 # - nova-daemon-info
 # - nova-look
 # - nova-stage
@@ -40,6 +41,7 @@ publish.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 nova-bar-api.workspace = true
+nova-bar-ui.workspace = true
 nova-daemon-info.workspace = true
 nova-look.workspace = true
 nova-stage.workspace = true
@@ -51,9 +53,7 @@ workspace = true
 
 [workspace]
 resolver = "3"
-# A glob that matches nothing is an error to cargo, so the first
-# `features/<id>/ui` crate adds "../features/*/ui".
-members = [".", "../framework-ui/*"]
+members = [".", "../framework-ui/*", "../features/*/ui"]
 
 [workspace.package]
 version = "0.1.0"
@@ -86,13 +86,18 @@ nova-look = { path = "../framework-ui/look" }
 nova-stage = { path = "../framework-ui/stage" }
 nova-ui-client = { path = "../framework-ui/client" }
 
+# Each feature's ui, sorted by feature id.
+nova-bar-ui = { path = "../features/bar/ui" }
+
 # The daemon side's crates the UI side may use, by path: api and -info crates.
 nova-carrier = { path = "../framework/carrier" }
 nova-bar-api = { path = "../features/bar/api" }
 nova-daemon-info = { path = "../framework/daemon-info" }
+nova-desktop-info = { path = "../framework/desktop-info" }
 nova-sound-api = { path = "../features/sound/api" }
 nova-test-support = { path = "../framework/test-support" }
 nova-theme-info = { path = "../framework/theme-info" }
+nova-workspaces-api = { path = "../features/workspaces/api" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

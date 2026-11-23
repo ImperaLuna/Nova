@@ -2865,6 +2865,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-bar-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-bar-api",
+ "nova-daemon-info",
+ "nova-desktop-info",
+ "nova-look",
+ "nova-stage",
+ "nova-ui-client",
+ "nova-workspaces-api",
+]
+
+[[package]]
 name = "nova-carrier"
 version = "0.1.0"
 dependencies = [
@@ -2929,6 +2943,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "nova-bar-api",
+ "nova-bar-ui",
  "nova-daemon-info",
  "nova-look",
  "nova-stage",
@@ -2947,6 +2962,14 @@ dependencies = [
  "nova-test-support",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "nova-workspaces-api"
+version = "0.1.0"
+dependencies = [
+ "nova-desktop-info",
+ "serde",
 ]
 
 [[package]]
