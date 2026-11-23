@@ -115,7 +115,10 @@ impl Strip {
         let all = self.tray.read(cx).get().map(model::entries).unwrap_or_default();
         self.attention = model::any_attention(&all);
         self.apps = model::shown(&all);
-        self.shown.set(!self.apps.is_empty());
+        if self.shown.set(!self.apps.is_empty()) {
+            // The right pill may be shown only for the tray, and not drawn.
+            cx.refresh_windows();
+        }
         let now = Instant::now();
         for app in &self.apps {
             let dot = self.dots.entry(app.key.clone()).or_insert_with(|| Eased::at(0.0, now));

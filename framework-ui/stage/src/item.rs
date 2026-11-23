@@ -6,7 +6,7 @@
 use crate::rules::PanelRules;
 use gpui::{AnyView, FocusHandle, Pixels, SharedString, Size};
 use nova_look::tokens::{BAR_GAP, PAD, RADIUS_PANEL};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 /// A pill in one of the bar's rows: glass as tall as the bar and as wide as
@@ -53,22 +53,50 @@ impl Pill {
 }
 
 /// Whether a pill is shown, set by its own view ([`Pill::shown_while`]).
-/// Clones share the one flag.
+/// Clones share the one flag. One made with [`Shown::any`] is shown while
+/// any of its flags is, so a pill whose parts come and go (the right
+/// pill's tray) is shown with them though it isn't drawn meanwhile.
 #[derive(Debug, Clone)]
-pub struct Shown(Rc<Cell<bool>>);
+pub struct Shown(Rc<Flag>);
+
+#[derive(Debug)]
+enum Flag {
+    Own(Cell<bool>),
+    Any(RefCell<Vec<Shown>>),
+}
 
 impl Shown {
     pub fn new(shown: bool) -> Self {
-        Self(Rc::new(Cell::new(shown)))
+        Self(Rc::new(Flag::Own(Cell::new(shown))))
     }
 
-    /// Returns whether it changed, so the view redraws (`cx.notify()`).
+    /// Shown while any of `flags` is.
+    pub fn any(flags: Vec<Shown>) -> Self {
+        Self(Rc::new(Flag::Any(RefCell::new(flags))))
+    }
+
+    /// Sets a flag made with [`Shown::new`], and returns whether it
+    /// changed, so the view redraws (`cx.notify()`). One made with
+    /// [`Shown::any`] follows its flags and isn't set.
     pub fn set(&self, shown: bool) -> bool {
-        self.0.replace(shown) != shown
+        match &*self.0 {
+            Flag::Own(flag) => flag.replace(shown) != shown,
+            Flag::Any(_) => false,
+        }
+    }
+
+    /// Gives one made with [`Shown::any`] new flags to follow.
+    pub fn follow(&self, flags: Vec<Shown>) {
+        if let Flag::Any(followed) = &*self.0 {
+            followed.replace(flags);
+        }
     }
 
     pub fn get(&self) -> bool {
-        self.0.get()
+        match &*self.0 {
+            Flag::Own(flag) => flag.get(),
+            Flag::Any(flags) => flags.borrow().iter().any(Shown::get),
+        }
     }
 }
 
@@ -98,7 +126,8 @@ impl Part {
     /// For a part that has nothing to show at times (the tray with no app
     /// in it): while `shown` says no, its host leaves it out, as the stage
     /// does a pill ([`Pill::shown_while`]). The view sets it as what it
-    /// shows changes, and redraws.
+    /// shows changes and redraws every window (`cx.refresh_windows()`): a
+    /// host shown only for it isn't drawn meanwhile, to see the change.
     pub fn shown_while(mut self, shown: Shown) -> Self {
         self.shown = Some(shown);
         self
@@ -107,6 +136,12 @@ impl Part {
     /// Whether it has something to show now.
     pub fn is_shown(&self) -> bool {
         self.shown.as_ref().is_none_or(Shown::get)
+    }
+
+    /// Its flag, for a host shown while it is ([`Shown::any`]): one that is
+    /// always shown without [`Part::shown_while`].
+    pub fn shown(&self) -> Shown {
+        self.shown.clone().unwrap_or_else(|| Shown::new(true))
     }
 
     pub fn view(&self) -> &AnyView {
@@ -223,5 +258,22 @@ impl Panel {
             wants_keyboard: self.wants_keyboard,
             closes_on_click_outside: self.closes_on_click_outside,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_pill_shown_with_its_parts_follows_them() {
+        let (tray, buttons) = (Shown::new(false), Shown::new(false));
+        let pill = Shown::any(vec![tray.clone(), buttons.clone()]);
+        assert!(!pill.get());
+        assert!(tray.set(true));
+        assert!(pill.get());
+        assert!(!pill.set(false), "it follows its flags and isn't set");
+        pill.follow(vec![buttons]);
+        assert!(!pill.get());
     }
 }

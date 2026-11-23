@@ -17,10 +17,10 @@ pub enum Align {
 
 /// Where a panel of `size` is once open: `top` down the screen, and across
 /// it lined up with the pill it grows out of (`from`, with the way its row
-/// keeps), or at `left` when a feature placed it, or centered. A panel of the center row is centered on the
-/// screen, not on its pill: the central pill sits off the middle when it
-/// keeps its time there (the launcher opens in the middle, as today). It
-/// never leaves the bar's margins.
+/// keeps), or at `left` where a feature placed it, or centered. A panel of
+/// the center row is centered on the screen, not on its pill: the central
+/// pill sits off the middle when it keeps its time there (the launcher
+/// opens in the middle, as today). It never leaves the bar's margins.
 pub fn open_box(
     from: Option<(Bounds<Pixels>, Align)>,
     left: Option<Pixels>,
