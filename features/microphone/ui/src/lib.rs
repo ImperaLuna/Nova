@@ -108,6 +108,7 @@ impl Render for Mic {
         Slider::new("microphone", Icon::new(glyph), volume, label)
             .colors(theme.secondary, theme.secondary.alpha(FILL_OPACITY))
             .muted(muted)
+            .available(device.is_some())
             .when_some(device, |slider, device| {
                 let (id, also) = (device.id, device.clone());
                 slider

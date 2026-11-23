@@ -88,8 +88,8 @@ impl Drawer {
     /// The first page, with its sections in as far as they came.
     fn first_page(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let mut sections: Vec<(AnyElement, Room)> = vec![(self.header(window, cx), Room::Fits)];
-        if self.tiles.slots().next().is_some() {
-            sections.push((self.tile_grid().into_any_element(), Room::Fits));
+        if let Some(grid) = self.tile_grid() {
+            sections.push((grid.into_any_element(), Room::Fits));
         }
         let sliders = shown_views(&self.sliders);
         if !sliders.is_empty() {
@@ -138,8 +138,9 @@ impl Drawer {
     }
 
     /// The tiles two to a row, each feature's in slot order; one whose
-    /// feature draws nothing here yet keeps its place, empty.
-    fn tile_grid(&self) -> impl IntoElement {
+    /// feature draws nothing here yet keeps its place, empty. None without
+    /// a tile.
+    fn tile_grid(&self) -> Option<impl IntoElement + use<>> {
         let cell = (WIDTH - PAD * 2.0 - GAP) / 2.0;
         let tiles: Vec<AnyElement> = self
             .tiles
@@ -150,13 +151,16 @@ impl Drawer {
                 None => Tile::empty(SharedString::from(format!("empty {view}"))).into_any_element(),
             })
             .collect();
+        if tiles.is_empty() {
+            return None;
+        }
         let mut rows = Vec::new();
         let mut tiles = tiles.into_iter().peekable();
         while tiles.peek().is_some() {
             let row = tiles.by_ref().take(2).map(|tile| div().w(cell).child(tile));
             rows.push(div().flex().gap(GAP).children(row));
         }
-        div().flex().flex_col().gap(GAP).children(rows)
+        Some(div().flex().flex_col().gap(GAP).children(rows))
     }
 
     /// The logo, the greeting with the user's name, and the host with its

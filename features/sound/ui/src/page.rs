@@ -6,7 +6,7 @@
 //! (`app_icon`) once per name while the page shows, and drawn as the
 //! answers come. Until then, and without one, an app shows its letter.
 
-use crate::logic::{self, input, kind_glyph, link_label, output, output_kind, subtitle};
+use crate::logic::{input, kind_glyph, link_label, output, output_kind, subtitle};
 use crate::{PAGE, QUICK_SETTINGS};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -54,7 +54,8 @@ pub struct SoundPage {
     shown: bool,
     /// Each app's icon by its name, once novad answered (`None` for none).
     icons: HashMap<String, Option<SharedString>>,
-    asking: Vec<Task<()>>,
+    /// Icons asked and not answered yet, by app name.
+    asking: HashMap<String, Task<()>>,
     _followed: Vec<Subscription>,
 }
 
@@ -72,7 +73,7 @@ impl SoundPage {
             tab: Tab::default(),
             shown: false,
             icons: HashMap::new(),
-            asking: Vec::new(),
+            asking: HashMap::new(),
             _followed: followed,
         }
     }
@@ -109,14 +110,30 @@ impl SoundPage {
             self.icons.insert(name.clone(), None);
             let ask = LauncherCommand::AppIcon { icon_name: String::new(), program: String::new(), name: name.clone() };
             let answer = Daemon::call::<Option<String>>(ask, cx);
-            self.asking.push(cx.spawn(async move |page, cx| {
-                // No icon, or no launcher to ask: the letter stays.
-                let Ok(Some(icon)) = answer.await else { return };
-                let _ = page.update(cx, |page, cx| {
-                    page.icons.insert(name, Some(icon.into()));
-                    cx.notify();
-                });
-            }));
+            let task = cx.spawn({
+                let name = name.clone();
+                async move |page, cx| {
+                    let answer = answer.await;
+                    let _ = page.update(cx, |page, cx| page.answered(name, answer, cx));
+                }
+            });
+            self.asking.insert(name, task);
+        }
+    }
+
+    /// novad's answer about `name`'s icon: none keeps the letter, and with
+    /// no launcher to ask yet it is asked again next time.
+    fn answered<E>(&mut self, name: String, answer: Result<Option<String>, E>, cx: &mut Context<Self>) {
+        self.asking.remove(&name);
+        match answer {
+            Ok(Some(icon)) => {
+                self.icons.insert(name, Some(icon.into()));
+                cx.notify();
+            }
+            Ok(None) => {}
+            Err(_) => {
+                self.icons.remove(&name);
+            }
         }
     }
 
@@ -156,17 +173,17 @@ impl SoundPage {
     fn in_use(&self, sound: Option<&Sound>, cx: &Context<Self>) -> impl IntoElement + use<> {
         let theme = Theme::of(cx);
         let is_input = self.tab == Tab::Input;
-        let (device, devices) = match is_input {
-            true => (input(sound), sound.map(|sound| sound.inputs.as_slice())),
-            false => (output(sound), sound.map(|sound| sound.outputs.as_slice())),
-        };
-        let device = device.cloned();
+        let device = match is_input {
+            true => input(sound),
+            false => output(sound),
+        }
+        .cloned();
         let name = match (&device, is_input) {
             (Some(device), _) => device.name.clone(),
             (None, true) => "No input".to_owned(),
             (None, false) => "No output".to_owned(),
         };
-        let link = link_label(devices.and_then(logic::current).and_then(|device| device.link));
+        let link = link_label(device.as_ref().and_then(|device| device.link));
         let (volume, muted) = device.as_ref().map_or((0.0, false), |device| (device.volume, device.muted));
         let (kind, label, id) = match is_input {
             true => (Kind::Input, "Input", "input"),
@@ -234,10 +251,10 @@ impl SoundPage {
     /// Each app's own volume, or a quiet line when nothing plays.
     fn apps(&self, sound: Option<&Sound>, cx: &Context<Self>) -> AnyElement {
         let apps = sound.filter(|sound| sound.available).map_or(&[][..], |sound| sound.apps.as_slice());
-        let sliders = apps.iter().enumerate().map(|(at, app)| {
+        let sliders = apps.iter().map(|app| {
             let icon = self.icons.get(&app.name).cloned().flatten();
             let (id, muted) = (app.id, app.muted);
-            Slider::app(("app", at), app.name.clone(), icon, app.volume)
+            Slider::app(("app", app.id as usize), app.name.clone(), icon, app.volume)
                 .muted(muted)
                 .on_move(move |volume, _, cx| Daemon::send(Command::SetSoundVolume { of: Kind::App, id, volume }, cx))
                 .on_icon(move |_, _, cx| Daemon::send(Command::SetSoundMuted { of: Kind::App, id, muted: !muted }, cx))

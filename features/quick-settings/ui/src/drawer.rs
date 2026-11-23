@@ -104,6 +104,11 @@ impl Drawer {
             cx.notify();
         }
         let page = Stage::page(NAME, screen, cx);
+        if page.as_ref().is_some_and(|page| self.pages.get(page).is_none()) {
+            // No such page here: stay on the first page.
+            cx.defer(move |cx| Stage::show_page(NAME, screen, None, cx));
+            return;
+        }
         if self.shown_page() != page.as_ref() {
             self.turn_to(page, cx);
         }

@@ -26,11 +26,17 @@ mod window;
 
 use gpui::{App, AppContext};
 
+/// The settings page's view id, a page of quick settings.
+const PAGE: &str = "notifications.page";
+
 pub fn register(cx: &mut App) {
     nova_stage::overlay("notifications.popups", cx, |cx| Box::new(popups::Popups::start(cx)));
     nova_stage::part("notifications.list", cx, |screen, cx| {
         let screen = screen.clone();
         cx.new(|cx| list::List::new(screen, cx)).into()
     });
-    nova_stage::part("notifications.page", cx, |_, cx| cx.new(page::Page::new).into());
+    nova_stage::part(PAGE, cx, |screen, cx| {
+        let screen = screen.id;
+        cx.new(|cx| page::Page::new(screen, cx)).into()
+    });
 }
