@@ -61,6 +61,7 @@ mod stage;
 mod tokens;
 mod view;
 
+pub use frames::FrameLog;
 pub use item::{Panel, Part, Pill, Shown};
 pub use middle::middle;
 pub use registry::{Parts, overlay, panel, part, pill};
