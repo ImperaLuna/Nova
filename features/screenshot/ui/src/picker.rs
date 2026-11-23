@@ -483,7 +483,7 @@ fn frame_around(frame: &Frame, glass: Bounds<Pixels>, screen: gpui::Size<Pixels>
         .collect()
 }
 
-fn text_width(text: &str, family: &'static str, weight: FontWeight, size: Pixels, window: &Window) -> Pixels {
+fn text_width(text: &str, family: nova_look::Family, weight: FontWeight, size: Pixels, window: &Window) -> Pixels {
     let mut face = gpui::font(family);
     face.weight = weight;
     let run = TextRun {
