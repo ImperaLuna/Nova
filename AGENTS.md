@@ -265,6 +265,16 @@ and follows `Stage::screens` for screens that come and go:
 nova_stage::overlay("sound.capsule", cx, |cx| Box::new(cx.new(Capsule::new)));
 ```
 
+An overlay's windows are its own, so it does for them what the stage does
+for panels: it opens each one once per screen (deferred out of the update
+that found the screen, and never at the start of a motion), keeps it only
+as big as what it draws, and passes its shapes to `set_blur_region` and
+`set_input_region` when they change. `Stage::observe_open` calls it back
+whenever a panel opens, closes or resizes (the pop-ups pause while quick
+settings is open), and when `Stage::logs_frames` is set it logs its own
+frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
+`features/notifications/ui` (`popups.rs`, `window.rs`) is the worked example.
+
 **2. What holds for every view on the stage.**
 
 - A panel's name is its feature's id, the name `nova toggle` uses. Code

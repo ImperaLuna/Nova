@@ -151,6 +151,23 @@ impl Stage {
         });
     }
 
+    /// Calls `changed` each time a panel opens or closes, on any screen
+    /// (and when one is resized): for what follows a panel it doesn't draw,
+    /// like pop-ups that wait while quick settings shows their list. It
+    /// asks [`Stage::is_open`] what is open now. `None` before
+    /// [`Stage::start`].
+    pub fn observe_open(cx: &mut App, mut changed: impl FnMut(&mut App) + 'static) -> Option<Subscription> {
+        let panels = cx.try_global::<StageState>().map(|state| state.panels.clone())?;
+        Some(cx.observe(&panels, move |_, cx| changed(cx)))
+    }
+
+    /// Whether `nova-ui --frames` asked for each window's frames to be
+    /// logged: a feature with windows of its own logs them with
+    /// [`crate::FrameLog`] too.
+    pub fn logs_frames(cx: &App) -> bool {
+        cx.try_global::<StageState>().is_some_and(|state| state.log_frames)
+    }
+
     /// The screens, for what has windows of its own to follow. `None`
     /// before [`Stage::start`].
     pub fn screens(cx: &App) -> Option<Entity<Screens>> {

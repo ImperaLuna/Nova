@@ -2901,6 +2901,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-notifications-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "nova-peripherals-api",
+ "serde",
+]
+
+[[package]]
+name = "nova-notifications-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-daemon-info",
+ "nova-desktop-info",
+ "nova-look",
+ "nova-notifications-api",
+ "nova-peripherals-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
+name = "nova-peripherals-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
 name = "nova-stage"
 version = "0.1.0"
 dependencies = [
@@ -2931,6 +2962,7 @@ dependencies = [
  "nova-bar-api",
  "nova-daemon-info",
  "nova-look",
+ "nova-notifications-ui",
  "nova-stage",
  "nova-theme-info",
  "nova-ui-client",

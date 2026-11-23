@@ -7,11 +7,15 @@
 //! - on the left, a pill that counts seconds, which shows a view redrawing
 //!   by itself while the stage asks for no frame;
 //! - on the right, a pill that grows into `demo-right`, kept to the right
-//!   edge. Opening one panel closes the other.
+//!   edge. Opening one panel closes the other;
+//! - beside it, a pill that grows into a stand-in for quick settings' panel, which draws
+//!   the views of quick settings' hosts (`quick-settings.fill` and
+//!   `quick-settings.pages`, the notifications' list and settings page)
+//!   until quick settings is ported (IMP-406 removes it).
 
 use gpui::{
-    App, AppContext, Context, Div, IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Window, div, px,
-    size,
+    App, AppContext, Context, Div, IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Subscription,
+    Window, div, px, size,
 };
 use nova_daemon_info::Slot;
 use nova_look::tokens::{
@@ -19,20 +23,29 @@ use nova_look::tokens::{
     RADIUS_PANEL, RADIUS_ROW, ROW_HEIGHT, ROW_INSET, SECTION_GAP, WEIGHT_LABEL, WEIGHT_TITLE,
 };
 use nova_look::{Glyph, Icon, LookStyled, Theme, Touching};
-use nova_stage::{HOST_BAR_CENTER, HOST_BAR_LEFT, HOST_BAR_RIGHT, Panel, Pill, Stage};
+use nova_stage::{HOST_BAR_CENTER, HOST_BAR_LEFT, HOST_BAR_RIGHT, Panel, Parts, Pill, Screen, Stage};
 use std::time::Duration;
 
 const CENTER_PILL: &str = "demo.center";
 const LEFT_PILL: &str = "demo.left";
 const RIGHT_PILL: &str = "demo.right";
+const QUICK_SETTINGS_PILL: &str = "demo.quick-settings";
 /// The panels' names, as [`Stage::toggle`] takes them.
 const CENTER_PANEL: &str = "demo";
 const RIGHT_PANEL: &str = "demo-right";
+/// Named as quick settings' panel, so `nova toggle quick-settings` opens it
+/// and the pop-ups wait while it shows the list, as they will beside it.
+const QUICK_SETTINGS_PANEL: &str = "quick-settings";
+/// Quick settings' hosts the demo draws, as `ui/quick_settings` names them.
+const QUICK_SETTINGS_HOSTS: [&str; 2] = ["quick-settings.fill", "quick-settings.pages"];
 
 // The demo's own sizes and timings.
 const CENTER_PANEL_WIDTH: Pixels = px(620.0);
 const CENTER_PANEL_HEIGHT: Pixels = px(440.0);
 const RIGHT_PANEL_HEIGHT: Pixels = px(260.0);
+/// Each host's column as wide as today's quick settings' content.
+const QUICK_SETTINGS_COLUMN: Pixels = px(336.0);
+const QUICK_SETTINGS_HEIGHT: Pixels = px(480.0);
 const FOOTER_HEIGHT: Pixels = px(40.0);
 const FOOTER_TINT: f32 = 0.9;
 const TICK: Duration = Duration::from_secs(1);
@@ -60,9 +73,24 @@ pub fn slots(cx: &mut App) -> Vec<Slot> {
             panel,
         ))
     });
-    [(HOST_BAR_CENTER, CENTER_PILL), (HOST_BAR_LEFT, LEFT_PILL), (HOST_BAR_RIGHT, RIGHT_PILL)]
-        .map(|(host, view)| Slot { host: host.into(), view: view.into(), order: 0 })
-        .into()
+    nova_stage::pill(QUICK_SETTINGS_PILL, cx, |screen, cx| {
+        let screen = screen.clone();
+        let panel = cx.new(|cx| QuickSettingsHosts::new(&screen, cx));
+        let width = QUICK_SETTINGS_COLUMN * QUICK_SETTINGS_HOSTS.len() as f32 + PANEL_PAD * 3.0;
+        Pill::new(cx.new(|_| Label { glyph: Glyph::BELL, text: "Hosts".into() })).panel(Panel::new(
+            QUICK_SETTINGS_PANEL,
+            size(width, QUICK_SETTINGS_HEIGHT),
+            panel,
+        ))
+    });
+    [
+        (HOST_BAR_CENTER, CENTER_PILL),
+        (HOST_BAR_LEFT, LEFT_PILL),
+        (HOST_BAR_RIGHT, QUICK_SETTINGS_PILL),
+        (HOST_BAR_RIGHT, RIGHT_PILL),
+    ]
+    .map(|(host, view)| Slot { host: host.into(), view: view.into(), order: 0 })
+    .into()
 }
 
 /// Opens and closes the `demo` panel `times` times, one screen after the
@@ -194,5 +222,39 @@ impl Render for DemoPanel {
                     .child(Icon::new(Glyph::CHECK).color(theme.on_accent))
                     .child("Apply"),
             )
+    }
+}
+
+/// Quick settings' hosts side by side, each drawing its views in slot
+/// order, so a ported feature's parts can be seen before quick settings is.
+struct QuickSettingsHosts {
+    hosts: Vec<Parts>,
+    _slots: Option<Subscription>,
+}
+
+impl QuickSettingsHosts {
+    fn new(screen: &Screen, cx: &mut Context<Self>) -> Self {
+        let hosts = QUICK_SETTINGS_HOSTS.iter().map(|host| Parts::new(host, screen, cx)).collect();
+        let slots = Stage::slots(cx).map(|slots| {
+            cx.observe(&slots, |hosts: &mut Self, _, cx| {
+                let mut changed = false;
+                for parts in &mut hosts.hosts {
+                    changed |= parts.sync(cx);
+                }
+                if changed {
+                    cx.notify();
+                }
+            })
+        });
+        Self { hosts, _slots: slots }
+    }
+}
+
+impl Render for QuickSettingsHosts {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let columns = self.hosts.iter().map(|parts| {
+            div().w(QUICK_SETTINGS_COLUMN).h_full().flex().flex_col().gap(SECTION_GAP).children(parts.views().cloned())
+        });
+        div().size_full().p(PANEL_PAD).flex().gap(PANEL_PAD).children(columns)
     }
 }
