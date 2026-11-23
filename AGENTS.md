@@ -190,7 +190,14 @@ sample`). Every ui crate draws with it:
   and to GPUI's `set_input_region` each frame they change, and leaves
   `tokens::SHADOW_ROOM` free around glass. Nothing clips there, the glass
   included: content that must be clipped to it goes in a child with
-  `overflow_hidden`. A window draws at most 32 glasses with a shadow.
+  `overflow_hidden`.
+- A window draws at most 32 shader rectangles a frame (the fork's
+  `paint_shader`): each glass with a shadow is one, each wallpaper card
+  another.
+- GPUI has no 3D transforms. A picture turned in 3D is a shader rectangle
+  that reads it (the fork's `paint_shader_image`, IMP-447): the wallpaper
+  carousel's `card.rs` and `card.wgsl`, with the sums in `tilt.rs`. Text
+  can't go through one and stays flat.
 - GPUI clips children to a rounded parent's box, not its corners: content
   that reaches the edge rounds itself with `fit_corners`.
 - Hover is GPUI's own `.hover()` and `on_hover`: both let go when the
