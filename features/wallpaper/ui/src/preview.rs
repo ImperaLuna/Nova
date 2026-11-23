@@ -72,8 +72,9 @@ impl Preview {
         self.fading && !self.fade.settled(now)
     }
 
-    /// Lets every picture go, from the GPU too.
-    pub fn release(&self, window: &mut gpui::Window, cx: &mut App) {
+    /// Takes the pictures it let go out of the GPU's atlas (see
+    /// [`Pictures::release`]).
+    pub fn release(&self, window: Option<&mut gpui::Window>, cx: &mut App) {
         self.pictures.update(cx, |pictures, cx| pictures.release(window, cx));
     }
 

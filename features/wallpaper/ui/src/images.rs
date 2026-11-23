@@ -97,11 +97,11 @@ impl Pictures {
         }
     }
 
-    /// Takes what was let go out of the GPU's atlas, from `window` (being
-    /// drawn) and every other.
-    pub fn release(&mut self, window: &mut Window, cx: &mut App) {
+    /// Takes what was let go out of the GPU's atlas: from every window,
+    /// `window` included when it is the one being drawn.
+    pub fn release(&mut self, mut window: Option<&mut Window>, cx: &mut App) {
         for picture in self.dropped.drain(..) {
-            cx.drop_image(picture, Some(window));
+            cx.drop_image(picture, window.as_deref_mut());
         }
     }
 }

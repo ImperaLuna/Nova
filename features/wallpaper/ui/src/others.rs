@@ -111,31 +111,31 @@ impl Previewed {
         self.opening = true;
         cx.spawn(async move |previewed, cx| {
             cx.background_executor().timer(DURATION_PANEL + DURATION_FADE).await;
-            let _ = previewed.update(cx, |previewed, cx| {
+            let wanted = previewed.update(cx, |previewed, cx| {
                 previewed.opening = false;
-                if previewed.shown {
-                    previewed.open_windows(cx);
-                }
+                if previewed.shown { previewed.others(cx) } else { Vec::new() }
             });
+            let (Ok(screens), Some(shared)) = (wanted, previewed.upgrade()) else { return };
+            // Outside the update: a new window draws its first frame,
+            // which reads what is previewed.
+            for screen in screens {
+                let window = cx.update(|cx| PreviewWindow::open(&screen, shared.clone(), cx));
+                let _ = previewed.update(cx, |previewed, _| previewed.windows.extend(window));
+            }
         })
         .detach();
     }
 
-    fn open_windows(&mut self, cx: &mut Context<Self>) {
-        let Some(screens) = Stage::screens(cx) else { return };
-        let others: Vec<Screen> = screens
+    /// The screens the carousel isn't on.
+    fn others(&self, cx: &App) -> Vec<Screen> {
+        let Some(screens) = Stage::screens(cx) else { return Vec::new() };
+        screens
             .read(cx)
             .list()
             .iter()
             .filter(|screen| self.from.as_deref() != Some(screen.name.as_ref()))
             .cloned()
-            .collect();
-        let me = cx.entity();
-        for screen in others {
-            if let Some(window) = PreviewWindow::open(&screen, me.clone(), cx) {
-                self.windows.push(window);
-            }
-        }
+            .collect()
     }
 }
 
@@ -206,7 +206,7 @@ impl Render for PreviewWindow {
         let pixels = device_size(self.screen.size.width, self.screen.size.height, window);
         self.preview.show(&path, pixels, cx);
         let picture = self.preview.element(now, cx);
-        self.preview.release(window, cx);
+        self.preview.release(Some(window), cx);
         let moving = !(self.shown.settled(now) && self.picking.settled(now)) || self.preview.moving(now);
         if moving {
             window.request_animation_frame();

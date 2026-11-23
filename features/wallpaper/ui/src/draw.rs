@@ -49,11 +49,9 @@ impl Render for Carousel {
         self.preview.show(&preview_path, pixels, cx);
         let preview = self.preview.element(now, cx);
         let deck = self.deck_element(window, now, cx);
-        let label = self.label(window, now, cx);
+        let label = self.label(window, cx);
         let note = self.note(cx);
-        self.preview.release(window, cx);
-        self.cards.update(cx, |pictures, cx| pictures.release(window, cx));
-        self.minis.update(cx, |pictures, cx| pictures.release(window, cx));
+        self.release(Some(window), cx);
         if self.moving(now) {
             window.request_animation_frame();
         }
@@ -224,7 +222,7 @@ impl Carousel {
 
     /// The picked image's name, where it is in the folder, and where it'd
     /// go; or why it couldn't.
-    fn label(&mut self, window: &Window, _now: Instant, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn label(&mut self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         if self.deck.count() == 0 {
             return None;
         }

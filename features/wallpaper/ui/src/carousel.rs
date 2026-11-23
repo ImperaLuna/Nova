@@ -217,6 +217,9 @@ impl Carousel {
         self.deck.clear();
         self.cards.update(cx, |pictures, _| pictures.clear());
         self.minis.update(cx, |pictures, _| pictures.clear());
+        self.preview.show("", Default::default(), cx);
+        // Not drawn again until it opens: out of the GPU's atlas now.
+        self.release(None, cx);
         self.handing_over = false;
         self.asking = None;
         let here = self.screen.name.clone();
@@ -295,6 +298,14 @@ impl Carousel {
                 cx.update(|cx| Stage::close(NAME, screen, cx));
             }
         }));
+    }
+
+    /// Takes the pictures let go out of the GPU's atlas: from `window`
+    /// too while it is being drawn.
+    pub(crate) fn release(&self, mut window: Option<&mut Window>, cx: &mut gpui::App) {
+        self.preview.release(window.as_deref_mut(), cx);
+        self.cards.update(cx, |pictures, cx| pictures.release(window.as_deref_mut(), cx));
+        self.minis.update(cx, |pictures, cx| pictures.release(window, cx));
     }
 
     pub(crate) fn close(&self, cx: &mut Context<Self>) {
