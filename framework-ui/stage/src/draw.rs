@@ -167,11 +167,16 @@ impl StageView {
         frame(panel, from, self.screen.size, now)
     }
 
-    /// Hides each pill an open panel lies over, and shows the others.
+    /// Hides each pill an open panel lies over, and shows the others. A
+    /// panel over the whole screen (the wallpaper carousel) lies under the
+    /// strip, which opened after its window, and leaves the bar drawn over
+    /// it, as today's shell does.
     fn give_way(&mut self, now: Instant) {
         let open: Vec<_> = self
             .panel_items()
-            .filter(|panel| !panel.spec.in_place && panel.morph.target() > 0.0)
+            .filter(|panel| {
+                panel.spec.placement != Placement::WholeScreen && !panel.spec.in_place && panel.morph.target() > 0.0
+            })
             .map(|panel| (self.panel_frame(panel, now).open, panel.from.clone()))
             .collect();
         for pill in self.rows.iter_mut().flat_map(|row| row.iter_mut()) {

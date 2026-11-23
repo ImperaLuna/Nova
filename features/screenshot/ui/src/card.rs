@@ -1,10 +1,11 @@
 //! The card a saved screenshot or recording lands in, in the bottom right
 //! corner of the screen that had focus: the shot (or the recording's
 //! length), that it was saved, where it went, and Open, Folder and Delete.
-//! A recording that didn't start shows here too: why, with Try again and
-//! Open log, for longer. A line along the bottom drains over its time and
-//! the card leaves when it runs out; the pointer on the card holds it. It
-//! slides in from the edge, and out before it goes.
+//! A recording that didn't start, or ended without a frame, shows here
+//! too: why, with Try again and Open log, for longer. A line along the
+//! bottom drains over its time and the card leaves when it runs out; the
+//! pointer on the card holds it. It slides in from the edge, and out
+//! before it goes.
 //! `ui/capture/ShotCardWindow.qml` and `ShotCard.qml` in today's shell.
 //!
 //! Its own window on each screen, on the overlay layer like the volume
@@ -65,7 +66,7 @@ fn inset() -> Pixels {
 }
 
 /// The card's height: the shot, the two lines and the buttons; or, for a
-/// recording that didn't start, the title, the reason's `lines` and the
+/// recording that failed, the title, the reason's `lines` and the
 /// buttons.
 fn card_height(failed: bool, lines: usize) -> Pixels {
     let content = if failed {
@@ -200,10 +201,10 @@ impl Render for CardWindow {
         let capture_now = capture.read(cx);
         let card = capture_now.card().filter(|card| card.screen == self.screen.id);
         let lines = match card.map(|card| &card.saved) {
-            Some(Saved::Failed(reason)) => reason_lines(reason, window),
+            Some(Saved::Failed { reason, .. }) => reason_lines(reason, window),
             _ => 1,
         };
-        let height = card.map(|card| card_height(matches!(card.saved, Saved::Failed(_)), lines));
+        let height = card.map(|card| card_height(matches!(card.saved, Saved::Failed { .. }), lines));
         self.show(height, window);
         let (Some(card), Some(height)) = (card, height) else {
             self.log_frame(false, now);
@@ -239,7 +240,7 @@ struct Look<'a> {
 fn draw(look: &Look, this: WeakEntity<CardWindow>, capture: WeakEntity<Capture>, cx: &App) -> AnyElement {
     let theme = Theme::of(cx);
     let Look { card, slide, at, now, .. } = *look;
-    let failed = matches!(card.saved, Saved::Failed(_));
+    let failed = matches!(card.saved, Saved::Failed { .. });
     let held = capture.clone();
     let drain_color = if failed { theme.error } else { theme.primary };
     let drain = div()
@@ -310,15 +311,16 @@ fn thumb(card: &Card, cx: &App) -> AnyElement {
     .into_any_element()
 }
 
-/// What happened (saved, copied unless the clipboard failed, or didn't
-/// start), and where it went with its size or length, or why it didn't.
+/// What happened (saved, copied unless the clipboard failed, didn't
+/// start or recorded nothing), and where it went with its size or length, or why it didn't.
 fn labels(saved: &Saved, lines: usize, cx: &App) -> impl IntoElement {
     let theme = Theme::of(cx);
     let (glyph, ink, title) = match saved {
         Saved::Shot(shot) if shot.copied => (Glyph::CHECK, theme.success, "Copied to clipboard"),
         Saved::Shot(_) => (Glyph::CHECK, theme.success, "Saved"),
         Saved::Recording(_) => (Glyph::CHECK, theme.success, "Recording saved"),
-        Saved::Failed(_) => (Glyph::VIDEO_OFF, theme.error, "Recording didn't start"),
+        Saved::Failed { started: false, .. } => (Glyph::VIDEO_OFF, theme.error, "Recording didn't start"),
+        Saved::Failed { started: true, .. } => (Glyph::VIDEO_OFF, theme.error, "Recording not saved"),
     };
     let title = div()
         .flex()
@@ -330,7 +332,9 @@ fn labels(saved: &Saved, lines: usize, cx: &App) -> impl IntoElement {
         .child(title);
     let detail = div().mt(LABEL_NUDGE).text_size(FONT_SIZE_SMALL).text_color(theme.fg_dim());
     let detail = match saved {
-        Saved::Failed(reason) => detail.h(detail_height() * lines as f32).line_clamp(lines).child(reason.clone()),
+        Saved::Failed { reason, .. } => {
+            detail.h(detail_height() * lines as f32).line_clamp(lines).child(reason.clone())
+        }
         Saved::Shot(shot) => {
             let line = format!("{} · {} · PNG", folder_label(&shot.path), size_label(shot.width, shot.height));
             detail.h(detail_height()).whitespace_nowrap().overflow_hidden().text_ellipsis().child(line)

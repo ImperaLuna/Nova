@@ -63,7 +63,7 @@ impl Fixture {
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
         hub.subscribe(id, nova_recording_api::TOPIC);
-        let path_var = nova_test_support::fake_path(&bin, &["sleep"]);
+        let path_var = nova_test_support::fake_path(&bin, &["sleep", "cp"]);
         let recordings = Recordings::new(path_var, hub, logger, Arc::new(ScreenshotFiles));
         recordings.allow(true);
         Self { dir, recordings, ui, _ui_stream: ui_stream }
@@ -117,6 +117,9 @@ fn what_an_earlier_novad_left_is_saved_under_its_name() {
     let mut other = Command::new("sleep").arg("5").spawn().unwrap();
     left("2026-10-25 18.00.00", gone.id(), "frames");
     left("2026-10-25 18.05.00", gone.id(), "");
+    let header = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/recorded/wf-recorder-stalled-on-sound.mp4");
+    std::fs::copy(header, folder.join(format!(".{NAME_PREFIX}2026-10-25 18.06.00.{}-1.{EXTENSION}", gone.id())))
+        .unwrap();
     left("2026-10-25 18.10.00", std::process::id(), "frames");
     left("2026-10-25 18.15.00", other.id(), "frames");
     fixture.recordings.recover(&folder);
@@ -129,7 +132,7 @@ fn what_an_earlier_novad_left_is_saved_under_its_name() {
             format!(".{NAME_PREFIX}2026-10-25 18.15.00.{}-1.{EXTENSION}", other.id()),
             format!("{NAME_PREFIX}2026-10-25 18.00.00.{EXTENSION}"),
         ],
-        "an empty one goes, and this novad's own and a running one's stay"
+        "an empty one and one without a frame go, and this novad's own and a running one's stay"
     );
 }
 
@@ -308,6 +311,58 @@ fn a_recorder_that_stops_by_itself_still_saves_what_it_recorded() {
     fixture.next_event();
     assert_eq!(fixture.next_event()["data"], serde_json::Value::Null);
     assert_eq!(fixture.next_event()["event"], "recording_saved");
+}
+
+/// A fake recorder that writes what wf-recorder wrote on the test desktop
+/// (`src/recorded/<name>`) and then does `on_stop` when asked to finish.
+fn replaying(name: &str, on_stop: &str) -> String {
+    let recorded = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/recorded").join(name);
+    format!(
+        "for arg; do [ \"$previous\" = -f ] && out=$arg; previous=$arg; done\n\
+         cp '{}' \"$out\"\n\
+         trap '{on_stop}' INT\n\
+         while :; do sleep 0.02; done",
+        recorded.display()
+    )
+}
+
+#[test]
+fn a_recording_with_frames_is_saved() {
+    let fixture = Fixture::new("frames", WF_RECORDER, &replaying("wf-recorder-saved.mp4", "exit 0"));
+    fixture.start(None, RecordAudio::default()).unwrap();
+    fixture.next_event();
+    fixture.recordings.stop().unwrap();
+    assert_eq!(fixture.next_event()["data"], serde_json::Value::Null);
+    assert_eq!(fixture.next_event()["event"], "recording_saved");
+    assert_eq!(fixture.files().len(), 1);
+}
+
+#[test]
+fn a_recorder_stalled_on_sound_saves_nothing_and_says_so() {
+    // wf-recorder with desktop sound from a monitor that sends nothing:
+    // it never writes a frame, ignores the stop and is killed, leaving the
+    // 48 byte header it had written (recorded on a test desktop).
+    let fixture = Fixture::new("stalled", WF_RECORDER, &replaying("wf-recorder-stalled-on-sound.mp4", ""));
+    fixture.start(None, RecordAudio { desktop: true, mic: false }).unwrap();
+    fixture.next_event();
+    fixture.recordings.stop().unwrap();
+    assert_eq!(fixture.next_event()["data"], serde_json::Value::Null);
+    let failed = fixture.next_event();
+    assert_eq!(failed["event"], "recording_failed", "{failed}");
+    assert_eq!(failed["data"]["reason"], "wf-recorder stopped before it recorded a frame");
+    assert!(fixture.files().is_empty(), "the header is gone: {:?}", fixture.files());
+}
+
+#[test]
+fn a_finished_recording_without_a_frame_saves_nothing_and_says_so() {
+    let fixture = Fixture::new("no-frames", WF_RECORDER, &replaying("wf-recorder-sound-only.mp4", "exit 0"));
+    fixture.start(None, RecordAudio { desktop: true, mic: false }).unwrap();
+    fixture.next_event();
+    fixture.recordings.stop().unwrap();
+    assert_eq!(fixture.next_event()["data"], serde_json::Value::Null);
+    let failed = fixture.next_event();
+    assert_eq!(failed["data"]["reason"], "wf-recorder recorded no frames", "{failed}");
+    assert!(fixture.files().is_empty());
 }
 
 #[test]

@@ -11,14 +11,15 @@ import "../text/duration.js" as Duration
 // it went and its size, and Open, Folder and Delete. A recording's card has
 // its length where the shot would be, and where it went. A line along the
 // bottom drains over Tokens.durationShotCard, and the card leaves when it
-// runs out; the pointer on the card holds it. A recording that didn't start
-// shows here too: why, with Try again and Open log, for longer.
+// runs out; the pointer on the card holds it. A recording that didn't start,
+// or ended without a frame, shows here too: why, with Try again and Open
+// log, for longer.
 Item {
     id: card
 
     // Daemon's screenshotSaved shot: {id, path, width, height, copied}; or
-    // with `video`, recordingSaved's {id, path, duration_ms}, or {reason}
-    // when the recording didn't start.
+    // with `video`, recordingSaved's {id, path, duration_ms}, or {reason,
+    // started} when the recording didn't start or (`started`) saved nothing.
     required property var shot
     property bool video: false
     readonly property bool failed: video && typeof shot?.reason === "string"
@@ -115,7 +116,7 @@ Item {
                     // Saved either way; copied unless the clipboard failed.
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: card.failed ? qsTr("Recording didn't start") : card.video ? qsTr("Recording saved") : card.shot?.copied ? qsTr("Copied to clipboard") : qsTr("Saved")
+                        text: card.failed ? (card.shot.started ? qsTr("Recording not saved") : qsTr("Recording didn't start")) : card.video ? qsTr("Recording saved") : card.shot?.copied ? qsTr("Copied to clipboard") : qsTr("Saved")
                         textFormat: Text.PlainText
                         color: Tokens.fg
                         font.family: Tokens.fontSans

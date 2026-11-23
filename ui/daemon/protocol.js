@@ -132,6 +132,7 @@ var EVENT_NETWORK = "network";
 var EVENT_NETWORK_TRAFFIC = "network_traffic";
 var EVENT_BLUETOOTH = "bluetooth";
 var EVENT_SOUND = "sound";
+var EVENT_RECORDING_FAILED = "recording_failed";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";

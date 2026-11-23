@@ -58,6 +58,17 @@ Item {
             }
         }
 
+        Component {
+            id: emptyCardComponent
+            ShotCard {
+                video: true
+                shot: ({
+                        reason: "wf-recorder stopped before it recorded a frame",
+                        started: true
+                    })
+            }
+        }
+
         SignalSpy {
             id: saves
             signalName: "saveRequested"
@@ -449,6 +460,15 @@ Item {
             mouseClick(buttons[0]);
             mouseClick(buttons[1]);
             compare(actions.signalArguments.map(args => args[0]), [Capture.CARD_RETRY, Capture.CARD_LOG]);
+        }
+
+        function test_a_recording_without_a_frame_says_it_wasnt_saved() {
+            const card = createTemporaryObject(emptyCardComponent, stage);
+            verify(card.failed);
+            verify(findText(card, "Recording not saved"));
+            verify(!findText(card, "Recording didn't start"));
+            verify(findText(card, "wf-recorder stopped before it recorded a frame"));
+            compare(findButtons(card).length, 2);
         }
 
         function findText(item, text) {
