@@ -44,6 +44,7 @@
 # - nova-theme-info
 # - nova-tray-ui
 # - nova-ui-client
+# - nova-volume-osd-ui
 # - nova-wallpaper-ui
 # - nova-workspaces-ui
 
@@ -83,6 +84,7 @@ nova-stage.workspace = true
 nova-theme-info.workspace = true
 nova-tray-ui.workspace = true
 nova-ui-client.workspace = true
+nova-volume-osd-ui.workspace = true
 nova-wallpaper-ui.workspace = true
 nova-workspaces-ui.workspace = true
 
@@ -152,6 +154,7 @@ nova-resources-ui = { path = "../features/resources/ui" }
 nova-screenshot-ui = { path = "../features/screenshot/ui" }
 nova-sound-ui = { path = "../features/sound/ui" }
 nova-tray-ui = { path = "../features/tray/ui" }
+nova-volume-osd-ui = { path = "../features/volume-osd/ui" }
 nova-wallpaper-ui = { path = "../features/wallpaper/ui" }
 nova-workspaces-ui = { path = "../features/workspaces/ui" }
 
@@ -178,6 +181,7 @@ nova-sound-api = { path = "../features/sound/api" }
 nova-test-support = { path = "../framework/test-support" }
 nova-theme-info = { path = "../framework/theme-info" }
 nova-tray-api = { path = "../features/tray/api" }
+nova-volume-osd-api = { path = "../features/volume-osd/api" }
 nova-wallpaper-api = { path = "../features/wallpaper/api" }
 nova-workspaces-api = { path = "../features/workspaces/api" }
 

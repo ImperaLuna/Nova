@@ -302,6 +302,10 @@ fn sound_lines() -> Vec<serde_json::Result<String>> {
             id: Some(25),
             command: Command::SetSoundMuted { of: Kind::App, id: 77, muted: true },
         }),
+        encode(nova_carrier::Request {
+            id: Some(28),
+            command: Command::SetSoundLevel { of: Kind::Output, id: 52, volume: 0.7 },
+        }),
         encode(nova_carrier::Request { id: Some(26), command: Command::UseSoundOutput { id: 61 } }),
         encode(nova_carrier::Request { id: Some(27), command: Command::UseSoundInput { id: 53 } }),
     ]

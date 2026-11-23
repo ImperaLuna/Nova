@@ -4,7 +4,8 @@
 use super::*;
 use crate::fake_pulse::{FakePulse, recorded, recording};
 use crate::server::Listing;
-use nova_sound_api::Kind;
+use nova_sound_api::{Kind, VOLUME_MAX};
+use nova_volume_osd_api::VolumeKey;
 use pulseaudio::protocol::{ChannelVolume, SinkInputInfo, Volume};
 
 /// Writes what the sound server running now lists as a recording, to the
@@ -68,9 +69,14 @@ impl Fixture {
         FakePulse::start(&self.socket(), recorded(NULL_DEVICES))
     }
 
+    /// The service, following Bluetooth as it does for the GPUI UI.
     fn sound(&self) -> Arc<Sound> {
+        self.sound_following(true)
+    }
+
+    fn sound_following(&self, bluetooth: bool) -> Arc<Sound> {
         let sources = Sources { socket: Some(self.socket()) };
-        Sound::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
+        Sound::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger), bluetooth)
     }
 
     /// The next sound event.
@@ -260,6 +266,19 @@ fn a_volume_set_by_hand_unmutes_and_comes_back_as_an_event() {
 }
 
 #[test]
+fn the_capsules_volume_leaves_mute_as_it_is() {
+    let fixture = Fixture::new("level");
+    let _server = fixture.server();
+    let sound = fixture.sound();
+    assert_eq!(fixture.next()["inputs"][0]["muted"], true);
+    sound.change(&Command::SetSoundLevel { of: Kind::Input, id: 60, volume: 0.25 }).unwrap();
+    let set = fixture.until(|sound| close(&sound["inputs"][0]["volume"], 0.25));
+    assert_eq!(set["inputs"][0]["muted"], true);
+    let refused = sound.change(&Command::SetSoundLevel { of: Kind::Output, id: 53, volume: 1.5 });
+    assert_eq!(refused, Err(format!("a volume is 0 to {VOLUME_MAX}, not 1.5")));
+}
+
+#[test]
 fn an_apps_volume_and_mute_reach_all_its_streams() {
     let fixture = Fixture::new("app");
     let server = fixture.server();
@@ -343,4 +362,127 @@ fn a_volume_keeps_the_balance_between_channels() {
     // From silence there is no balance to keep.
     let moved = reading::at_level(&ChannelVolume::muted(2), 0.5);
     assert_eq!(moved.channels(), [Volume::from_u32_clamped(norm / 2); 2]);
+}
+
+#[test]
+fn a_volume_key_steps_the_output_in_use_and_mutes_it() {
+    let fixture = Fixture::new("keys");
+    let _server = fixture.server();
+    let sound = fixture.sound();
+    assert!(close(&fixture.next()["outputs"][0]["volume"], 0.4));
+    sound.press(VolumeKey::Up).unwrap();
+    fixture.until(|sound| close(&sound["outputs"][0]["volume"], 0.45));
+    sound.press(VolumeKey::Mute).unwrap();
+    fixture.until(|sound| sound["outputs"][0]["muted"] == true);
+    // A step leaves mute as it is.
+    sound.press(VolumeKey::Down).unwrap();
+    let stepped = fixture.until(|sound| close(&sound["outputs"][0]["volume"], 0.4));
+    assert_eq!(stepped["outputs"][0]["muted"], true);
+    sound.press(VolumeKey::Mute).unwrap();
+    fixture.until(|sound| sound["outputs"][0]["muted"] == false);
+}
+
+#[test]
+fn keys_pressed_faster_than_the_server_lists_each_take_a_step() {
+    let fixture = Fixture::new("keys-fast");
+    let _server = fixture.server();
+    let sound = fixture.sound();
+    assert!(close(&fixture.next()["outputs"][0]["volume"], 0.4));
+    for _ in 0..3 {
+        sound.press(VolumeKey::Up).unwrap();
+    }
+    fixture.until(|sound| close(&sound["outputs"][0]["volume"], 0.55));
+    // Mute and unmute at once leave it as it was.
+    sound.press(VolumeKey::Mute).unwrap();
+    sound.press(VolumeKey::Mute).unwrap();
+    sound.press(VolumeKey::Up).unwrap();
+    let stepped = fixture.until(|sound| close(&sound["outputs"][0]["volume"], 0.6));
+    assert_eq!(stepped["outputs"][0]["muted"], false);
+}
+
+#[test]
+fn a_volume_key_at_full_changes_nothing() {
+    let fixture = Fixture::new("keys-full");
+    let _server = fixture.server();
+    let sound = fixture.sound();
+    fixture.next();
+    sound.change(&Command::SetSoundVolume { of: Kind::Output, id: 53, volume: 1.0 }).unwrap();
+    fixture.until(|sound| close(&sound["outputs"][0]["volume"], 1.0));
+    sound.press(VolumeKey::Up).unwrap();
+    fixture.nothing_comes();
+}
+
+#[test]
+fn a_volume_key_without_an_output_in_use_says_so() {
+    let fixture = Fixture::new("keys-none");
+    let server = fixture.server();
+    let sound = fixture.sound();
+    assert_eq!(sound.press(VolumeKey::Up), Err(NO_SERVER.into()), "nothing is listed yet");
+    fixture.next();
+    server.change(|listing| listing.sinks.clear());
+    fixture.next();
+    assert_eq!(sound.press(VolumeKey::Up), Err("there is no output in use".into()));
+}
+
+/// The listing with a Bluetooth headset added, as BlueZ names its nodes.
+fn add_headset(listing: &mut Listing) {
+    let mut output = listing.sinks[0].clone();
+    output.index = 300;
+    output.name = c"bluez_output.AA_BB_CC_DD_EE_FF.1".into();
+    listing.sinks.push(output);
+    let mut input = listing.sources.iter().find(|source| source.monitor_of_sink_index.is_none()).unwrap().clone();
+    input.index = 301;
+    input.name = c"bluez_input.AA_BB_CC_DD_EE_FF.0".into();
+    listing.sources.push(input);
+}
+
+fn in_use(listing: &Listing) -> (String, String) {
+    let name = |name: &Option<std::ffi::CString>| name.as_deref().unwrap().to_string_lossy().into_owned();
+    (name(&listing.server.default_sink_name), name(&listing.server.default_source_name))
+}
+
+#[test]
+fn a_bluetooth_headset_that_appears_becomes_the_one_in_use() {
+    let fixture = Fixture::new("bluetooth");
+    let server = fixture.server();
+    let _sound = fixture.sound();
+    fixture.next();
+    let before = in_use(&server.listing());
+    server.change(add_headset);
+    wait_until(WAIT, "the headset is in use", || {
+        in_use(&server.listing())
+            == ("bluez_output.AA_BB_CC_DD_EE_FF.1".to_owned(), "bluez_input.AA_BB_CC_DD_EE_FF.0".to_owned())
+    });
+    // Choosing the speakers again sticks: the headset is no longer new.
+    let speakers = std::ffi::CString::new(before.0.clone()).unwrap();
+    server.change(|listing| listing.server.default_sink_name = Some(speakers));
+    nova_test_support::settle(QUIET);
+    assert_eq!(in_use(&server.listing()).0, before.0);
+}
+
+#[test]
+fn a_bluetooth_headset_there_from_the_start_is_left_as_the_server_chose() {
+    let fixture = Fixture::new("bluetooth-start");
+    let mut listing = recorded(NULL_DEVICES);
+    add_headset(&mut listing);
+    let server = FakePulse::start(&fixture.socket(), listing);
+    let _sound = fixture.sound();
+    let before = in_use(&server.listing());
+    fixture.next();
+    server.say_changed(1);
+    nova_test_support::settle(QUIET);
+    assert_eq!(in_use(&server.listing()), before);
+}
+
+#[test]
+fn without_the_follow_a_bluetooth_headset_is_left_alone() {
+    let fixture = Fixture::new("bluetooth-off");
+    let server = fixture.server();
+    let _sound = fixture.sound_following(false);
+    fixture.next();
+    let before = in_use(&server.listing());
+    server.change(add_headset);
+    fixture.next();
+    nova_test_support::settle(QUIET);
+    assert_eq!(in_use(&server.listing()), before);
 }

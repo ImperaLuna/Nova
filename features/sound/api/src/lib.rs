@@ -19,6 +19,11 @@ pub const TOPIC: Topic = Topic::named("sound");
 /// more, and [`Sound`] then reports it.
 pub const VOLUME_MAX: f32 = 1.0;
 
+/// How far one volume key (`nova volume up` or `down`) moves the output in
+/// use, while novad does the keys (the GPUI UI). `Tokens.volumeStep` in
+/// today's shell.
+pub const VOLUME_STEP: f32 = 0.05;
+
 /// Sent by the UI. Arguments with unknown fields are refused.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "cmd", content = "args", rename_all = "snake_case", deny_unknown_fields)]
@@ -27,6 +32,9 @@ pub enum Command {
     /// 0 to [`VOLUME_MAX`]. Setting it means wanting to hear it, so it
     /// unmutes too.
     SetSoundVolume { of: Kind, id: u32, volume: f32 },
+    /// Sets a volume as [`Command::SetSoundVolume`] does but leaves mute as
+    /// it is: a click or drag on the volume capsule, as in today's shell.
+    SetSoundLevel { of: Kind, id: u32, volume: f32 },
     /// Mutes or unmutes an output, an input or an app (all its streams).
     SetSoundMuted { of: Kind, id: u32, muted: bool },
     /// Makes an output the one in use.

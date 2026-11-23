@@ -105,7 +105,7 @@ impl Program {
         }
     }
 
-    const fn kind(&self) -> UiProgram {
+    pub const fn kind(&self) -> UiProgram {
         match self {
             Self::Quickshell => UiProgram::Quickshell,
             Self::Gpui(_) => UiProgram::Gpui,

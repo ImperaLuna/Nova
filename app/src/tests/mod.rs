@@ -137,7 +137,8 @@ impl TestDaemon {
         };
         let compositor = compositor(&dir)
             .map(|backend| nova_compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
-        let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
+        let in_use = |picked| ui.as_ref().map_or(picked, |ui: &UiSettings| ui.program.kind());
+        let settings = Settings::load(&sources, &hub, &logger, compositor.clone(), in_use);
         let wanted = features::needs_ui(&sources.manifests, &settings.features);
         let ui = ui.map(|ui_settings| Supervisor::start(ui_settings, wanted, Arc::clone(&logger)));
         let daemon = Arc::new(Daemon {
