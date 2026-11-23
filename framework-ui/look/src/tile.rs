@@ -7,10 +7,10 @@
 //! keeps it for a feature whose tile isn't drawn here yet.
 
 use crate::tokens::{
-    DIM_OPACITY, FONT_SIZE, GAP, ICON_SIZE_MENU, LABEL_NUDGE, PAD, RADIUS_CARD, ROW_INSET, TILE_ARROW_WIDTH,
-    TILE_HEIGHT, WEIGHT_TITLE,
+    DIM_OPACITY, DURATION_COLOR, FONT_SIZE, GAP, ICON_SIZE_MENU, LABEL_NUDGE, PAD, RADIUS_CARD, ROW_INSET,
+    TILE_ARROW_WIDTH, TILE_HEIGHT, WEIGHT_TITLE,
 };
-use crate::{Glyph, Icon, Theme};
+use crate::{Glyph, Hovered, Icon, Theme, fade_color, keyed};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
@@ -82,11 +82,20 @@ impl Tile {
 }
 
 impl RenderOnce for Tile {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = Theme::of(cx);
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (available, has_glyph) = (self.available, self.glyph.is_some());
+        // The fill fades between the accent, the hover wash and the raised
+        // fill, as today's does.
+        let hovered = Hovered::of(keyed(&self.id, "hovered"), window, cx);
+        let pointed = available && hovered.is(cx);
+        let theme = Theme::of(cx).clone();
         let ink = if self.on { theme.on_accent } else { theme.fg };
-        let hover = theme.hover();
-        let (on, available, has_glyph) = (self.on, self.available, self.glyph.is_some());
+        let fill = match (self.on, pointed) {
+            (true, _) => theme.primary,
+            (false, true) => theme.hover(),
+            (false, false) => theme.surface_raised(),
+        };
+        let fill = fade_color(keyed(&self.id, "fill"), fill, DURATION_COLOR, window, cx);
         let arrow = self.on_open.map(|opened| {
             div()
                 .id("arrow")
@@ -116,12 +125,8 @@ impl RenderOnce for Tile {
             .pl(PAD + LABEL_NUDGE)
             .when(!has_arrow, |tile| tile.pr(PAD))
             .gap(ROW_INSET)
-            .map(|tile| match on {
-                true => tile.bg(theme.primary),
-                false => {
-                    tile.bg(theme.surface_raised()).when(available, |tile| tile.hover(move |style| style.bg(hover)))
-                }
-            })
+            .bg(fill)
+            .on_hover(hovered.track())
             .when(!available && has_glyph, |tile| tile.opacity(DIM_OPACITY))
             .when_some(self.on_toggle.filter(|_| available), |tile, toggled| {
                 tile.on_click(move |event, window, cx| toggled(event, window, cx))

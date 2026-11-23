@@ -2,12 +2,12 @@
 //! buttons, and the same buttons where quick settings draws them over the
 //! pill. `ui/bar/PillButton.qml` in today's shell.
 
-use crate::tokens::{ICON_SIZE, PILL_BUTTON_SIZE};
-use crate::{Glyph, Icon, Theme};
+use crate::tokens::{DURATION_FAST, ICON_SIZE, PILL_BUTTON_SIZE};
+use crate::{Glyph, Hovered, Icon, Theme, fade_color, keyed};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    StatefulInteractiveElement, Styled, Window, div,
+    StatefulInteractiveElement, Styled, Window, div, transparent_black,
 };
 use std::rc::Rc;
 
@@ -48,9 +48,15 @@ impl PillButton {
 }
 
 impl RenderOnce for PillButton {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let hovered = Hovered::of(keyed(&self.id, "hovered"), window, cx);
         let theme = Theme::of(cx);
-        let hover = theme.hover();
+        let fill = match (self.picked, hovered.is(cx)) {
+            (true, _) => theme.selected_quiet(),
+            (false, true) => theme.hover(),
+            (false, false) => transparent_black(),
+        };
+        let fill = fade_color(keyed(&self.id, "fill"), fill, DURATION_FAST, window, cx);
         div()
             .id(self.id)
             .relative()
@@ -60,10 +66,8 @@ impl RenderOnce for PillButton {
             .flex()
             .items_center()
             .justify_center()
-            .map(|button| match self.picked {
-                true => button.bg(theme.selected_quiet()),
-                false => button.hover(move |style| style.bg(hover)),
-            })
+            .bg(fill)
+            .on_hover(hovered.track())
             .when_some(self.on_click, |button, clicked| {
                 button.on_click(move |event, window, cx| clicked(event, window, cx))
             })
