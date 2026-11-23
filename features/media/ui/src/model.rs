@@ -248,10 +248,16 @@ impl NowPlaying {
         }
     }
 
-    fn step_bars(&mut self, cx: &mut Context<Self>) {
+    /// New heights for the bars. Nothing redraws for them: the pill reads
+    /// them on the equalizer's own frames while [`NowPlaying::stepping`].
+    fn step_bars(&mut self, _: &mut Context<Self>) {
         let jitter = &mut self.jitter;
         self.bars = logic::equalizer(EQ_BARS, EQ_LOW.into(), EQ_HIGH.into(), || jitter.next());
-        cx.notify();
+    }
+
+    /// Whether the bars get new heights now (playing, in the bar).
+    pub fn stepping(&self) -> bool {
+        self.stepping.is_some()
     }
 
     /// The panel's height for what it shows now: the header, the cover
