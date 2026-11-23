@@ -7,12 +7,12 @@
 use crate::card::{Look, card};
 use crate::popups::{Heights, Popups, Reach};
 use crate::stack::Entry;
-use crate::tokens::{ACTION_HEIGHT, AVATAR, LINE_HEIGHT, PAD_BOTTOM, WIDTH};
+use crate::tokens::{ACTION_HEIGHT, AVATAR, PAD_BOTTOM, WIDTH};
 use gpui::{
     AnyElement, App, AppContext, Context, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, WeakEntity,
     Window, WindowHandle, canvas, div,
     layer_shell::{Anchor, Layer},
-    px, relative, size,
+    px, size,
 };
 use nova_look::tokens::{BAR_MARGIN, DIVIDER_WIDTH, FONT_SIZE_SMALL, GAP, PAD, SHADOW_ROOM};
 use nova_look::{LookStyled, Shape, ShellWindow, Theme, region, set_blur_region};
@@ -185,13 +185,7 @@ impl Render for PopupWindow {
             window.request_animation_frame();
         }
         self.log_frame(moving, now);
-        div()
-            .size_full()
-            .body_text(cx)
-            .line_height(relative(LINE_HEIGHT))
-            .children(drawn)
-            .children(chip)
-            .child(self.regions())
+        div().size_full().body_text(cx).children(drawn).children(chip).child(self.regions())
     }
 }
 

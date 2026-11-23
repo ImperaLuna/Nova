@@ -173,6 +173,11 @@ sample`). Every ui crate draws with it:
   literal in a view.
 - Colors are `Theme::of(cx)`, read while rendering and never kept, so a
   theme change redraws everything with no code in the view.
+- Text starts from `.body_text(cx)` on the root of what a window draws
+  (the stage sets it for pills and panels; an overlay's window sets it
+  itself): the face, size, weight, ink and Qt's line height
+  (`tokens::LINE_HEIGHT`), so text sits as it does in the QML. A view
+  changes only what differs and sets no line height.
 - The shared tokens and the icon glyphs also live in `ui/theme/Tokens.qml`
   and `ui/theme/icons.js` until the Quickshell shell is removed. nova-look's
   tests hold the two equal: change a value in both.
@@ -193,6 +198,11 @@ sample`). Every ui crate draws with it:
   only while a value hasn't settled.
 - An icon is `Icon::new(Glyph::NAME)`; a new glyph joins the list in
   `icon.rs` (and `icons.js`, while it exists).
+- One line of typed text is a `TextField` (caret, selection, clipboard,
+  input methods, a placeholder and a grey completion); it emits
+  `FieldEvent::Changed`. An app's icon is `AppIcon::new(id, name)
+  .icon(path)`, a letter tile when there is no image. A choice between a
+  few options is `Segments`.
 
 ### Porting a feature's UI to GPUI
 
@@ -232,16 +242,16 @@ nova_stage::pill("media.pill", cx, |_screen, cx| {
 });
 ```
 
-A panel that is no pill's own (host `stage.panels`), growing out of
-another feature's pill by that pill's view id. With that pill off it rises
-into place instead. `takes_typing` gives the panel the keyboard and the
-focus each time it opens:
+A panel that is no pill's own (host `stage.panels`). `.from(view id)`
+grows it out of another feature's pill; without it, it rises into place
+and fades in where it stands, as the launcher does. `takes_typing` gives
+the panel the keyboard and the focus each time it opens:
 
 ```rust
-nova_stage::panel("launcher.panel", cx, |_screen, cx| {
-    let launcher = cx.new(Launcher::new);
-    let field = launcher.read(cx).field.clone();
-    Panel::new("launcher", size(LAUNCHER_WIDTH, LAUNCHER_HEIGHT), launcher).from("central-pill").takes_typing(field)
+nova_stage::panel("launcher.panel", cx, |screen, cx| {
+    let launcher = cx.new(|cx| Launcher::new(screen, cx));
+    let (focus, size) = (launcher.read(cx).focus(cx), launcher.read(cx).size(cx));
+    Panel::new("launcher", size, launcher).top(top(screen)).takes_typing(focus)
 });
 ```
 
@@ -319,6 +329,84 @@ frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
 with no feature ported (`app-ui/src/demo.rs`, a short worked example of
 all of the above but parts); `--demo-toggles <n>` toggles one
 `n` times and quits.
+
+**3. The files a port touches.** `features/launcher/ui` is the worked
+example: read it beside `ui/launcher/*.qml` first. A port draws what the
+QML draws from the same messages: novad, the api crate and
+`feature.toml` stay as they are, and the QML stays until the Quickshell
+shell is removed.
+
+| File | What goes in |
+|---|---|
+| `features/<id>/ui/Cargo.toml` | `nova-<id>-ui`, `workspace = "../../../app-ui"`, `publish.workspace = true`, both allowed lists (rule D1) |
+| `features/<id>/ui/src/lib.rs` | `pub fn register`, and nothing else that runs |
+| `features/<id>/ui/src/tokens.rs` | the feature's own sizes, with the test that holds each equal to `ui/theme/Tokens.qml` |
+| a module with no GPUI in it (`rows.rs`) | what the QML's `.js` worked out (which rows, their order, the selection, the scroll), with unit tests |
+| the view (`launcher.rs`) and its drawing (`draw.rs`) | state and what novad is asked in one, `impl Render` in the other |
+| `app-ui/Cargo.toml` | the crate in the allowed list, in `[dependencies]` and in `[workspace.dependencies]`, with any api crate it is the first to use |
+| `app-ui/src/main.rs` | one line in `register_features` |
+| `app-ui/Cargo.lock` | what the build writes |
+| `framework-ui/look` | a piece a second feature will draw too, with its tokens in both `tokens.rs` and `Tokens.qml` |
+
+Other ports are open at once and all add lines to the two `app-ui` files:
+merge main before every push and keep every line, sorted.
+
+**4. Patterns to copy** (each is in the launcher's ui):
+
+- State from novad is a `Live::follow(TOPIC, cx, pick)` the view keeps,
+  with `cx.observe` on it. A question is `Daemon::call::<Reply>(command,
+  cx)`, its task kept in the view so a newer question drops the older
+  one; a command with nothing to wait for is `Daemon::send`.
+- The stage tells a view nothing when its panel opens. The view reads
+  `Stage::is_open` in `render` (the stage redraws its views when a panel
+  opens or closes), compares it with what it saw last, and changes its
+  state in `cx.defer_in`. It resets after closing only once the panel has
+  faded (`DURATION_PANEL + DURATION_FADE`), so the fade shows what was
+  open.
+- Content that changes height computes the panel's size from its state
+  and calls `Stage::resize` in `cx.defer`: the stage reads the view to lay
+  the panel out, so a call inside the view's own update panics.
+- Keys are one `on_key_down` on the view's root. It handles its keys and
+  calls `cx.stop_propagation()`; every other key is left alone, so Esc
+  reaches the stage. A `TextField` child takes its own keys first and
+  lets Up, Down, Enter and Tab through.
+- A long list draws only the rows in view, placed by a layout the pure
+  module computed, with `on_scroll` moving an offset the view keeps. The
+  selection's highlight is one `Eased` the rows sit above.
+- Hover is `group(name)` on the row and `group_hover(name, ...)` on what
+  appears. A button inside a clickable row calls `cx.stop_propagation()`
+  in its own mouse-down.
+- Until IMP-435 lands in the GPUI fork, hover sticks when the pointer
+  leaves a window: `.hover()` and `on_hover` work from where the pointer
+  last was. At a window's edge, follow `on_mouse_move` and the window's
+  own leave as `Popups::pointer` in `features/notifications/ui` does.
+  Delete this note with that fix.
+- What another feature adds comes through its slots: `Slots::for_host`
+  says which views a host has (the launcher shows its Files tab while
+  `launcher.providers` has `files`), with `cx.observe` on `Stage::slots`.
+- An output is named to novad by `screen.name`; `screen.id` is only for
+  `Stage` calls.
+
+**5. Checking a port.** There is no UI test suite: `just ui-check` covers
+the pure module and the tokens, and the rest is seen.
+
+- `nova-ui --frames` beside a real `nova daemon` (`NOVA_SOCKET`, a
+  `features.toml` with only this feature on): open, use and close the
+  panel, and read the log for late frames and for frames at rest.
+- On screen in a cloud thread: sway with `WLR_BACKENDS=headless`, the
+  lavapipe Vulkan driver, `grim` for shots, `wtype` for keys,
+  `wf-recorder` for the recording. Three things there are the tools, not
+  the port: `swaymsg` needs `SWAYSOCK`; the first key of each `wtype`
+  call is lost (lead with `-k Shift_L`); clicks and the wheel from
+  `wlrctl` never reach nova-ui, so say in the PR that they wait for a
+  real pointer.
+- Today's look for the comparison: a small `.qml` that loads the
+  feature's component with canned data, run by `qmlscene` with
+  `QT_QPA_PLATFORM=offscreen` and `grabToImage`. Name no property `data`
+  (it is `Item`'s own).
+- The PR carries a shot beside today's shell in each state, a recording
+  of the panel in use, and a list headed "Differences from today's
+  shell" with everything that is not the same, wanted or not.
 
 ### Moving a feature out of novad
 

@@ -2893,6 +2893,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-app-info"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "nova-bar-api"
 version = "0.1.0"
 dependencies = [
@@ -2949,6 +2956,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-launcher-api"
+version = "0.1.0"
+dependencies = [
+ "nova-app-info",
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-launcher-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "nova-app-info",
+ "nova-launcher-api",
+ "nova-look",
+ "nova-nova-files-api",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-look"
 version = "0.1.0"
 dependencies = [
@@ -2957,6 +2986,7 @@ dependencies = [
  "nova-theme-info",
  "serde",
  "toml 0.8.23",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -2981,6 +3011,10 @@ dependencies = [
  "nova-stage",
  "nova-ui-client",
 ]
+
+[[package]]
+name = "nova-nova-files-api"
+version = "0.1.0"
 
 [[package]]
 name = "nova-peripherals-api"
@@ -3023,6 +3057,7 @@ dependencies = [
  "nova-clock-ui",
  "nova-daemon-info",
  "nova-desktop-info",
+ "nova-launcher-ui",
  "nova-look",
  "nova-notifications-ui",
  "nova-stage",

@@ -8,6 +8,7 @@
 # - gpui
 # - serde
 # - toml
+# - unicode-segmentation
 #
 # Allowed workspace crates:
 # - nova-theme-info
@@ -27,6 +28,7 @@ gpui.workspace = true
 nova-theme-info.workspace = true
 serde.workspace = true
 toml.workspace = true
+unicode-segmentation.workspace = true
 
 [lints]
 workspace = true

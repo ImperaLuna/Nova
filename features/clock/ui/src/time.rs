@@ -147,7 +147,15 @@ impl Render for ClockTime {
             .font_weight(WEIGHT_TITLE)
             .text_color(theme.fg)
             .children(self.digits.iter().map(|each| digit(each, cell, now)));
-        div().h_full().flex().items_center().gap(GAP).font_family(FONT_MONO).text_size(FONT_SIZE).child(day).child(time)
+        div()
+            .h_full()
+            .flex()
+            .items_center()
+            .gap(GAP)
+            .font_family(FONT_MONO)
+            .text_size(FONT_SIZE)
+            .child(day)
+            .child(nova_stage::middle(time))
     }
 }
 

@@ -1,0 +1,355 @@
+//! Drawing the launcher: the search field with its tabs, the pinned apps
+//! as tiles, and the list, of which only the rows in view are built.
+//!
+//! The list is laid out by `rows::Layout`, not by GPUI: every row's place
+//! is known from the rows alone, so the highlight can slide to the
+//! selected one and a long list costs the six rows it shows.
+
+use crate::launcher::{Launcher, NAME, Running, content_width};
+use crate::rows::{Row, file_glyph, shown};
+use crate::tokens::{
+    EMPTY_HEIGHT, FILE_FAINT_OPACITY, FOLDER_COLOR, HIDDEN_ICON_OPACITY, LABEL_HEIGHT, LAUNCHER_GAP, LAUNCHER_PAD,
+    MODES_WIDTH, PIN_BUTTON_SIZE, ROW_GAP, ROW_HEIGHT, SEARCH_HEIGHT, TILE_ICON, TILE_NAME, TILE_SIZE,
+};
+use gpui::{
+    AnyElement, App, Context, Div, FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, Render, ScrollEvent, SharedString, Styled, StyledText, Window, div, px,
+};
+use nova_app_info::App as InstalledApp;
+use nova_launcher_api::PROVIDER_APPS;
+use nova_look::tokens::{
+    APP_ICON_SIZE, FONT_MONO, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP, ICON_SIZE_MENU, ICON_SIZE_SMALL, PAD,
+    RADIUS_CARD, RADIUS_ROW, ROW_INSET, WEIGHT_LABEL, WEIGHT_TITLE,
+};
+use nova_look::{AppIcon, Glyph, Icon, Segments, Theme};
+use nova_nova_files_api::PROVIDER_FILES;
+use nova_stage::Stage;
+use std::time::Instant;
+
+/// What hovering a row or a tile shows: its buttons, its name.
+const ROW_GROUP: &str = "launcher-row";
+const TILE_GROUP: &str = "launcher-tile";
+
+impl Render for Launcher {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.follow_open(Stage::is_open(NAME, self.screen.id, cx), window, cx);
+        let now = Instant::now();
+        if !self.highlight.settled(now) {
+            window.request_animation_frame();
+        }
+        let theme = Theme::of(cx);
+        let (dim, error) = (theme.fg_dim(), theme.error);
+        let pinned = self.shows_pinned(cx);
+        let problem = (!self.problem.is_empty()).then(|| {
+            let what = if self.in_files { "Couldn't open it" } else { "Couldn't start it" };
+            label(error).pr(ROW_INSET).child(div().truncate().child(format!("{what}: {}", self.problem)))
+        });
+        let empty = self.shows_empty().then(|| {
+            let note = format!("Nothing matches “{}”", self.query.trim());
+            let note = div().overflow_hidden().whitespace_nowrap().text_ellipsis_middle().child(note);
+            div().h(EMPTY_HEIGHT).flex().items_center().justify_center().text_color(dim).child(note)
+        });
+        div()
+            .size_full()
+            .p(LAUNCHER_PAD)
+            .flex()
+            .flex_col()
+            .gap(LAUNCHER_GAP)
+            .on_key_down(cx.listener(Self::key))
+            .child(self.search(cx))
+            .children(pinned.then(|| label(dim).child("PINNED")))
+            .children(pinned.then(|| self.tiles(cx)))
+            .children(problem)
+            .children((!self.rows.is_empty()).then(|| self.list(now, cx)))
+            .children(empty)
+    }
+}
+
+/// A heading: over the pinned apps, over a group of rows.
+fn label(color: Hsla) -> Div {
+    div().h(LABEL_HEIGHT).flex_none().pl(ROW_INSET).flex().items_center().text_size(FONT_SIZE_SMALL).text_color(color)
+}
+
+/// A small round button at the end of a row, shown while the row is
+/// hovered or when `stays`.
+fn row_button(icon: Icon, stays: bool, hidden: bool, hover: Hsla) -> Div {
+    let button = div()
+        .size(PIN_BUTTON_SIZE)
+        .flex_none()
+        .rounded_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .hover(move |style| style.bg(hover))
+        .child(icon.size(ICON_SIZE_SMALL));
+    match (hidden, stays) {
+        (true, _) => button.opacity(0.0),
+        (false, true) => button,
+        (false, false) => button.opacity(0.0).group_hover(ROW_GROUP, |style| style.opacity(1.0)),
+    }
+}
+
+impl Launcher {
+    /// The search field: its icon, the text, the modes' tabs with Nova
+    /// Files on, and the key that closes.
+    fn search(&self, cx: &mut Context<Self>) -> Div {
+        let theme = Theme::of(cx);
+        let (dim, raised) = (theme.fg_dim(), theme.surface_raised());
+        let modes = self.has_files(cx).then(|| {
+            let launcher = cx.weak_entity();
+            let tabs = Segments::new([(PROVIDER_APPS, "Apps"), (PROVIDER_FILES, "Files")], self.mode())
+                .filled(false)
+                .on_pick(move |key, _, cx| {
+                    let files = key.as_ref() == PROVIDER_FILES;
+                    let _ = launcher.update(cx, |launcher, cx| launcher.set_mode(files, cx));
+                });
+            div().w(MODES_WIDTH).flex_none().child(tabs)
+        });
+        let field = div().flex_1().min_w_0().text_size(FONT_SIZE_HEADING).font_weight(WEIGHT_LABEL);
+        div()
+            .h(SEARCH_HEIGHT)
+            .flex_none()
+            .rounded(RADIUS_ROW)
+            .bg(raised)
+            .px(LAUNCHER_PAD)
+            .flex()
+            .items_center()
+            .gap(LAUNCHER_GAP)
+            .child(Icon::new(Glyph::SEARCH).size(ICON_SIZE_MENU).color(dim))
+            .child(field.child(self.field.clone()))
+            .children(modes)
+            .child(div().font_family(FONT_MONO).text_size(FONT_SIZE_SMALL).text_color(dim).child("Esc"))
+    }
+
+    /// The pinned apps, spread over one row.
+    fn tiles(&self, cx: &mut Context<Self>) -> Div {
+        let tiles: Vec<AnyElement> = self.pinned(cx).into_iter().map(|app| self.tile(app, cx)).collect();
+        // A full row's spacing, however few there are.
+        let fit = ((content_width() + GAP) / (TILE_SIZE + GAP)).floor();
+        let between = if fit > 1.0 { (content_width() - TILE_SIZE * fit) / (fit - 1.0) } else { px(0.0) };
+        div().h(TILE_SIZE + TILE_NAME).flex_none().flex().gap(between).children(tiles)
+    }
+
+    /// A pinned app: its icon on a raised tile, its name under it on
+    /// hover. A click runs it.
+    fn tile(&self, app: &InstalledApp, cx: &Context<Self>) -> AnyElement {
+        let theme = Theme::of(cx);
+        let (dim, raised, hover, accent) = (theme.fg_dim(), theme.surface_raised(), theme.hover(), theme.accent_fill());
+        let wash = div().absolute().inset_0().rounded(RADIUS_CARD);
+        let wash = if self.is_running(PROVIDER_APPS, &app.id) {
+            wash.bg(accent)
+        } else {
+            wash.group_hover(TILE_GROUP, move |style| style.bg(hover))
+        };
+        let id = app.id.clone();
+        let face = div()
+            .relative()
+            .size(TILE_SIZE)
+            .rounded(RADIUS_CARD)
+            .bg(raised)
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .child(wash)
+            .child(AppIcon::new(app.id.clone(), app.name.clone()).icon(app.icon.clone()).size(TILE_ICON))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |launcher, _: &MouseDownEvent, _, cx| {
+                    launcher.run(Running { provider: PROVIDER_APPS.into(), id: id.clone() }, false, cx);
+                }),
+            );
+        // A little wider than the tile, so a longer name still fits.
+        let name = div()
+            .absolute()
+            .top(TILE_SIZE)
+            .left(-LAUNCHER_GAP)
+            .w(TILE_SIZE + LAUNCHER_GAP * 2.0)
+            .h(TILE_NAME)
+            .flex()
+            .items_end()
+            .justify_center()
+            .text_size(FONT_SIZE_SMALL)
+            .text_color(dim)
+            .opacity(0.0)
+            .group_hover(TILE_GROUP, |style| style.opacity(1.0))
+            .child(div().truncate().child(app.name.clone()));
+        div()
+            .group(TILE_GROUP)
+            .relative()
+            .w(TILE_SIZE)
+            .h(TILE_SIZE + TILE_NAME)
+            .flex_none()
+            .child(face)
+            .child(name)
+            .into_any_element()
+    }
+
+    /// The list: the highlight behind the selected row, and the rows in
+    /// view, each under its group's heading when it's the group's first.
+    fn list(&self, now: Instant, cx: &mut Context<Self>) -> Div {
+        let theme = Theme::of(cx);
+        let (dim, selected, accent) = (theme.fg_dim(), theme.selected(), theme.accent_fill());
+        let height = self.list_height();
+        let highlight = div()
+            .absolute()
+            .left_0()
+            .right_0()
+            .top(px(self.highlight.value(now) - self.scroll))
+            .h(ROW_HEIGHT)
+            .rounded(RADIUS_ROW)
+            .bg(if self.running_selected() { accent } else { selected });
+        let items: Vec<Div> = self
+            .layout
+            .visible(self.scroll, height)
+            .map(|index| {
+                let heading =
+                    self.layout.heads(index).then(|| label(dim).child(self.rows[index].group.heading().to_uppercase()));
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(self.layout.top(index) - self.scroll))
+                    .children(heading)
+                    .child(self.row(index, cx))
+            })
+            .collect();
+        div()
+            .relative()
+            .h(px(height))
+            .flex_none()
+            .overflow_hidden()
+            .on_scroll(cx.listener(|launcher, event: &ScrollEvent, _, cx| {
+                let turned = event.delta.pixel_delta(ROW_HEIGHT + ROW_GAP);
+                launcher.scrolled(-f32::from(turned.y), cx);
+                cx.stop_propagation();
+            }))
+            .child(highlight)
+            .children(items)
+    }
+
+    /// One row: its icon, its name (the letters a search matched in the
+    /// accent) and what it is, dimmer. Hovering an app shows a pin button,
+    /// which stays lit while the app is pinned; a file shows a button that
+    /// shows it in its folder. The selected row shows ↵. While it runs,
+    /// the highlight behind it is the accent and its text turns to match.
+    fn row(&self, index: usize, cx: &mut Context<Self>) -> Div {
+        let row = &self.rows[index];
+        let theme = Theme::of(cx);
+        let running = index == self.selected && self.running_selected();
+        let hidden = row.file.as_ref().is_some_and(|file| file.hidden);
+        let ink = match (running, hidden) {
+            (true, _) => theme.on_accent,
+            (false, true) => theme.fg.alpha(FILE_FAINT_OPACITY),
+            (false, false) => theme.fg,
+        };
+        let dim = if running { theme.on_accent } else { theme.fg_dim() };
+        let enter = div().font_family(FONT_MONO).text_size(FONT_SIZE_SMALL).text_color(dim).child("↵");
+        let end = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(PAD)
+            .children(self.row_buttons(index, running, cx))
+            .child(if index == self.selected { enter } else { enter.opacity(0.0) });
+        let description = (!row.description.is_empty()).then(|| {
+            let text = if row.file.is_some() { shown(&row.description) } else { row.description.clone() };
+            div().flex_1().min_w_0().truncate().text_size(FONT_SIZE_SMALL).text_color(dim).child(text)
+        });
+        let name = div().min_w_0().truncate().font_weight(WEIGHT_LABEL).text_color(ink).child(name(row, running, cx));
+        let text = div().flex_1().min_w_0().flex().items_center().gap(GAP).child(name).children(description);
+        div()
+            .group(ROW_GROUP)
+            .h(ROW_HEIGHT)
+            .px(ROW_INSET)
+            .flex()
+            .items_center()
+            .gap(PAD)
+            .cursor_pointer()
+            .on_mouse_move(cx.listener(move |launcher, _, _, cx| launcher.pointed(index, cx)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |launcher, _: &MouseDownEvent, _, cx| {
+                    if launcher.running.is_none() {
+                        launcher.select(index, cx);
+                        launcher.run_row(index, false, cx);
+                    }
+                }),
+            )
+            .child(row_icon(row, running, cx))
+            .child(text)
+            .child(end)
+    }
+
+    /// A row's buttons: an app's pin, a file's "show in its folder".
+    fn row_buttons(&self, index: usize, running: bool, cx: &mut Context<Self>) -> Vec<Div> {
+        let row = &self.rows[index];
+        let theme = Theme::of(cx);
+        let (dim, primary, hover) = (theme.fg_dim(), theme.primary, theme.hover());
+        let mut buttons = Vec::new();
+        if row.provider == PROVIDER_APPS {
+            let pinned = self.is_pinned(&row.id, cx);
+            let pin = Icon::new(Glyph::PIN).color(if pinned { primary } else { dim });
+            let pin = if pinned { pin.filled(Glyph::PIN) } else { pin };
+            let id = row.id.clone();
+            buttons.push(row_button(pin, pinned, running, hover).on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |launcher, _: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    launcher.pin(&id, !pinned, cx);
+                }),
+            ));
+        }
+        if row.file.is_some() {
+            buttons.push(row_button(Icon::new(Glyph::FOLDER).color(dim), false, running, hover).on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |launcher, _: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    launcher.run_row(index, true, cx);
+                }),
+            ));
+        }
+        buttons
+    }
+}
+
+/// A row's icon: an app's own, or a found file's type as a line icon, a
+/// folder's in its own color and a hidden file's fainter.
+fn row_icon(row: &Row, running: bool, cx: &App) -> Div {
+    let theme = Theme::of(cx);
+    let slot = div().size(APP_ICON_SIZE).flex_none().flex().items_center().justify_center();
+    let Some(file) = &row.file else {
+        return slot.child(AppIcon::new(row.id.clone(), row.name.clone()).icon(row.icon.clone()));
+    };
+    let color = match (running, file.dir) {
+        (true, _) => theme.on_accent,
+        (false, true) => gpui::rgb(FOLDER_COLOR).into(),
+        (false, false) => theme.fg_dim(),
+    };
+    let icon = Icon::new(file_glyph(file)).size(ICON_SIZE_MENU).color(color);
+    if file.hidden { slot.opacity(HIDDEN_ICON_OPACITY).child(icon) } else { slot.child(icon) }
+}
+
+/// A row's name, the runs a search matched heavier and in the accent.
+fn name(row: &Row, running: bool, cx: &App) -> StyledText {
+    let accent = (!running).then_some(Theme::of(cx).primary);
+    let mut text = String::new();
+    let mut matched = Vec::new();
+    for run in &row.runs {
+        let start = text.len();
+        if row.file.is_some() {
+            text.push_str(&shown(&run.text));
+        } else {
+            text.push_str(&run.text);
+        }
+        if run.matched {
+            let weight: FontWeight = WEIGHT_TITLE;
+            matched.push((
+                start..text.len(),
+                HighlightStyle { color: accent, font_weight: Some(weight), ..HighlightStyle::default() },
+            ));
+        }
+    }
+    StyledText::new(SharedString::from(text)).with_highlights(matched)
+}

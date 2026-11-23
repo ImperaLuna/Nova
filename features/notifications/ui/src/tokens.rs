@@ -5,10 +5,6 @@
 use gpui::{Pixels, px};
 use std::time::Duration;
 
-/// Text's line height, as a share of its size: Inter's own spacing, as
-/// Qt lays text out (GPUI's default is wider).
-pub const LINE_HEIGHT: f32 = 1.21;
-
 // Pop-ups: this wide under the right pill, at most SHOWN at once, each
 // staying TIMEOUT unless its app asks otherwise; several coming at once
 // open into their slots STAGGER apart.
