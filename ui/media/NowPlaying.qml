@@ -95,6 +95,11 @@ StagePanel {
             workspaceAsked(playerId);
     }
     onOpenChanged: {
+        // Nothing playing (`nova toggle media`): there is no panel to open.
+        if (open && !player) {
+            open = false;
+            return;
+        }
         console.info(`nova: now playing panel ${open ? "opened" : "closed"}`);
         if (open) {
             workspace = "";

@@ -196,6 +196,13 @@ Item {
             compare(pill.width, 0);
         }
 
+        function test_nothing_playing_opens_no_panel() {
+            const pill = createPill(stage.media([], undefined));
+            pill.open = true;
+            verify(!pill.open);
+            verify(!pill.visible);
+        }
+
         function test_a_playing_player_slides_the_pill_out() {
             const pill = createPill(stage.media([], undefined));
             const spotify = playing();

@@ -14,6 +14,13 @@
 //! isn't playing, else the one that started playing last, else the
 //! one paused last.
 //!
+//! A player whose track is a short clip (a known length under
+//! [`SHORT_CLIP`]) is left out: not published, never shown, its start ends
+//! no pick, and no command reaches it. Chat apps built on Electron (Ferdium,
+//! Slack, Discord) announce a player for every notification sound and short
+//! clip, which no one means to control. It comes back by itself once its
+//! track is longer, or its length unknown (streams).
+//!
 //! The app a player belongs to is looked up in the app index by its
 //! `DesktopEntry`, then by the process that owns it on the bus, as the
 //! tray does (the [`ProcessNames`] port novad fills with the tray's
@@ -59,6 +66,9 @@ const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 const MAX_PLAYERS: usize = 32;
 /// How long novad waits for a player, or the bus, to answer a call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
+/// A track shorter than this is a sound or a clip, not media to control:
+/// its player is left out. No song, video or podcast is this short.
+const SHORT_CLIP: Duration = Duration::from_secs(15);
 
 /// Where the players are, and where covers are downloaded to.
 #[derive(Clone)]
@@ -305,12 +315,21 @@ fn names(player: &Player) -> Vec<String> {
     names
 }
 
-/// The player `id`, if novad follows it.
+/// The player `id`, if novad follows it and lists it.
 fn find<'a>(state: &'a State, id: &str) -> Result<&'a Player, String> {
     if id.len() > MEDIA_PLAYER_MAX_BYTES {
         return Err(format!("player ids are at most {MEDIA_PLAYER_MAX_BYTES} bytes"));
     }
-    state.players.iter().find(|player| player.id == id).ok_or_else(|| format!("no player {id:?}"))
+    let player = state.players.iter().find(|player| player.id == id).ok_or_else(|| format!("no player {id:?}"))?;
+    match player.read.as_ref().is_some_and(short_clip) {
+        true => Err(format!("{id} plays a short clip, which isn't listed")),
+        false => Ok(player),
+    }
+}
+
+/// Whether `read`'s track is a short clip, whose player is left out.
+fn short_clip(read: &Read) -> bool {
+    read.length_us > 0 && read.length_us < SHORT_CLIP.as_micros() as i64
 }
 
 impl Shared {
@@ -320,7 +339,7 @@ impl Shared {
             .players
             .iter()
             .filter_map(|player| {
-                let read = player.read.as_ref()?;
+                let read = player.read.as_ref().filter(|read| !short_clip(read))?;
                 let app = apps.find_app(&names(player)).map(|app| (apps.is_browser(&app.id), app));
                 let identity = if read.identity.is_empty() { &player.id[PREFIX.len()..] } else { &read.identity };
                 Some(MediaPlayer {
@@ -489,8 +508,9 @@ impl Shared {
             match read.status {
                 PlaybackStatus::Playing => {
                     player.played = *clock;
-                    // Another player starting ends the user's pick.
-                    if picked.as_deref().is_some_and(|picked| picked != id) {
+                    // Another player starting ends the user's pick, unless
+                    // it only plays a short clip.
+                    if picked.as_deref().is_some_and(|picked| picked != id) && !short_clip(&read) {
                         *picked = None;
                     }
                 }
@@ -578,9 +598,10 @@ impl Shared {
 }
 
 /// The player the bar shows: the user's pick while it isn't stopped, else
-/// the one that started playing last, else the one paused last.
+/// the one that started playing last, else the one paused last. Never one
+/// left out for a short clip.
 fn shown(state: &State) -> Option<String> {
-    let status = |player: &Player| player.read.as_ref().map(|read| read.status);
+    let status = |player: &Player| player.read.as_ref().filter(|read| !short_clip(read)).map(|read| read.status);
     let picked = state.picked.as_ref().and_then(|picked| state.players.iter().find(|player| &player.id == picked));
     let latest = |wanted: PlaybackStatus, when: fn(&Player) -> u64| {
         state.players.iter().filter(|player| status(player) == Some(wanted)).max_by_key(|player| when(player))
