@@ -277,6 +277,9 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 cx.observe_in(&panels, window, |stage: &mut StageView, _, window, cx| stage.follow_panels(window, cx)),
                 cx.observe_in(&screens, window, StageView::follow_screen),
                 Shown::observe(cx, StageView::follow_shown),
+                // A stage the compositor closed (its screen went and came
+                // back) takes the windows beside it along.
+                cx.on_release(|stage: &mut StageView, cx| stage.leave(cx)),
             ];
             let frames = log_frames.then(|| FrameLog::new(screen.name.to_string(), screen.refresh, now));
             let mut stage = StageView {
@@ -320,6 +323,8 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
         Ok(window) => {
             if let (Some(beside), Ok(stage)) = (panel_window, window.update(cx, |_, _, cx| cx.weak_entity())) {
                 let _ = beside.update(cx, |beside, _, _| beside.set_stage(stage));
+                // What it drew before it had a stage to tell.
+                let _ = window.update(cx, |stage, _, cx| stage.panel_window_changed(cx));
             }
             Some(window)
         }
