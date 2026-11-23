@@ -80,7 +80,6 @@ pub fn apply(listing: &mut Listing, requests: &[Request]) {
 /// The volume `direction` (1 or -1) steps of `step` from `volume`, on the
 /// step grid, to the percent. Nova's own controls stop at 100%: up leaves
 /// a volume another app set above it alone, down steps from 100%.
-/// (`volume.js` `stepped` in today's shell.)
 pub fn stepped(volume: f32, direction: f32, step: f32) -> f32 {
     if direction > 0.0 && volume >= VOLUME_MAX {
         return volume;
@@ -96,7 +95,7 @@ pub fn stepped(volume: f32, direction: f32, step: f32) -> f32 {
 /// it there. With no `before` (the first listing from a server) nothing is
 /// new: what was there is left as the server chose. Going back to the
 /// dongle needs nothing: the Bluetooth device goes and the server falls
-/// back. (`VolumeService.qml`'s follow in today's shell.)
+/// back.
 pub fn arrived_bluetooth(before: Option<&Listing>, now: &Listing) -> Vec<Request> {
     let Some(before) = before else { return Vec::new() };
     let new_output = now.sinks.iter().find(|sink| {

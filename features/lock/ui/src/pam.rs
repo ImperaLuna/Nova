@@ -1,10 +1,9 @@
 //! The password check: PAM, through the system's own `libpam`, called from
-//! this process so the password never leaves it (today's shell does the
-//! same through Quickshell's `PamContext`).
+//! this process so the password never leaves it.
 //!
 //! [`check`] blocks while PAM works (a wrong password takes about two
 //! seconds), so it runs off the main thread. The PAM service is
-//! `ui/lock/pam/nova-lock`, compiled in: the login password as `pam_unix`
+//! `pam/nova-lock`, compiled in: the login password as `pam_unix`
 //! checks it, wherever the distro keeps it. PAM reads a service from a
 //! folder on disk, so each check writes the file into a private folder of
 //! the runtime directory first and points PAM at that
@@ -27,7 +26,7 @@ use std::path::{Path, PathBuf};
 /// The PAM service's name, which is its file's name.
 const SERVICE: &CStr = c"nova-lock";
 const SERVICE_FILE: &str = "nova-lock";
-const SERVICE_CONFIG: &str = include_str!("../../../../ui/lock/pam/nova-lock");
+const SERVICE_CONFIG: &str = include_str!("../pam/nova-lock");
 /// Where the service file goes, under the runtime directory.
 const CONFIG_FOLDER: &str = "nova-ui/pam";
 const RUNTIME_DIR_VAR: &str = "XDG_RUNTIME_DIR";

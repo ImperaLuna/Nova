@@ -25,7 +25,7 @@ use nova_volume_osd_api::VolumeKey;
 use serde_json::json;
 
 /// Every message shape on the wire. A change here changes the protocol:
-/// accept with `cargo insta review`, then run `just protocol-js`.
+/// accept with `cargo insta review`.
 mod rules;
 mod samples;
 use samples::*;

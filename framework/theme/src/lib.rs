@@ -216,17 +216,4 @@ mod tests {
             assert!(problems.len() == 1 && problems[0].contains(token), "{token}: {problems:?}");
         }
     }
-
-    /// Tokens.qml declares a property for every palette token, so the UI can
-    /// apply each color it gets from novad.
-    #[test]
-    fn tokens_qml_declares_every_palette_token() {
-        let tokens_qml = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/theme/Tokens.qml");
-        let tokens_qml = std::fs::read_to_string(tokens_qml).unwrap();
-        let palette = serde_json::to_value(default_theme_file().dark).unwrap();
-        for token in palette.as_object().unwrap().keys() {
-            let declared = format!("property color {token}\n");
-            assert!(tokens_qml.contains(&declared), "Tokens.qml has no `{}`", declared.trim());
-        }
-    }
 }

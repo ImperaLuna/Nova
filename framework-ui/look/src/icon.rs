@@ -11,9 +11,6 @@
 //! ([`IconAssets`], which `nova-ui` passes to GPUI at start), under a path
 //! that names them and the stroke's width; GPUI caches the drawn mask per
 //! size, so an icon is built once.
-//!
-//! The glyphs came from `ui/theme/icons.js`. Until the Quickshell shell is
-//! removed (IMP-368) a test holds the two lists equal.
 
 use crate::Theme;
 use crate::tokens::{ICON_GRID, ICON_SIZE, ICON_STROKE};
@@ -263,39 +260,6 @@ fn document(path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-
-    const ICONS_JS: &str = include_str!("../../../ui/theme/icons.js");
-
-    /// icons.js's glyphs by name. A glyph there is a string, or strings and
-    /// earlier glyphs joined with `+`.
-    fn js_glyphs() -> Vec<(String, String)> {
-        let mut glyphs: Vec<(String, String)> = Vec::new();
-        for line in ICONS_JS.lines() {
-            let Some((name, parts)) = line.strip_prefix("var ").and_then(|rest| rest.split_once(" = ")) else {
-                continue;
-            };
-            let known: HashMap<&str, &str> = glyphs.iter().map(|(name, path)| (name.as_str(), path.as_str())).collect();
-            let path: String = parts
-                .trim_end_matches(';')
-                .split('+')
-                .map(|part| match part.trim().strip_prefix('"').and_then(|text| text.strip_suffix('"')) {
-                    Some(text) => text,
-                    None => known.get(part.trim()).unwrap_or_else(|| panic!("icons.js: {name} uses unknown {part}")),
-                })
-                .collect();
-            glyphs.push((name.to_owned(), path));
-        }
-        glyphs
-    }
-
-    #[test]
-    fn the_glyphs_are_icons_js_s() {
-        let ours: Vec<(String, String)> =
-            Glyph::ALL.iter().map(|glyph| (glyph.name.to_owned(), glyph.path.to_owned())).collect();
-        assert_eq!(ours, js_glyphs());
-        assert!(ours.len() > 60, "icons.js parsed to only {} glyphs", ours.len());
-    }
 
     #[test]
     fn an_icon_s_path_gives_back_its_document() {

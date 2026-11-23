@@ -87,8 +87,8 @@ pub struct FeatureState {
 pub struct Slot {
     /// The host's name, like `bar.left` (`nova_features::HOSTS`).
     pub host: String,
-    /// The view's id, like `media.pill`: the UI maps it to its component
-    /// (ui/slots/Views.qml), so the manifest never names a file.
+    /// The view's id, like `media.pill`: the feature's UI registers a view
+    /// under it, so the manifest never names a file.
     pub view: String,
     /// Sort key inside the host, lowest first (leftmost in a row), counted
     /// in tens to leave room. Ties sort by feature id.

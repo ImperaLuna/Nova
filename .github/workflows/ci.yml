@@ -5,14 +5,11 @@ name: CI
 # runners: set `runs-on: ubuntu-latest` and add
 # `- uses: cachix/install-nix-action@v31` after checkout.
 #
-# One job, `fast`, runs every flake check (build, cargo tests, lints, QML
-# tests) on every push. `checks`, the status the ruleset and
-# the merge lane (scripts/update-prs.sh) read, passes when it does.
-#
-# A PR that changes only the UI side's crates (app-ui/, framework-ui/,
-# features/<id>/ui/: the GPUI port, which has no UI test suite) skips the QML
-# checks, which run the Quickshell UI it can't touch (IMP-393). The flake keeps those crates out of every daemon build, so the
-# daemon's other checks come from the store.
+# One job, `fast`, runs every flake check (build, cargo tests, lints) on
+# every push. `checks`, the status the ruleset and the merge lane
+# (scripts/update-prs.sh) read, passes when it does. The flake keeps the UI
+# side's crates out of every daemon build, so a UI-only PR gets the daemon's
+# checks from the store.
 #
 # `closed` starts a run with every job skipped, only so the concurrency group
 # below cancels the branch's queued or running run once its PR merges or
@@ -36,15 +33,9 @@ concurrency:
 jobs:
   fast:
     name: fast checks
-    needs: shape
     if: github.event.action != 'closed'
     runs-on: [self-hosted, nova]
     timeout-minutes: 30
-    env:
-      UI_ONLY: ${{ needs.shape.outputs.ui_only }}
-      # The checks that run or read the Quickshell UI, skipped on a PR that
-      # changes only the UI side's crates.
-      QML_CHECKS: qmllint qmlformat qml-tests shaders
     steps:
       - uses: actions/checkout@v7
         with:
@@ -55,51 +46,12 @@ jobs:
       - name: flake checks
         run: |
           checks=.#checks.x86_64-linux
-          skipped=" "
-          if [[ $UI_ONLY == true ]]; then
-            echo "::notice::Only UI crates changed: skipping the QML checks ($QML_CHECKS)."
-            skipped+="$QML_CHECKS "
-          fi
           names=$(nix eval --raw "$checks" --apply 'c: builtins.concatStringsSep " " (builtins.attrNames c)')
           targets=()
           for name in $names; do
-            [[ $skipped == *" $name "* ]] || targets+=("$checks.$name")
+            targets+=("$checks.$name")
           done
           nix build -L --no-link --keep-going "${targets[@]}"
-
-  # Whether the PR changes only the UI side's crates. On GitHub's runners, so
-  # it never waits behind the self-hosted queue.
-  shape:
-    name: PR shape
-    if: github.event.action != 'closed'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      pull-requests: read
-    outputs:
-      ui_only: ${{ steps.files.outputs.ui_only }}
-    steps:
-      # Every file the PR changes against its base, a renamed file under
-      # both names: the whole PR, not its last push. Anything outside the
-      # UI crates' folders (the flake, CI, a script, a daemon crate) makes
-      # it an ordinary PR. From the API, so nothing the PR's code does can
-      # change the answer. A run started by hand tests everything.
-      - id: files
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          UI_FOLDERS: ^(app-ui|framework-ui|features/[^/]+/ui)/
-        run: |
-          ui_only=false
-          if [[ -n $PR ]]; then
-            files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
-              --jq '.[] | .filename, (.previous_filename // empty)')
-            if [[ -n $files ]] && ! grep -qvE "$UI_FOLDERS" <<<"$files"; then
-              ui_only=true
-            fi
-          fi
-          echo "Only UI crates changed: $ui_only"
-          echo "ui_only=$ui_only" >>"$GITHUB_OUTPUT"
 
   # The status the ruleset requires: green when the fast checks passed.
   checks:

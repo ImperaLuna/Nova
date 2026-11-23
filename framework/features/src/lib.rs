@@ -33,8 +33,8 @@
 //! pick gets. `features.toml` picks one under `[modes]`
 //! (`nova-files = "full"`).
 //!
-//! Each `[[slot]]` is a place its UI goes: a view (an id the UI maps to its
-//! component in ui/slots/Views.qml) in one of the [`HOSTS`], sorted there by
+//! Each `[[slot]]` is a place its UI goes: a view (an id the feature's UI
+//! registers a view under) in one of the [`HOSTS`], sorted there by
 //! `order`. novad sends them with the feature's state, so a new feature
 //! plugs into the bar from its own manifest instead of the shell's files.
 
@@ -52,7 +52,7 @@ use std::path::{Path, PathBuf};
 pub const DISTROS: &[&str] = &["nix", "arch", "fedora", "debian"];
 
 /// A place in the UI that slots fill, and the feature that draws it. The
-/// UI's names for them are the `HOST_*` constants in ui/slots/slots.js.
+/// UI's names for them are the `HOST_*` constants in `nova_stage::slots`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Host {
     pub name: &'static str,
@@ -67,7 +67,7 @@ pub struct Host {
 /// What a host's view ids name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Views {
-    /// A UI component each (ui/slots/views.js).
+    /// A view of the feature's UI each.
     Ui,
     /// A service in novad each, whose answers the owner's UI shows in its own
     /// way (the launcher's providers, `nova_launcher::providers`).
@@ -564,24 +564,8 @@ mod tests {
         assert!(toml::from_str::<Manifest>(unknown).is_err(), "unknown slot fields are rejected");
     }
 
-    /// The quoted strings of `prefix` lines in a UI file, like
-    /// `var HOST_BAR_LEFT = "bar.left";` or `"media.pill": "../media/X.qml",`.
-    fn js_strings(file: &str, prefix: &str) -> Vec<Vec<String>> {
-        let text = std::fs::read_to_string(repo_features().join("../ui").join(file)).unwrap();
-        text.lines()
-            .map(str::trim)
-            .filter(|line| line.starts_with(prefix))
-            .map(|line| line.split('"').skip(1).step_by(2).map(String::from).collect())
-            .collect()
-    }
-
     #[test]
-    fn the_ui_names_the_same_hosts() {
-        let mut ui: Vec<String> = js_strings("slots/slots.js", "var HOST_").into_iter().flatten().collect();
-        let mut known: Vec<String> = HOSTS.iter().map(|host| host.name.to_string()).collect();
-        ui.sort();
-        known.sort();
-        assert_eq!(ui, known, "ui/slots/slots.js and HOSTS differ");
+    fn a_host_s_owner_is_a_feature() {
         let ids: Vec<String> = load_all(&repo_features()).unwrap().into_iter().map(|m| m.id).collect();
         for host in HOSTS {
             if let Some(owner) = host.owner {
@@ -600,33 +584,10 @@ mod tests {
     }
 
     #[test]
-    fn every_slot_names_a_known_host_and_a_registered_view() {
-        let views = js_strings("slots/Views.qml", "\"");
-        let imports = js_strings("slots/Views.qml", "import \"../");
-        let slots = repo_features().join("../ui/slots");
-        let whole_ui = repo_features().join("../ui/shell.qml").is_file();
+    fn every_slot_names_a_known_host() {
         for manifest in load_all(&repo_features()).unwrap() {
             for slot in &manifest.slots {
-                let known = host(&slot.host).unwrap_or_else(|| panic!("{}: unknown host {}", manifest.id, slot.host));
-                if known.views == Views::Daemon {
-                    // novad's tests check its own (its launcher wiring's PROVIDERS).
-                    continue;
-                }
-                let file = views
-                    .iter()
-                    .find(|entry| entry.first() == Some(&slot.view))
-                    .and_then(|entry| entry.get(1))
-                    .unwrap_or_else(|| panic!("{}: view {} isn't in ui/slots/Views.qml", manifest.id, slot.view));
-                // The Nix build's source has ui/slots but not the views.
-                if whole_ui {
-                    assert!(slots.join(file).is_file(), "{}: {file} doesn't exist next to ui/slots", slot.view);
-                }
-                let folder = file.split('/').nth(1).unwrap_or_default();
-                assert!(
-                    imports.iter().any(|import| import.first().is_some_and(|dir| dir == &format!("../{folder}"))),
-                    "{}: ui/slots/Views.qml must import \"../{folder}\" for Quickshell to load it",
-                    slot.view
-                );
+                assert!(host(&slot.host).is_some(), "{}: unknown host {}", manifest.id, slot.host);
             }
         }
     }

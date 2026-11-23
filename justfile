@@ -7,11 +7,11 @@ default:
     @just --list
 
 # Everything CI runs
-check: fmt-check layout test-layout lint lint-nix lint-traps file-length deny test lint-qml test-qml test-install test-stack shaders-check
+check: fmt-check layout test-layout lint lint-nix lint-traps file-length deny test test-install test-stack
 
 # What scripts/stack.sh restack runs on each branch of a stack before pushing it:
 # `check` without the slow advisory fetch and the script tests
-check-branch: fmt-check layout lint lint-nix file-length test lint-qml test-qml shaders-check
+check-branch: fmt-check layout lint lint-nix file-length test
 
 # The UI side: nova-ui and the crates that use GPUI, in their own cargo
 # workspace (AGENTS.md, Layout). Its recipes run inside `nix develop .#ui`.
@@ -75,15 +75,13 @@ lint:
 deny:
     cargo deny check
 
-# Format Rust, QML and Nix
+# Format Rust and Nix
 fmt:
     cargo fmt --all
-    scripts/qmlformat.sh
     nixfmt $(git ls-files '*.nix')
 
 fmt-check:
     cargo fmt --all --check
-    scripts/qmlformat.sh --check
     nixfmt --check $(git ls-files '*.nix')
 
 # statix and deadnix over the Nix files
@@ -91,17 +89,9 @@ lint-nix:
     statix check --ignore 'docs/*' .
     deadnix --fail $(git ls-files '*.nix')
 
-# Rewrite ui/daemon/protocol.js's generated names from the types novad serves
-protocol-js:
-    NOVA_WRITE_PROTOCOL_JS=1 cargo test -p novad protocol_js::protocol_js_is_current
-
 # Review changed insta snapshots (each crate's snapshots folders)
 snapshots:
     cargo insta review
-
-# qmllint over ui/ (fails on any warning)
-lint-qml:
-    scripts/qmllint.sh $(echo "$NOVA_QML_IMPORTS" | tr ':' ' ')
 
 # install.sh against a fake release, no network needed
 test-install:
@@ -110,18 +100,6 @@ test-install:
 # scripts/stack.sh (the stack keeper's tool) on a throwaway stack
 test-stack:
     scripts/test-stack.sh
-
-# Compile ui/**/*.frag into the .qsb files QML loads (committed)
-shaders:
-    scripts/shaders.sh
-
-# Fail if a committed .qsb doesn't match its .frag
-shaders-check:
-    scripts/shaders.sh --check
-
-# QML unit tests (ui/tests), no display needed
-test-qml:
-    cd ui && QT_QPA_PLATFORM=offscreen qmltestrunner -input tests
 
 build:
     cargo build --workspace

@@ -5,7 +5,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/ImperaLuna/Nova/main/install.sh | sh
 #
-# Nova lands in ~/.local: bin/nova, plus share/nova (the UI, features and
+# Nova lands in ~/.local: bin/nova, plus share/nova (features and
 # themes), which is where nova looks next to its binary. It comes from the
 # latest release when there's a build for this machine, else it's built from
 # source with cargo. Arguments are passed on to `nova setup` (--dry-run,
@@ -82,7 +82,7 @@ build_source() {
 	cargo build --release --locked --manifest-path "$work/src/Cargo.toml" --target-dir "$work/target" --bin nova
 	mkdir -p "$work/tree/bin" "$work/tree/share/nova"
 	cp "$work/target/release/nova" "$work/tree/bin/nova"
-	for dir in features themes ui; do
+	for dir in features themes; do
 		cp -R "$work/src/$dir" "$work/tree/share/nova/$dir"
 	done
 }

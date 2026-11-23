@@ -23,7 +23,7 @@ pub fn greeting(hour: i8) -> &'static str {
     }
 }
 
-/// Distributions with a logo of Nova's own (`ui/quick_settings/logos`).
+/// Distributions with a logo of Nova's own (`logos`).
 const BUNDLED_LOGOS: [&str; 1] = ["nixos"];
 
 /// Where the header's logo comes from.

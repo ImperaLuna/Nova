@@ -46,21 +46,6 @@ pub fn router() -> Router<Daemon> {
             |daemon, caller, command| Connection::new(daemon, caller).workspaces(command),
             |_, _, _| {},
         )
-        .listed_by(protocol_js_position)
-}
-
-/// The UI's protocol file. It is generated from these routes, so it names
-/// every command, and its order stays put as routes change (`protocol_js`).
-const PROTOCOL_JS: &str = include_str!("../../ui/daemon/protocol.js");
-
-/// Where protocol.js names the command `name`, so an unknown command's
-/// error lists the names in one fixed order, whatever order the routes
-/// were added in.
-fn protocol_js_position(name: &str) -> usize {
-    PROTOCOL_JS
-        .lines()
-        .position(|line| line.strip_prefix("var CMD_").and_then(|rest| rest.split('"').nth(1)) == Some(name))
-        .unwrap_or(usize::MAX)
 }
 
 /// One of novad's own commands, read with its `subscribe` topics checked
@@ -231,20 +216,5 @@ mod tests {
             assert_eq!(owners, 1, "{topic:?} has {owners} owners");
         }
         assert!(modules.iter().all(|topic| crate::topics::TOPICS.contains(topic)));
-    }
-
-    /// Every command the UI's protocol file names has exactly one route, and
-    /// no route takes a command the file lacks. (A name two routes claim
-    /// already stops the router being built.)
-    #[test]
-    fn every_command_has_one_route() {
-        let js = super::PROTOCOL_JS;
-        let mut named: Vec<&str> =
-            js.lines().filter_map(|line| line.strip_prefix("var CMD_")?.split('"').nth(1)).collect();
-        let mut routed = super::router().names().to_vec();
-        assert!(!named.is_empty(), "protocol.js names no commands");
-        named.sort_unstable();
-        routed.sort_unstable();
-        assert_eq!(routed, named);
     }
 }

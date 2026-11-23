@@ -159,7 +159,7 @@ restack() {
   target=${CARGO_TARGET_DIR:-$(git rev-parse --show-toplevel)/target}
   # The default check's tools come from the dev shell; without them every
   # branch would look broken.
-  if [[ $STACK_CHECK == "just "* ]] && ! { command -v just >/dev/null && [[ -n ${NOVA_QML_IMPORTS:-} ]]; }; then
+  if [[ $STACK_CHECK == "just "* ]] && ! { command -v just >/dev/null && [[ -n ${IN_NIX_SHELL:-} ]]; }; then
     echo "restack checks each branch with \`$STACK_CHECK\`: run it inside \`nix develop\` (or set STACK_CHECK=none to skip the check)." >&2
     return 2
   fi

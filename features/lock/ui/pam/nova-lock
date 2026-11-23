@@ -1,0 +1,3 @@
+# The PAM service the lock screen checks passwords with (features/lock/ui/src/pam.rs):
+# your login password, as pam_unix checks it.
+auth required pam_unix.so

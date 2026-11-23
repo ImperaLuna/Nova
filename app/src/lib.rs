@@ -18,12 +18,9 @@
 //!   its route; `topics.rs`: its topic.
 //! - `config.rs`: its `[<id>]` options in config.toml, if any.
 //! - The wire format snapshot (`tests/wire.rs`).
-//! - `just protocol-js` (regenerates the names in `ui/daemon/protocol.js`) and
-//!   `Daemon.qml` (subscribe, keep the event's data).
-//! - A QML service singleton beside the feature's components
-//!   (`ui/ai_usage/service/AiUsageService.qml`, its own folder so QML tests
-//!   can load the components without Quickshell) that reads that data and sends the
-//!   commands, and the component that loads when the feature is ready.
+//! - Its ui crate, `features/<id>/ui`, which follows the topic and sends
+//!   the commands through `nova-ui-client` (AGENTS.md, "Porting a
+//!   feature's UI to GPUI").
 
 mod ai_usage;
 mod bluetooth;
@@ -38,8 +35,6 @@ mod notifications;
 mod nova_files;
 mod peripherals;
 mod power;
-#[cfg(test)]
-mod protocol_js;
 mod recording;
 mod requests;
 mod resources;
