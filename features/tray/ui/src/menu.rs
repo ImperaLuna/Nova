@@ -109,6 +109,11 @@ impl TrayMenu {
         self.entry.is_some()
     }
 
+    /// The key of the app whose menu it shows now.
+    pub fn showing(&self) -> Option<&str> {
+        self.entry.as_ref().map(|entry| entry.key.as_str())
+    }
+
     /// Stops showing it (a click beside a menu in the drawer).
     pub fn dismiss(&mut self, cx: &mut Context<Self>) {
         if self.entry.take().is_some() {

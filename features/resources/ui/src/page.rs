@@ -10,8 +10,8 @@
 use crate::graph::Graph;
 use crate::logic::{self, DASH};
 use crate::tokens::{
-    CONFIRM_BUTTON_HEIGHT, CONFIRM_OPACITY, END_BUTTON_HEIGHT, END_BUTTON_WIDTH, END_HOVER_OPACITY, END_ICON_SIZE,
-    LEGEND_DOT, PROCESS_NUMBER_WIDTH, PROCESS_ROW_HEIGHT, SEARCH_HEIGHT,
+    CONFIRM_OPACITY, END_BUTTON_HEIGHT, END_BUTTON_WIDTH, END_HOVER_OPACITY, END_ICON_SIZE, LEGEND_DOT,
+    PROCESS_NUMBER_WIDTH, PROCESS_ROW_HEIGHT, SEARCH_HEIGHT,
 };
 use crate::{QUICK_SETTINGS, logic::matching};
 use gpui::prelude::FluentBuilder as _;
@@ -20,8 +20,8 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window, div,
 };
 use nova_look::tokens::{
-    CHIP_HEIGHT, FONT_MONO, FONT_SIZE_MICRO, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE_SMALL, PAD, QUICK_SETTINGS_GAP,
-    RADIUS_CARD, RADIUS_SEGMENT, SEGMENT_PAD, WEIGHT_BODY, WEIGHT_TITLE,
+    CHIP_HEIGHT, CONFIRM_BUTTON_HEIGHT, FONT_MONO, FONT_SIZE_MICRO, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE_SMALL,
+    PAD, QUICK_SETTINGS_GAP, RADIUS_CARD, RADIUS_SEGMENT, SEGMENT_PAD, WEIGHT_BODY, WEIGHT_TITLE,
 };
 use nova_look::{CardTitle, FieldEvent, Glyph, Icon, LookStyled, PageHeader, TextField, Theme};
 use nova_resources_api::{AppUsage, Command, Event, Resources, TOPIC};
@@ -73,7 +73,7 @@ impl Page {
     /// Esc clears the search first; with none, it goes on to the stage,
     /// which closes the drawer.
     fn key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        if event.keystroke.key == "escape" && !self.query.is_empty() {
+        if event.keystroke.key == "escape" && !self.search.read(cx).text().is_empty() {
             self.search.update(cx, |search, cx| search.set_text("", cx));
             cx.stop_propagation();
         }

@@ -42,7 +42,6 @@ tokens! {
     END_HOVER_OPACITY: ratio = 0.22, "endHoverOpacity";
     /// The row that asks before ending, and its buttons.
     CONFIRM_OPACITY: ratio = 0.14, "confirmOpacity";
-    CONFIRM_BUTTON_HEIGHT: px = 26.0, "confirmButtonHeight";
     /// The search field over the apps.
     SEARCH_HEIGHT: px = 34.0, "searchHeight";
 }

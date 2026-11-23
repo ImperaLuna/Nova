@@ -53,9 +53,10 @@ impl Card {
         let menu = cx.new(|_| TrayMenu::in_drawer(screen));
         let mut followed =
             vec![cx.observe(&tray, |card, _, cx| card.read(cx)), cx.observe(&menu, |_, _, cx| cx.notify())];
-        // Quick settings closed: the menu goes with it.
+        // Quick settings closed or on another page: the menu goes with it.
         followed.extend(Stage::observe_panels(cx, |card: &mut Self, cx| {
-            if !Stage::is_open(QUICK_SETTINGS, card.screen.id, cx) {
+            let screen = card.screen.id;
+            if !Stage::is_open(QUICK_SETTINGS, screen, cx) || Stage::page(QUICK_SETTINGS, screen, cx).is_some() {
                 card.menu.update(cx, |menu, cx| menu.dismiss(cx));
             }
         }));
@@ -77,12 +78,22 @@ impl Card {
     /// Takes novad's latest tray: every app, in the order they came.
     fn read(&mut self, cx: &mut Context<Self>) {
         self.apps = self.tray.read(cx).get().map(model::entries).unwrap_or_default();
+        // The app whose menu shows left the tray: its menu goes with it.
+        let gone = self.menu.read(cx).showing().is_some_and(|key| !self.apps.iter().any(|app| app.key == key));
+        if gone {
+            self.menu.update(cx, |menu, cx| menu.dismiss(cx));
+        }
         // The drawer redraws when this shows or hides the card.
         self.shown.set(!self.apps.is_empty(), cx);
         cx.notify();
     }
 
     fn clicked(&mut self, app: &Entry, button: MouseButton, cx: &mut Context<Self>) {
+        // Its menu shows: a second press on its icon closes it.
+        if self.menu.read(cx).showing() == Some(app.key.as_str()) && button != MouseButton::Middle {
+            self.menu.update(cx, |menu, cx| menu.dismiss(cx));
+            return;
+        }
         match button {
             MouseButton::Left if !app.opens_menu => {
                 Daemon::send(Command::ActivateTrayItem { address: app.address.clone() }, cx);
@@ -153,7 +164,7 @@ impl Card {
         let card = self.bounds.get();
         let left = (self.menu_at.x - width / 2.0).min(card.right() - width).max(card.left());
         let at = point(left, self.menu_at.y + TRAY_GRID_CELL / 2.0 + MENU_GAP);
-        let menu = self.menu.clone();
+        let (menu, middles) = (self.menu.clone(), self.middles.clone());
         let boxed = div()
             .id("tray-card-menu")
             .occlude()
@@ -161,7 +172,18 @@ impl Card {
             .bg(theme.surface())
             .border(DIVIDER_WIDTH)
             .border_color(theme.outline())
-            .on_mouse_down_out(move |_, _, cx| menu.update(cx, |menu, cx| menu.dismiss(cx)))
+            .on_mouse_down_out(move |event: &MouseDownEvent, _, cx| {
+                // A press on the menu's own icon is left to the icon, which
+                // closes it.
+                let on_its_icon =
+                    menu.read(cx).showing().and_then(|key| middles.borrow().get(key).copied()).is_some_and(|middle| {
+                        let half = TRAY_GRID_CELL / 2.0;
+                        (event.position.x - middle.x).abs() < half && (event.position.y - middle.y).abs() < half
+                    });
+                if !on_its_icon {
+                    menu.update(cx, |menu, cx| menu.dismiss(cx));
+                }
+            })
             .child(self.menu.clone());
         Some(deferred(anchored().anchor(Anchor::TopLeft).position(at).snap_to_window_with_margin(PAD).child(boxed)))
     }

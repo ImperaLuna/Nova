@@ -72,8 +72,8 @@ impl Card {
         let watching = open && page.as_deref().is_none_or(|page| page == PAGE);
         if watching != self.watching {
             self.watching = watching;
-            let (watch, me) = (self.watch.clone(), cx.entity_id());
-            cx.defer(move |cx| Watch::want(&watch, me, watching, cx));
+            let me = cx.entity_id();
+            Watch::want(&self.watch, me, watching, cx);
         }
         if open != self.open {
             let now = Instant::now();

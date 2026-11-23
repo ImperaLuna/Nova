@@ -15,8 +15,9 @@ pub const FULL: f32 = 100.0;
 /// Where each of `values` (0 to [`FULL`], oldest first) sits in `bounds`:
 /// spaced so that `span` of them fill the width, the newest at the right
 /// edge, a value of 0 on the bottom edge. Values past either end are held
-/// to it.
+/// to it; values older than `span` are left out.
 pub fn points(values: &[f32], bounds: Bounds<Pixels>, span: usize) -> Vec<Point<Pixels>> {
+    let values = &values[values.len().saturating_sub(span.max(1))..];
     let step = bounds.size.width / span.saturating_sub(1).max(1) as f32;
     let start = bounds.size.width - step * values.len().saturating_sub(1) as f32;
     values
@@ -80,5 +81,13 @@ mod tests {
         assert_eq!(placed[0], point(px(10.0), px(70.0)));
         assert_eq!(placed[1], point(px(110.0), px(20.0)));
         assert!(points(&[], bounds(), 60).is_empty());
+    }
+
+    #[test]
+    fn a_longer_history_keeps_its_newest_span() {
+        let placed = points(&[100.0, 0.0, 50.0, 100.0], bounds(), 3);
+        assert_eq!(placed.len(), 3);
+        assert_eq!(placed[0], point(px(10.0), px(70.0)), "the oldest kept one on the left edge");
+        assert_eq!(placed[2], point(px(110.0), px(20.0)));
     }
 }
