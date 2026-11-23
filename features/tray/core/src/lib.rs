@@ -161,6 +161,9 @@ struct Item {
     serial: u64,
     /// `None` until its id and title are read.
     read: Option<Read>,
+    /// Its picture, status or menu changed while it was being read: read
+    /// them again once it is.
+    look_stale: bool,
 }
 
 impl Item {
@@ -349,11 +352,20 @@ impl Tray {
         let (connection, owner, path) = self.reach_menu(address)?;
         let newest = self.read_of(address, |read| read.menu_revision)?;
         // Never read (or read from a menu the item has since replaced): refused too.
+        let changed = || Err(format!("{address}'s menu changed since it was read"));
         if newest != Some(revision) {
-            return Err(format!("{address}'s menu changed since it was read"));
+            return changed();
         }
-        zbus::block_on(menu::click(&connection, &owner, &path, id))
-            .map_err(|e| format!("{address}'s menu didn't answer: {e}"))
+        // LayoutUpdated comes on another thread, maybe not yet: ask the app.
+        zbus::block_on(async {
+            let now = menu::revision(&connection, &owner, &path).await?;
+            if now != revision {
+                self.shared.saw_revision(&owner, &path, now);
+                return Ok(changed());
+            }
+            menu::click(&connection, &owner, &path, id).await.map(Ok)
+        })
+        .map_err(|e| format!("{address}'s menu didn't answer: {e}"))?
     }
 
     /// The connection, owner and object path to call the item at `address` on.
@@ -502,7 +514,14 @@ impl Shared {
         }
         let serial = state.next_serial;
         state.next_serial += 1;
-        state.items.push(Item { address: address.clone(), bus: bus.to_string(), owner, serial, read: None });
+        state.items.push(Item {
+            address: address.clone(),
+            bus: bus.to_string(),
+            owner,
+            serial,
+            read: None,
+            look_stale: false,
+        });
         Ok((address, true))
     }
 
@@ -550,17 +569,32 @@ impl Shared {
             self.logger.log(LogLevel::Debug, LOG_SOURCE, &message);
         }
         let title = title.unwrap_or_default();
-        let props = item_props(connection, &owner, path).await;
+        let props = item_props(connection, &owner, path).await.unwrap_or_default();
         let app_ids = app::candidates(&self.proc_root, pid.as_ref().ok().copied(), &id);
         let bridged = pid.as_ref().is_ok_and(|&pid| app::is_bridge(&self.proc_root, pid));
+        if self.install(
+            address,
+            &owner,
+            Read { id, title, app_ids, bridged, menu_only, look: look::Look::default(), menu_revision: None },
+            &props,
+        ) {
+            Box::pin(self.look_changed(connection, &owner, path)).await;
+        }
+    }
+
+    /// Keeps what was read of the item at `address`, and returns whether its
+    /// look changed meanwhile, so it is read again.
+    fn install(&self, address: &str, owner: &str, mut read: Read, props: &look::Props) -> bool {
         let mut state = lock(&self.state);
         let Some(item) = state.items.iter_mut().find(|item| item.address == address && item.owner == owner) else {
-            return;
+            return false;
         };
-        self.logger.info(LOG_SOURCE, &format!("{address} came: {id} ({})", app_ids.join(", ")));
-        let look = self.pictures().look(&props, item.serial, None);
-        item.read = Some(Read { id, title, app_ids, bridged, menu_only, look, menu_revision: None });
+        self.logger.info(LOG_SOURCE, &format!("{address} came: {} ({})", read.id, read.app_ids.join(", ")));
+        read.look = self.pictures().look(props, item.serial, None);
+        item.read = Some(read);
+        let stale = std::mem::take(&mut item.look_stale);
         self.publish(&mut state);
+        stale
     }
 
     fn pictures(&self) -> look::Pictures<'_> {
@@ -570,14 +604,19 @@ impl Shared {
     /// The item at `path` on `sender` said its picture, status or menu
     /// changed: reads them again.
     async fn look_changed(&self, connection: &Connection, sender: &str, path: &str) {
-        let known = lock(&self.state)
-            .items
-            .iter()
-            .any(|item| item.owner == sender && item.path() == path && item.read.is_some());
-        if !known {
-            return;
+        {
+            let mut state = lock(&self.state);
+            let Some(item) = state.items.iter_mut().find(|item| item.owner == sender && item.path() == path) else {
+                return;
+            };
+            if item.read.is_none() {
+                // What is being read may be from before the change.
+                item.look_stale = true;
+                return;
+            }
         }
-        let props = item_props(connection, sender, path).await;
+        // It didn't answer: keep the last look rather than none.
+        let Some(props) = item_props(connection, sender, path).await else { return };
         let mut state = lock(&self.state);
         let Some(item) = state.items.iter_mut().find(|item| item.owner == sender && item.path() == path) else {
             return;

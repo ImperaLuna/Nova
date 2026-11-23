@@ -175,7 +175,7 @@ pub fn largest(pixmaps: &[Pixmap]) -> Option<(u32, u32, Vec<u8>)> {
             && i64::try_from(pixels.len()).is_ok_and(|len| len == i64::from(*width) * i64::from(*height) * 4)
     };
     let (width, height, argb) = pixmaps.iter().filter(fits).max_by_key(|(width, height, _)| width * height)?;
-    let rgba = argb.chunks_exact(4).flat_map(|pixel| [pixel[1], pixel[2], pixel[3], pixel[0]]).collect();
+    let rgba = argb.as_chunks::<4>().0.iter().flat_map(|&[a, r, g, b]| [r, g, b, a]).collect();
     Some((u32::try_from(*width).ok()?, u32::try_from(*height).ok()?, rgba))
 }
 

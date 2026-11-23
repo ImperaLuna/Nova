@@ -156,14 +156,11 @@ pub(crate) async fn item_text(connection: &Connection, bus: &str, path: &str, na
     Ok(text.chars().take(MAX_TEXT_CHARS).collect())
 }
 
-/// The properties the item at `bus` and `path` shows itself with, or none
-/// when it doesn't answer.
-pub(crate) async fn item_props(connection: &Connection, bus: &str, path: &str) -> look::Props {
+/// The properties the item at `bus` and `path` shows itself with, or
+/// `None` when it doesn't answer.
+pub(crate) async fn item_props(connection: &Connection, bus: &str, path: &str) -> Option<look::Props> {
     let reply = connection.call_method(Some(bus), path, Some(PROPERTIES), "GetAll", &(ITEM_INTERFACE,)).await;
-    reply
-        .and_then(|reply| reply.body().deserialize::<HashMap<String, OwnedValue>>())
-        .map(look::Props::from_all)
-        .unwrap_or_default()
+    reply.and_then(|reply| reply.body().deserialize::<HashMap<String, OwnedValue>>()).map(look::Props::from_all).ok()
 }
 
 /// Whether the item at `bus` and `path` has `Activate`. libayatana's items

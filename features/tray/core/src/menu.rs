@@ -29,6 +29,15 @@ pub async fn level(connection: &Connection, bus: &str, path: &str, id: i32) -> z
     Ok(TrayMenuLevel { revision, entries: entries(children) })
 }
 
+/// The menu's revision now: its layout, without entries.
+pub async fn revision(connection: &Connection, bus: &str, path: &str) -> zbus::Result<u32> {
+    let no_names: &[&str] = &[];
+    let reply =
+        connection.call_method(Some(bus), path, Some(MENU_INTERFACE), "GetLayout", &(0i32, 0i32, no_names)).await?;
+    let (revision, _): (u32, Node) = reply.body().deserialize()?;
+    Ok(revision)
+}
+
 /// Clicks entry `id` of the menu at `path` on `bus`.
 pub async fn click(connection: &Connection, bus: &str, path: &str, id: i32) -> zbus::Result<()> {
     // Timestamp 0: the app has nothing to compare it with anyway.
