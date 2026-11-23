@@ -184,6 +184,7 @@ sample`). Every ui crate draws with it:
 - A window opens with `ShellWindow::options()` and nothing else: GPUI draws
   a window without focus at 30 frames a second at most, and a shell window
   never has focus. `just lint-traps` fails on `WindowOptions {` elsewhere.
+  The lock screen's windows are the one other kind, `lock_surface(...)`.
 - Glass is `Glass::new(radius).build(cx)`. The window's owner (the stage,
   for pills and panels) passes the shapes it draws to `set_blur_region`
   and to GPUI's `set_input_region` each frame they change, and leaves
@@ -338,6 +339,11 @@ whenever a panel opens, closes or resizes (the pop-ups pause while quick
 settings is open), and when `Stage::logs_frames` is set it logs its own
 frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
 `features/notifications/ui` (`popups.rs`, `window.rs`) is the worked example.
+
+`nova-ui` keeps running with no window at all (`QuitMode::Explicit`): the
+session lock is its own, and every window closes when the last screen goes.
+The lock (`features/lock/ui`) is unlocked only by `cx.unlock_session()`,
+never by closing its windows.
 
 **2. What holds for every view on the stage.**
 

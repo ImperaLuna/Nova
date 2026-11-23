@@ -29,6 +29,7 @@
 # - nova-desktop-info
 # - nova-keep-awake-ui
 # - nova-launcher-ui
+# - nova-lock-ui
 # - nova-look
 # - nova-media-ui
 # - nova-microphone-ui
@@ -67,6 +68,7 @@ nova-daemon-info.workspace = true
 nova-desktop-info.workspace = true
 nova-keep-awake-ui.workspace = true
 nova-launcher-ui.workspace = true
+nova-lock-ui.workspace = true
 nova-look.workspace = true
 nova-media-ui.workspace = true
 nova-microphone-ui.workspace = true
@@ -139,6 +141,7 @@ nova-bluetooth-ui = { path = "../features/bluetooth/ui" }
 nova-clock-ui = { path = "../features/clock/ui" }
 nova-keep-awake-ui = { path = "../features/keep-awake/ui" }
 nova-launcher-ui = { path = "../features/launcher/ui" }
+nova-lock-ui = { path = "../features/lock/ui" }
 nova-media-ui = { path = "../features/media/ui" }
 nova-microphone-ui = { path = "../features/microphone/ui" }
 nova-network-ui = { path = "../features/network/ui" }
@@ -162,6 +165,7 @@ nova-daemon-info = { path = "../framework/daemon-info" }
 nova-desktop-info = { path = "../framework/desktop-info" }
 nova-host-info = { path = "../framework/host-info" }
 nova-launcher-api = { path = "../features/launcher/api" }
+nova-lock-api = { path = "../features/lock/api" }
 nova-media-api = { path = "../features/media/api" }
 nova-network-api = { path = "../features/network/api" }
 nova-nova-files-api = { path = "../features/nova-files/api" }

@@ -32,8 +32,9 @@
 //!   wheel's notches. [`fade_color`], [`fade`] and [`Hovered`]: the short
 //!   fades of a hover wash or a fill, kept by an element's id.
 //! - [`bytes`]: sizes in bytes as people read them.
-//! - [`ShellWindow`]: the options every shell window opens with. No other
-//!   crate builds `WindowOptions`.
+//! - [`ShellWindow`]: the options every shell window opens with, and
+//!   [`lock_surface`] for the lock screen's. No other crate builds
+//!   `WindowOptions`.
 //!
 //! `examples/sample.rs` draws a pill and a panel with all of it, to look at
 //! and to screenshot.
@@ -90,4 +91,4 @@ pub use tile::Tile;
 pub use toggle_switch::ToggleSwitch;
 pub use volume_icon::{OutputKind, VolumeGlyph};
 pub use wheel::{WHEEL_LINE, Wheel, scrolled};
-pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, NAMESPACE_PREFIX, ShellWindow};
+pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, NAMESPACE_PREFIX, ShellWindow, lock_surface};

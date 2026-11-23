@@ -3035,6 +3035,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-lock-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-lock-ui"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gpui",
+ "nova-desktop-info",
+ "nova-lock-api",
+ "nova-look",
+ "nova-stage",
+ "nova-ui-client",
+]
+
+[[package]]
 name = "nova-look"
 version = "0.1.0"
 dependencies = [
@@ -3285,6 +3306,7 @@ dependencies = [
  "nova-desktop-info",
  "nova-keep-awake-ui",
  "nova-launcher-ui",
+ "nova-lock-ui",
  "nova-look",
  "nova-media-ui",
  "nova-microphone-ui",
