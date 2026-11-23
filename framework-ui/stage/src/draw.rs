@@ -56,7 +56,8 @@ pub(crate) struct PanelFrame {
     pub radius: Pixels,
     /// Where its content is laid out: its place once open.
     pub open: Bounds<Pixels>,
-    /// The whole panel's opacity: below 1 only for one that fades in.
+    /// The whole panel's opacity: below 1 only for one that fades in or
+    /// out, content and all.
     pub opacity: f32,
     /// Its content's opacity inside that.
     pub content_opacity: f32,
@@ -114,7 +115,9 @@ pub(crate) fn frame(
                 radius: panel.spec.radius,
                 open: Bounds { origin: point(open.left(), open.top() - risen), size: open.size },
                 opacity: progress,
-                content_opacity: panel.reveal.opacity(progress, now),
+                // Its content fades with its glass: waiting for room to
+                // grow would leave the glass empty, and there is none.
+                content_opacity: 1.0,
                 glassy: true,
                 fillet: px(0.0),
             }
@@ -234,7 +237,10 @@ fn record(shapes: &Shapes, radius: Pixels, counts: bool, keep: Option<(PillBox, 
 }
 
 /// Draws `panel` at `frame`, in a window whose top left corner is at
-/// `origin` on the screen, and records its box in `shapes`.
+/// `origin` on the screen, and records its box in `shapes`. A panel that
+/// fades out records none: the compositor's blur can't fade, so it would
+/// stay an empty frosted box while the glass fades over it, and a click
+/// there reaches the window below. `glass: open` in today's `Launcher.qml`.
 pub(crate) fn panel(
     panel: &PanelItem,
     frame: &PanelFrame,
@@ -262,11 +268,17 @@ pub(crate) fn panel(
         .w(frame.glass.size.width)
         .h(frame.glass.size.height)
         .opacity(frame.opacity)
-        .child(record(shapes, frame.radius, true, None))
+        .child(record(shapes, frame.radius, !fades_out(panel, frame), None))
         // The glass can't clip (its shadow lies outside it), so a child does.
         .child(div().absolute().inset_0().overflow_hidden().child(content))
         .children(fillets(frame, origin, shapes))
         .into_any_element()
+}
+
+/// Whether `panel` is fading out at `frame`: it heads for closed and lets
+/// its whole look go, rather than shrinking back into a pill.
+fn fades_out(panel: &PanelItem, frame: &PanelFrame) -> bool {
+    frame.opacity < 1.0 && panel.morph.target() == 0.0
 }
 
 /// The concave corners that curve a tab into the right edge (`frame.fillet`

@@ -18,12 +18,12 @@ pub struct Screen {
     /// output this way (a workspace's, `nova toggle`'s). Empty when the
     /// compositor gave none.
     pub name: SharedString,
+    /// Its size in logical pixels, at any scale (fractional too): the
+    /// fork reads it from xdg-output, as the compositor lays it out.
     pub size: Size<Pixels>,
     /// Where its top left corner is among the screens side by side, in the
     /// compositor's layout (`screen.x` and `screen.y` in Quickshell): what
-    /// a recording's region counts from. GPUI divides `wl_output`'s
-    /// position by the output's whole-number scale, so it is right only on
-    /// screens at scale 1 (a fractional scale rounds up to 2 there).
+    /// a recording's region counts from.
     pub origin: Point<Pixels>,
     /// The time between two of its frames.
     pub refresh: Duration,
