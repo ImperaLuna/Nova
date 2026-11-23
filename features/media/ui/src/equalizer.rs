@@ -69,7 +69,7 @@ pub fn outline(heights: &[f32], width: f32, gap: f32, top: f32, samples: usize) 
     let (Some(first), Some(last)) = (heights.first(), heights.last()) else { return Vec::new() };
     let radius = width / 2.0;
     let total = width * heights.len() as f32 + gap * heights.len().saturating_sub(1) as f32;
-    let height = |value: f32| value.clamp(width, top);
+    let height = |value: f32| value.max(width).min(top);
     let middles: Vec<(f32, f32)> = heights
         .iter()
         .enumerate()
@@ -85,7 +85,7 @@ pub fn outline(heights: &[f32], width: f32, gap: f32, top: f32, samples: usize) 
         for step in 1..=samples.max(1) {
             let along = step as f32 / samples.max(1) as f32;
             let (x, y) = catmull_rom(before, pair[0], pair[1], after, along);
-            points.push((x, y.clamp(width, top)));
+            points.push((x, y.max(width).min(top)));
         }
     }
     corner(&mut points, (total - radius, height(*last) - radius), radius, 90.0);
