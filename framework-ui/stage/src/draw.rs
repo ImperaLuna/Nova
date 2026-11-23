@@ -1,6 +1,9 @@
 //! Drawing a screen's stage. Back to front: the panels that are open or on
 //! their way, then the bar's three rows of pills, then (drawing nothing)
-//! the regions.
+//! the regions. A panel placed off the strip is laid out here
+//! ([`StageView::panel_frame`], in screen coordinates, which are the
+//! strip's own) and drawn by the window beside (`crate::panel_window`)
+//! with the same [`panel`].
 //!
 //! A panel's glass is the box between its pill and its open place, so the
 //! pill seems to grow: the pill's own glass steps aside the moment its
@@ -18,67 +21,120 @@
 //! while something here is on its way; a view that changes by itself (a
 //! clock) redraws through GPUI like any view.
 
-use crate::geometry::{Align, between, covered, open_box, overlaps, radius_between};
+use crate::geometry::{
+    Align, between, covered, edge_box, edge_origin, left_of_panels, open_box, overlaps, past_edge, radius_between,
+};
+use crate::item::Placement;
 use crate::middle;
 use crate::stage::Stage;
 use crate::tokens::{PANEL_ENTER_RISE, PILL_FADE_OUT};
 use crate::view::{CENTER_ROW, PanelItem, PillBox, PillItem, ROWS, StageView};
 use gpui::{
     AnyElement, App, Bounds, Context, DispatchPhase, Div, HoverListenerMode, InteractiveElement, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Render, ScrollEvent, StatefulInteractiveElement,
-    Styled, Window, canvas, div, point, px, size,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollEvent, Size,
+    StatefulInteractiveElement, Styled, Window, canvas, div, point, px, size,
 };
 use nova_look::tokens::{BAR_GAP, BAR_HEIGHT, BAR_MARGIN, GAP, REVEAL_STRIP, SHADOW_ROOM};
 use nova_look::{Glass, LookStyled, Shape, region, set_blur_region};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
 /// The key that closes panels, as GPUI names it.
-const ESCAPE: &str = "escape";
+pub(crate) const ESCAPE: &str = "escape";
 
-/// Where a panel is drawn right now.
-struct PanelFrame {
-    glass: Bounds<Pixels>,
-    radius: Pixels,
-    /// Its place once open.
-    open: Bounds<Pixels>,
-    /// The whole panel's opacity: below 1 only for one rising into place.
-    opacity: f32,
-    /// Where its content sits inside the glass.
-    content_at: gpui::Point<Pixels>,
+/// The shapes a window drew in the frame under way.
+pub(crate) type Shapes = Rc<RefCell<Vec<Shape>>>;
+
+/// Where a panel is drawn right now, on its screen.
+pub(crate) struct PanelFrame {
+    /// Its box: the glass, or all of a panel that has none.
+    pub glass: Bounds<Pixels>,
+    pub radius: Pixels,
+    /// Where its content is laid out: its place once open.
+    pub open: Bounds<Pixels>,
+    /// The whole panel's opacity: below 1 only for one that fades in.
+    pub opacity: f32,
+    /// Its content's opacity inside that.
+    pub content_opacity: f32,
+    /// Whether it is glass; a panel over the whole screen draws all it is.
+    pub glassy: bool,
+}
+
+impl PanelFrame {
+    /// A panel `progress` of the way out of `pill`: its content is laid
+    /// out at `open` and its glass heads for `target`, which is `open`
+    /// unless the glass ends up bigger than what it holds.
+    fn grown(
+        pill: Bounds<Pixels>,
+        open: Bounds<Pixels>,
+        target: Bounds<Pixels>,
+        panel: &PanelItem,
+        now: Instant,
+    ) -> Self {
+        let progress = panel.morph.value(now);
+        Self {
+            glass: between(pill, target, progress),
+            radius: radius_between(panel.spec.radius, progress),
+            open,
+            opacity: 1.0,
+            content_opacity: panel.reveal.opacity(progress, now),
+            glassy: true,
+        }
+    }
+}
+
+/// Where `panel` is at `now`, on a screen `screen` big, growing out of
+/// the pill at `from` when it has one that is there.
+pub(crate) fn frame(
+    panel: &PanelItem,
+    from: Option<(Bounds<Pixels>, Align)>,
+    screen: Size<Pixels>,
+    now: Instant,
+) -> PanelFrame {
+    let progress = panel.morph.value(now);
+    let open_size = size(px(panel.width.value(now)), px(panel.height.value(now)));
+    match (panel.spec.placement, from) {
+        (Placement::Top, Some((pill, _))) => {
+            let open = open_box(from, open_size, panel.spec.top, screen.width);
+            PanelFrame::grown(pill, open, open, panel, now)
+        }
+        (Placement::Top, None) => {
+            let open = open_box(None, open_size, panel.spec.top, screen.width);
+            let risen = PANEL_ENTER_RISE * (1.0 - progress);
+            PanelFrame {
+                glass: Bounds { origin: point(open.left(), open.top() - risen), size: open.size },
+                radius: panel.spec.radius,
+                open: Bounds { origin: point(open.left(), open.top() - risen), size: open.size },
+                opacity: progress,
+                content_opacity: panel.reveal.opacity(progress, now),
+                glassy: true,
+            }
+        }
+        (Placement::RightEdge, _) => {
+            let open = edge_box(open_size.width, screen);
+            let pill = from.map_or_else(|| edge_origin(screen.width), |(pill, _)| pill);
+            PanelFrame::grown(pill, open, past_edge(open, panel.spec.radius), panel, now)
+        }
+        (Placement::WholeScreen, _) => {
+            let all = Bounds { origin: point(px(0.0), px(0.0)), size: screen };
+            PanelFrame {
+                glass: all,
+                radius: px(0.0),
+                open: all,
+                opacity: progress,
+                content_opacity: 1.0,
+                glassy: false,
+            }
+        }
+    }
 }
 
 impl StageView {
     /// Where `panel` is at `now`.
-    fn panel_frame(&self, panel: &PanelItem, now: Instant) -> PanelFrame {
-        let progress = panel.morph.value(now);
-        let open_size = size(px(panel.width.value(now)), px(panel.height.value(now)));
+    pub(crate) fn panel_frame(&self, panel: &PanelItem, now: Instant) -> PanelFrame {
         let from = panel.from.as_ref().and_then(|view| self.pill_box(view));
-        let open = open_box(from, open_size, panel.spec.top, self.screen.size.width);
-        match from {
-            Some((pill, _)) => {
-                let glass = between(pill, open, progress);
-                PanelFrame {
-                    glass,
-                    radius: radius_between(panel.spec.radius, progress),
-                    open,
-                    opacity: 1.0,
-                    // The content stays where it will be; the glass grows over it.
-                    content_at: point(open.left() - glass.left(), open.top() - glass.top()),
-                }
-            }
-            None => {
-                let risen = PANEL_ENTER_RISE * (1.0 - progress);
-                let glass = Bounds { origin: point(open.left(), open.top() - risen), size: open.size };
-                PanelFrame {
-                    glass,
-                    radius: panel.spec.radius,
-                    open,
-                    opacity: progress,
-                    content_at: point(px(0.0), px(0.0)),
-                }
-            }
-        }
+        frame(panel, from, self.screen.size, now)
     }
 
     /// Hides each pill an open panel lies over, and shows the others.
@@ -96,74 +152,84 @@ impl StageView {
         }
     }
 
+    /// Whether this window has frames to draw. A panel in the window
+    /// beside moves there; here only the pill it grows out of changes.
     pub(crate) fn moving(&self, now: Instant) -> bool {
+        let moves_here = |panel: &PanelItem| {
+            panel.on_strip() || panel.from.as_ref().is_some_and(|pill| self.pill_box(pill).is_some())
+        };
         self.aside.moving(now)
-            || self.panel_items().any(|panel| panel.moving(now))
+            || self.panel_items().any(|panel| panel.moving(now) && moves_here(panel))
             || self.rows.iter().flat_map(|row| row.iter()).any(|pill| !pill.shown.settled(now))
     }
 
     /// How far the panel growing out of `pill` has come: the furthest of
-    /// them, when several grow out of one pill.
+    /// them, when several grow out of one pill. One in the window beside
+    /// counts only once it is on screen there (`PanelItem::cover`).
     fn grown_out_of(&self, pill: &PillItem, now: Instant) -> f32 {
         self.panel_items()
-            .filter(|panel| panel.from.as_ref() == Some(&pill.view))
+            .filter(|panel| panel.from.as_ref() == Some(&pill.view) && (panel.on_strip() || panel.cover.get()))
             .map(|panel| panel.morph.value(now))
             .fold(0.0, f32::max)
     }
+}
 
-    /// An element that records the glass it fills as one of this frame's
-    /// shapes, and remembers the box in `keep` when given. A box that
-    /// moved while a panel is drawn costs one more frame: the panel was
-    /// laid out by the box of the frame before.
-    fn record(&self, radius: Pixels, counts: bool, keep: Option<(PillBox, bool)>) -> impl IntoElement {
-        let shapes = self.shapes.clone();
-        canvas(
-            move |bounds, window, _| {
-                if let Some((keep, panel_drawn)) = keep
-                    && keep.replace(Some(bounds)) != Some(bounds)
-                    && panel_drawn
-                {
-                    window.request_animation_frame();
-                }
-                if counts {
-                    shapes.borrow_mut().push(Shape::new(bounds, radius));
-                }
-            },
-            |_, (), _, _| {},
-        )
+/// An element that records the box it fills as one of this frame's
+/// `shapes`, and remembers the box in `keep` when given. A box that
+/// moved while a panel is drawn costs one more frame: the panel was
+/// laid out by the box of the frame before.
+fn record(shapes: &Shapes, radius: Pixels, counts: bool, keep: Option<(PillBox, bool)>) -> impl IntoElement + use<> {
+    let shapes = shapes.clone();
+    canvas(
+        move |bounds, window, _| {
+            if let Some((keep, panel_drawn)) = keep
+                && keep.replace(Some(bounds)) != Some(bounds)
+                && panel_drawn
+            {
+                window.request_animation_frame();
+            }
+            if counts {
+                shapes.borrow_mut().push(Shape::new(bounds, radius));
+            }
+        },
+        |_, (), _, _| {},
+    )
+    .absolute()
+    .inset_0()
+}
+
+/// Draws `panel` at `frame`, in a window whose top left corner is at
+/// `origin` on the screen, and records its box in `shapes`.
+pub(crate) fn panel(
+    panel: &PanelItem,
+    frame: &PanelFrame,
+    origin: Point<Pixels>,
+    shapes: &Shapes,
+    cx: &App,
+) -> AnyElement {
+    let content = div()
         .absolute()
-        .inset_0()
-    }
+        // The content stays where it will be; the glass grows over it.
+        .left(frame.open.left() - frame.glass.left())
+        .top(frame.open.top() - frame.glass.top())
+        .w(frame.open.size.width)
+        .h(frame.open.size.height)
+        .opacity(frame.content_opacity)
+        .child(panel.spec.content.clone());
+    let back = if frame.glassy { Glass::new(frame.radius).shadow(frame.opacity).build(cx) } else { div() };
+    back.absolute()
+        .left(frame.glass.left() - origin.x)
+        .top(frame.glass.top() - origin.y)
+        .w(frame.glass.size.width)
+        .h(frame.glass.size.height)
+        .opacity(frame.opacity)
+        .child(record(shapes, frame.radius, true, None))
+        // The glass can't clip (its shadow lies outside it), so a child does.
+        .child(div().absolute().inset_0().overflow_hidden().child(content))
+        .into_any_element()
+}
 
-    fn panel(&self, panel: &PanelItem, now: Instant, cx: &App) -> Option<AnyElement> {
-        if panel.closed(now) {
-            return None;
-        }
-        let frame = self.panel_frame(panel, now);
-        let content_opacity = panel.reveal.opacity(panel.morph.value(now), now);
-        let content = div()
-            .absolute()
-            .left(frame.content_at.x)
-            .top(frame.content_at.y)
-            .w(frame.open.size.width)
-            .h(frame.open.size.height)
-            .opacity(content_opacity)
-            .child(panel.spec.content.clone());
-        let glass = Glass::new(frame.radius)
-            .shadow(frame.opacity)
-            .build(cx)
-            .absolute()
-            .left(frame.glass.left())
-            .top(frame.glass.top())
-            .w(frame.glass.size.width)
-            .h(frame.glass.size.height)
-            .opacity(frame.opacity)
-            .child(self.record(frame.radius, true, None))
-            // The glass can't clip (its shadow lies outside it), so a child does.
-            .child(div().absolute().inset_0().overflow_hidden().child(content));
-        Some(glass.into_any_element())
-    }
-
+impl StageView {
     /// How much of `pill` shows: none under another pill's open panel, or
     /// once its own panel has grown far enough. At none its content is
     /// laid out but not drawn.
@@ -186,7 +252,7 @@ impl StageView {
             .h(BAR_HEIGHT)
             .flex_none()
             .opacity(opacity)
-            .child(self.record(radius, shown && !replaced, Some((pill.bounds.clone(), panel_drawn))))
+            .child(record(&self.shapes, radius, shown && !replaced, Some((pill.bounds.clone(), panel_drawn))))
             .child(if shown { content } else { content.invisible() });
         let Some(name) = pill.panel.as_ref().map(|panel| panel.spec.name.clone()) else {
             return slot.into_any_element();
@@ -279,15 +345,36 @@ impl StageView {
         };
     }
 
+    /// The panels of the window beside that have closed while it still
+    /// shows them: this frame draws their pills again, so once it is
+    /// painted that window lets go of them. Returns what does that.
+    fn hand_back(&self, now: Instant) -> impl FnOnce(&mut App) + use<> {
+        let closed = |panel: &&PanelItem| !panel.on_strip() && panel.closed(now) && panel.cover.get();
+        let covers: Vec<_> = self.panel_items().filter(closed).map(|panel| panel.cover.clone()).collect();
+        let beside = self.panel_window;
+        move |cx| {
+            for cover in &covers {
+                cover.set(false);
+            }
+            if let Some(beside) = beside.filter(|_| !covers.is_empty()) {
+                cx.defer(move |cx| {
+                    let _ = beside.update(cx, |_, _, cx| cx.notify());
+                });
+            }
+        }
+    }
+
     /// Hands this frame's shapes to the compositor, when they changed: it
     /// blurs behind them, and clicks land on them alone, or anywhere on the
-    /// stage while a panel that a click outside closes is open.
-    fn regions(&self) -> impl IntoElement {
+    /// stage (but where the panels' window beside is) while a panel that a
+    /// click outside closes is open.
+    fn regions(&self, now: Instant) -> impl IntoElement + use<> {
         let (shapes, sent, catching) = (self.shapes.clone(), self.sent.clone(), self.catching);
+        let (beside, hand_back) = (self.beside.get(), self.hand_back(now));
         // A row placed by a mark that is drawn this frame expects it again.
         let placed_by_middle = self.middle_from_right.is_some() && self.center_drawn;
         let strip = self.aside.fullscreen();
-        let width = self.screen.size.width;
+        let screen = self.screen.size;
         canvas(
             |_, _, _| {},
             move |_, (), window, cx| {
@@ -295,14 +382,20 @@ impl StageView {
                     // What marked the middle is gone: center the row again.
                     window.request_animation_frame();
                 }
-                let drawn = (shapes.take(), catching, strip);
+                hand_back(cx);
+                let drawn = (shapes.take(), catching, strip, beside);
                 if sent.borrow().as_ref() != Some(&drawn) {
                     set_blur_region(window, &drawn.0);
                     let mut clicks = region(&drawn.0);
                     if strip {
-                        clicks.push(Bounds { origin: point(px(0.0), px(0.0)), size: size(width, REVEAL_STRIP) });
+                        clicks.push(Bounds { origin: point(px(0.0), px(0.0)), size: size(screen.width, REVEAL_STRIP) });
                     }
-                    window.set_input_region(if catching { None } else { Some(&clicks) });
+                    if catching {
+                        // As far down as the screen: the window ends sooner.
+                        clicks = vec![left_of_panels(screen.height, beside, screen.width)];
+                    }
+                    let everywhere = catching && beside == px(0.0);
+                    window.set_input_region(if everywhere { None } else { Some(&clicks) });
                     sent.replace(Some(drawn.clone()));
                 }
                 if catching {
@@ -319,7 +412,7 @@ impl StageView {
 /// them too, so the next one reaches the window below. The handlers see
 /// every click the window gets, also one outside it: Hyprland sends a
 /// surface that holds the keyboard the clicks of every screen.
-fn dismiss_outside(shapes: Vec<Shape>, window: &mut Window) {
+pub(crate) fn dismiss_outside(shapes: Vec<Shape>, window: &mut Window) {
     let shapes = Rc::new(shapes);
     let on_scroll = shapes.clone();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
@@ -366,7 +459,10 @@ impl Render for StageView {
         }
         self.shapes.borrow_mut().clear();
 
-        let panels: Vec<AnyElement> = self.panel_items().filter_map(|panel| self.panel(panel, now, cx)).collect();
+        let origin = point(px(0.0), px(0.0));
+        let on_strip = self.panel_items().filter(|panel| panel.on_strip() && !panel.closed(now));
+        let panels: Vec<AnyElement> =
+            on_strip.map(|each| panel(each, &self.panel_frame(each, now), origin, &self.shapes, cx)).collect();
         div()
             .id("stage")
             .size_full()
@@ -384,6 +480,6 @@ impl Render for StageView {
             }))
             .children(panels)
             .children(self.rows(now, cx))
-            .child(self.regions())
+            .child(self.regions(now))
     }
 }

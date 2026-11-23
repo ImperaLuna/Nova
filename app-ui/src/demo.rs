@@ -8,31 +8,39 @@
 //!   by itself while the stage asks for no frame;
 //! - on the right, a pill that grows into `demo-right`, kept to the right
 //!   edge. Opening one panel closes the other;
+//! - at the right end, a pill that grows into the `demo-edge` drawer
+//!   against the screen's right edge, and on the left one that opens
+//!   `demo-whole` over the whole screen: the two placements off the top
+//!   strip, drawn in the window beside it;
 //! - beside it, a pill that grows into a stand-in for quick settings' panel, which draws
 //!   the views of quick settings' hosts (`quick-settings.fill` and
 //!   `quick-settings.pages`, the notifications' list and settings page)
 //!   until quick settings is ported (IMP-406 removes it).
 
 use gpui::{
-    App, AppContext, Context, Div, IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Subscription,
-    Window, div, px, size,
+    App, AppContext, Context, DisplayId, Div, InteractiveElement, IntoElement, ParentElement, Pixels, Render,
+    SharedString, Styled, Subscription, Window, div, prelude::FluentBuilder, px, size,
 };
 use nova_daemon_info::Slot;
 use nova_look::tokens::{
-    FONT_MONO, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE_SMALL, PAD, PANEL_PAD, PANEL_WIDTH,
-    RADIUS_PANEL, RADIUS_ROW, ROW_HEIGHT, ROW_INSET, SECTION_GAP, WEIGHT_LABEL, WEIGHT_TITLE,
+    DIM_OPACITY, FONT_MONO, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE_SMALL, PAD, PANEL_PAD,
+    PANEL_WIDTH, RADIUS_PANEL, RADIUS_ROW, ROW_HEIGHT, ROW_INSET, SECTION_GAP, WEIGHT_LABEL, WEIGHT_TITLE,
 };
 use nova_look::{Glyph, Icon, LookStyled, Theme, Touching};
-use nova_stage::{HOST_BAR_CENTER, HOST_BAR_LEFT, HOST_BAR_RIGHT, Panel, Parts, Pill, Screen, Stage};
+use nova_stage::{HOST_BAR_CENTER, HOST_BAR_LEFT, HOST_BAR_RIGHT, Panel, Parts, Pill, Placement, Screen, Stage};
 use std::time::Duration;
 
 const CENTER_PILL: &str = "demo.center";
 const LEFT_PILL: &str = "demo.left";
 const RIGHT_PILL: &str = "demo.right";
 const QUICK_SETTINGS_PILL: &str = "demo.quick-settings";
+const EDGE_PILL: &str = "demo.edge";
+const WHOLE_PILL: &str = "demo.whole";
 /// The panels' names, as [`Stage::toggle`] takes them.
-const CENTER_PANEL: &str = "demo";
+pub const CENTER_PANEL: &str = "demo";
 const RIGHT_PANEL: &str = "demo-right";
+const EDGE_PANEL: &str = "demo-edge";
+const WHOLE_PANEL: &str = "demo-whole";
 /// Named as quick settings' panel, so `nova toggle quick-settings` opens it
 /// and the pop-ups wait while it shows the list, as they will beside it.
 const QUICK_SETTINGS_PANEL: &str = "quick-settings";
@@ -43,6 +51,8 @@ const QUICK_SETTINGS_HOSTS: [&str; 2] = ["quick-settings.fill", "quick-settings.
 const CENTER_PANEL_WIDTH: Pixels = px(620.0);
 const CENTER_PANEL_HEIGHT: Pixels = px(440.0);
 const RIGHT_PANEL_HEIGHT: Pixels = px(260.0);
+/// The drawer as wide as today's quick settings (`quickSettingsWidth`).
+const EDGE_PANEL_WIDTH: Pixels = px(368.0);
 /// Each host's column as wide as today's quick settings' content.
 const QUICK_SETTINGS_COLUMN: Pixels = px(336.0);
 const QUICK_SETTINGS_HEIGHT: Pixels = px(480.0);
@@ -57,7 +67,7 @@ const TOGGLE_EVERY: Duration = Duration::from_millis(700);
 /// Registers the demo's views and returns the slots that show them.
 pub fn slots(cx: &mut App) -> Vec<Slot> {
     nova_stage::pill(CENTER_PILL, cx, |_, cx| {
-        let panel = cx.new(|_| DemoPanel { title: "Demo panel", rows: &CENTER_ROWS });
+        let panel = cx.new(|_| DemoPanel { title: "Demo panel", rows: &CENTER_ROWS, at_edge: false });
         Pill::new(cx.new(|_| Label { glyph: Glyph::SEARCH, text: "Demo".into() })).panel(Panel::new(
             CENTER_PANEL,
             size(CENTER_PANEL_WIDTH, CENTER_PANEL_HEIGHT),
@@ -66,7 +76,7 @@ pub fn slots(cx: &mut App) -> Vec<Slot> {
     });
     nova_stage::pill(LEFT_PILL, cx, |_, cx| Pill::new(cx.new(Seconds::start)));
     nova_stage::pill(RIGHT_PILL, cx, |_, cx| {
-        let panel = cx.new(|_| DemoPanel { title: "Right panel", rows: &RIGHT_ROWS });
+        let panel = cx.new(|_| DemoPanel { title: "Right panel", rows: &RIGHT_ROWS, at_edge: false });
         Pill::new(cx.new(|_| Label { glyph: Glyph::WIFI, text: "Right".into() })).panel(Panel::new(
             RIGHT_PANEL,
             size(PANEL_WIDTH, RIGHT_PANEL_HEIGHT),
@@ -83,20 +93,35 @@ pub fn slots(cx: &mut App) -> Vec<Slot> {
             panel,
         ))
     });
+    nova_stage::pill(EDGE_PILL, cx, |screen, cx| {
+        let drawer = cx.new(|_| DemoPanel { title: "Edge drawer", rows: &CENTER_ROWS, at_edge: true });
+        // As tall as the screen, whatever height is given here.
+        let drawer = Panel::new(EDGE_PANEL, size(EDGE_PANEL_WIDTH, screen.size.height), drawer);
+        Pill::new(cx.new(|_| Label { glyph: Glyph::BLUETOOTH, text: "Edge".into() }))
+            .panel(drawer.placement(Placement::RightEdge))
+    });
+    nova_stage::pill(WHOLE_PILL, cx, |screen, cx| {
+        let over = cx.new(|_| OverScreen { screen: screen.id });
+        Pill::new(cx.new(|_| Label { glyph: Glyph::HEADPHONES, text: "Whole".into() }))
+            .panel(Panel::new(WHOLE_PANEL, screen.size, over).placement(Placement::WholeScreen))
+    });
+    // The drawer's pill last, at the row's right end, where it opens.
     [
-        (HOST_BAR_CENTER, CENTER_PILL),
-        (HOST_BAR_LEFT, LEFT_PILL),
-        (HOST_BAR_RIGHT, QUICK_SETTINGS_PILL),
-        (HOST_BAR_RIGHT, RIGHT_PILL),
+        (HOST_BAR_CENTER, CENTER_PILL, 0),
+        (HOST_BAR_LEFT, LEFT_PILL, 0),
+        (HOST_BAR_LEFT, WHOLE_PILL, 0),
+        (HOST_BAR_RIGHT, QUICK_SETTINGS_PILL, 0),
+        (HOST_BAR_RIGHT, RIGHT_PILL, 0),
+        (HOST_BAR_RIGHT, EDGE_PILL, 1),
     ]
-    .map(|(host, view)| Slot { host: host.into(), view: view.into(), order: 0 })
+    .map(|(host, view, order)| Slot { host: host.into(), view: view.into(), order })
     .into()
 }
 
-/// Opens and closes the `demo` panel `times` times, one screen after the
-/// other, then quits: with `--frames`, each motion's line says how many of
-/// its frames came late.
-pub fn toggle_by_itself(times: u32, cx: &mut App) {
+/// Opens and closes the panel called `panel` `times` times, one screen
+/// after the other, then quits: with `--frames`, each motion's line says
+/// how many of its frames came late.
+pub fn toggle_by_itself(panel: String, times: u32, cx: &mut App) {
     cx.spawn(async move |cx| {
         cx.background_executor().timer(TOGGLES_START).await;
         for round in 0..times {
@@ -105,7 +130,7 @@ pub fn toggle_by_itself(times: u32, cx: &mut App) {
             cx.update(|cx| {
                 let screens = Stage::screens(cx).map(|screens| screens.read(cx).list().to_vec()).unwrap_or_default();
                 if let Some(screen) = screens.get(turn % screens.len().max(1)) {
-                    Stage::toggle(CENTER_PANEL, screen.id, cx);
+                    Stage::toggle(&panel, screen.id, cx);
                 }
             });
             cx.background_executor().timer(TOGGLE_EVERY).await;
@@ -177,6 +202,9 @@ const RIGHT_ROWS: [(Glyph, &str, &str); 2] = [(Glyph::WIFI, "Wi-Fi", "Home"), (G
 struct DemoPanel {
     title: &'static str,
     rows: &'static [(Glyph, &'static str, &'static str)],
+    /// In a drawer against the right edge: only its left corners are on
+    /// screen.
+    at_edge: bool,
 }
 
 impl Render for DemoPanel {
@@ -211,7 +239,10 @@ impl Render for DemoPanel {
             .child(
                 div()
                     .h(FOOTER_HEIGHT)
-                    .fit_corners(RADIUS_PANEL, px(0.0), Touching::Bottom)
+                    .map(|footer| match self.at_edge {
+                        true => footer.rounded_bl(RADIUS_PANEL),
+                        false => footer.fit_corners(RADIUS_PANEL, px(0.0), Touching::Bottom),
+                    })
                     .bg(theme.primary.alpha(FOOTER_TINT))
                     .flex()
                     .items_center()
@@ -222,6 +253,37 @@ impl Render for DemoPanel {
                     .child(Icon::new(Glyph::CHECK).color(theme.on_accent))
                     .child("Apply"),
             )
+    }
+}
+
+/// A panel over the whole screen: it draws all there is, here a dimmed
+/// screen with a card in the middle, and a click anywhere closes it.
+struct OverScreen {
+    screen: DisplayId,
+}
+
+impl Render for OverScreen {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::of(cx);
+        let screen = self.screen;
+        let card = div()
+            .w(PANEL_WIDTH)
+            .p(PANEL_PAD)
+            .rounded(RADIUS_PANEL)
+            .bg(theme.surface())
+            .flex()
+            .flex_col()
+            .gap(GAP)
+            .child(div().text_size(FONT_SIZE_HEADING).font_weight(WEIGHT_TITLE).child("Over the whole screen"))
+            .child(div().text_size(FONT_SIZE_SMALL).text_color(theme.fg_dim()).child("No glass, no blur"));
+        div()
+            .size_full()
+            .bg(theme.backdrop.alpha(DIM_OPACITY))
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_any_mouse_down(move |_, _, cx| Stage::close(WHOLE_PANEL, screen, cx))
+            .child(card)
     }
 }
 

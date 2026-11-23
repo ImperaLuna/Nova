@@ -8,9 +8,12 @@
 //!   screen.
 //! - Esc, or a click outside, closes every open panel that closes on it,
 //!   on every screen.
-//! - While a panel that takes typing or closes on Esc is open, its screen's
-//!   stage holds the keyboard, so typing doesn't reach the window below.
+//! - While a panel that takes typing or closes on Esc is open, the window
+//!   that draws it (its screen's strip across the top, or the one beside
+//!   it for a panel placed elsewhere) holds the keyboard, so typing doesn't
+//!   reach the window below.
 
+use crate::item::Placement;
 use gpui::{DisplayId, SharedString};
 
 /// What the rules need to know of a panel (`crate::Panel` has the rest).
@@ -18,6 +21,9 @@ use gpui::{DisplayId, SharedString};
 pub struct PanelRules {
     /// Its feature's id, which is what `nova toggle` calls it.
     pub name: SharedString,
+    /// Which of its screen's windows draws it, and so holds the keyboard
+    /// for it.
+    pub placement: Placement,
     pub exclusive: bool,
     pub wants_keyboard: bool,
     pub closes_on_click_outside: bool,
@@ -79,9 +85,12 @@ impl OpenPanels {
         self.open.len() != before
     }
 
-    /// Whether `screen`'s stage holds the keyboard.
-    pub fn needs_keyboard(&self, screen: DisplayId) -> bool {
-        self.open.iter().any(|(on, panel)| *on == screen && panel.closes_on_esc())
+    /// Whether one of `screen`'s two windows holds the keyboard: the strip
+    /// across the top (`on_strip`), or the window beside it that draws the
+    /// panels placed elsewhere.
+    pub fn needs_keyboard(&self, screen: DisplayId, on_strip: bool) -> bool {
+        let here = |on: DisplayId, panel: &PanelRules| on == screen && panel.placement.on_strip() == on_strip;
+        self.open.iter().any(|(on, panel)| here(*on, panel) && panel.closes_on_esc())
     }
 
     /// Whether any screen has a panel open, so everything Nova draws on
@@ -110,7 +119,13 @@ mod tests {
     }
 
     fn panel(name: &'static str) -> PanelRules {
-        PanelRules { name: name.into(), exclusive: true, wants_keyboard: false, closes_on_click_outside: true }
+        PanelRules {
+            name: name.into(),
+            placement: Placement::Top,
+            exclusive: true,
+            wants_keyboard: false,
+            closes_on_click_outside: true,
+        }
     }
 
     /// One that stays open beside the others, like a notes window would.
@@ -170,13 +185,28 @@ mod tests {
     fn the_keyboard_is_held_only_on_the_screen_with_a_panel_that_closes_on_esc() {
         let mut open = OpenPanels::default();
         open.open(notes(), left());
-        assert!(!open.needs_keyboard(left()) && !open.catches_clicks());
+        let top = true;
+        assert!(!open.needs_keyboard(left(), top) && !open.catches_clicks());
         open.open(panel("launcher"), right());
-        assert!(open.needs_keyboard(right()) && !open.needs_keyboard(left()));
+        assert!(open.needs_keyboard(right(), top) && !open.needs_keyboard(left(), top));
         assert!(open.catches_clicks());
         let typing = PanelRules { name: "journal".into(), wants_keyboard: true, ..notes() };
         open.open(typing, left());
-        assert!(open.needs_keyboard(left()));
+        assert!(open.needs_keyboard(left(), top));
+    }
+
+    #[test]
+    fn a_drawer_at_the_edge_and_a_panel_on_the_strip_close_each_other() {
+        let drawer = || PanelRules { placement: Placement::RightEdge, ..panel("quick-settings") };
+        let mut open = OpenPanels::default();
+        open.open(panel("launcher"), left());
+        assert!(open.open(drawer(), left()));
+        assert!(!open.is_open("launcher", left()), "the drawer closes the strip's panel");
+        assert!(open.needs_keyboard(left(), false), "its own window holds the keyboard");
+        assert!(!open.needs_keyboard(left(), true), "and the strip's lets go");
+        assert!(open.open(panel("launcher"), right()));
+        assert!(!open.is_open("quick-settings", left()), "and the other way round, across screens");
+        assert!(!open.needs_keyboard(left(), false));
     }
 
     #[test]

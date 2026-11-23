@@ -28,6 +28,12 @@ pub const FRAME_REPORT: Duration = Duration::from_secs(1);
 
 /// The stage's layer surface, as compositor rules name it.
 pub const STAGE_NAMESPACE: &str = "nova-stage";
+/// The window beside the strip that the panels placed off it are drawn in
+/// (`crate::panel_window`). Today's shell names its panel surfaces the same.
+pub const PANEL_NAMESPACE: &str = "nova-panel";
+/// A layer surface needs some size: that window is this big while none of
+/// its panels is out, and draws nothing.
+pub const PANEL_WINDOW_PARKED: Pixels = px(1.0);
 /// The surface that takes clicks off an open panel.
 pub const CATCHER_NAMESPACE: &str = "nova-click-catcher";
 /// The empty surface that keeps the bar's room free of app windows.

@@ -310,7 +310,13 @@ mod tests {
     }
 
     fn panel(name: &'static str) -> PanelRules {
-        PanelRules { name: name.into(), exclusive: true, wants_keyboard: false, closes_on_click_outside: true }
+        PanelRules {
+            name: name.into(),
+            placement: crate::Placement::Top,
+            exclusive: true,
+            wants_keyboard: false,
+            closes_on_click_outside: true,
+        }
     }
 
     #[test]
