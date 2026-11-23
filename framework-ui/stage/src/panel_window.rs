@@ -218,12 +218,13 @@ impl PanelWindow {
     }
 
     /// Makes the window as big as what is drawn in it needs: it grows at
-    /// once, before the panel does, keeps its size while one eases to a
-    /// smaller, and parks with nothing to draw.
-    fn fit(&mut self, needs: Option<Size<Pixels>>, window: &mut Window, cx: &mut Context<Self>) {
+    /// once, before the panel does, keeps its size while one is `moving`
+    /// (to a smaller, or closing while the next opens), shrinks to what is
+    /// left once all stand, and parks with nothing to draw.
+    fn fit(&mut self, needs: Option<Size<Pixels>>, moving: bool, window: &mut Window, cx: &mut Context<Self>) {
         let out = self.beside.get() > px(0.0);
         let wanted = match needs {
-            Some(needs) if out => size(needs.width.max(self.size.width), needs.height),
+            Some(needs) if out && moving => size(needs.width.max(self.size.width), needs.height),
             Some(needs) => needs,
             None => parked(),
         };
@@ -289,7 +290,7 @@ impl Render for PanelWindow {
         self.plain.borrow_mut().clear();
         let viewport = window.viewport_size();
         let drawn = self.draw(viewport, now, cx);
-        self.fit(drawn.needs, window, cx);
+        self.fit(drawn.needs, drawn.moving, window, cx);
         if drawn.moving {
             window.request_animation_frame();
         }

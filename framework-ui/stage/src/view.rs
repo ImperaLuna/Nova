@@ -507,7 +507,8 @@ impl StageView {
             cx.defer(move |cx| {
                 let shared = panel_window::Shared { stage: stage.clone(), panels, beside };
                 let opened = panel_window::open(&screen, shared, frames, cx);
-                let kept = stage.update(cx, |stage, cx| stage.panel_window_opened(opened, cx)).unwrap_or(false);
+                let kept =
+                    stage.update(cx, |stage, cx| stage.panel_window_opened(opened, &screen, cx)).unwrap_or(false);
                 if let Some(window) = opened.filter(|_| !kept) {
                     satellites::close(window.into(), cx);
                 }
@@ -518,8 +519,18 @@ impl StageView {
     /// Takes the window opened for the panels off the strip, and tells it
     /// what is open already. Returns whether it is kept: not when the
     /// panels it was for left meanwhile, or the screen changed again.
-    fn panel_window_opened(&mut self, opened: Option<WindowHandle<PanelWindow>>, cx: &mut Context<Self>) -> bool {
+    fn panel_window_opened(
+        &mut self,
+        opened: Option<WindowHandle<PanelWindow>>,
+        screen: &Screen,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.panel_window_due = false;
+        if screen.size != self.screen.size {
+            // Opened for the screen as it was: one for what it is now.
+            self.keep_panel_window(cx);
+            return false;
+        }
         if !self.wants_panel_window() || self.panel_window.is_some() {
             return false;
         }
