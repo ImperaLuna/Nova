@@ -44,8 +44,10 @@ pub struct Popups {
     /// The screen they come out on, while any are up.
     target: Option<DisplayId>,
     windows: Vec<(DisplayId, WindowHandle<PopupWindow>)>,
-    /// Screens whose window is about to open.
+    /// Screens whose window is about to open, and those whose window
+    /// couldn't open (tried again when the screens change).
     opening: Vec<DisplayId>,
+    failed: Vec<DisplayId>,
     heights: Heights,
     desktop: Entity<Live<Desktop>>,
     features: Entity<Live<Vec<FeatureState>>>,
@@ -53,8 +55,10 @@ pub struct Popups {
     list_open: bool,
     /// A tick that drains the cards' time is running.
     ticking: bool,
-    /// The pointer is over a pop-up window.
+    /// The pointer is over a pop-up window, and the card GPUI last said it
+    /// was over.
     pointer_in: bool,
+    hovered: Option<u64>,
     _followed: Vec<Subscription>,
 }
 
@@ -76,7 +80,10 @@ impl Popups {
                 cx.on_release(|popups: &mut Self, cx| popups.close_windows(cx)),
             ];
             if let Some(screens) = Stage::screens(cx) {
-                followed.push(cx.observe(&screens, |popups: &mut Self, _, cx| popups.sync_windows(cx)));
+                followed.push(cx.observe(&screens, |popups: &mut Self, _, cx| {
+                    popups.failed.clear();
+                    popups.sync_windows(cx);
+                }));
             }
             let this = cx.weak_entity();
             if let Some(open) = Stage::observe_open(cx, move |cx| {
@@ -91,12 +98,14 @@ impl Popups {
                 target: None,
                 windows: Vec::new(),
                 opening: Vec::new(),
+                failed: Vec::new(),
                 heights: Heights::default(),
                 desktop,
                 features,
                 list_open: false,
                 ticking: false,
                 pointer_in: false,
+                hovered: None,
                 _followed: followed,
             }
         });
@@ -138,7 +147,11 @@ impl Popups {
         self.windows = windows;
         let new: Vec<Screen> = here
             .iter()
-            .filter(|screen| !self.windows.iter().any(|(id, _)| *id == screen.id) && !self.opening.contains(&screen.id))
+            .filter(|screen| {
+                !self.windows.iter().any(|(id, _)| *id == screen.id)
+                    && !self.opening.contains(&screen.id)
+                    && !self.failed.contains(&screen.id)
+            })
             .cloned()
             .collect();
         if !new.is_empty() {
@@ -149,20 +162,29 @@ impl Popups {
             cx.defer(move |cx| {
                 let opened: Vec<_> = new
                     .iter()
-                    .filter_map(|screen| {
-                        PopupWindow::open(screen, this.clone(), heights.clone(), cx).map(|window| (screen.id, window))
-                    })
+                    .map(|screen| (screen.id, PopupWindow::open(screen, this.clone(), heights.clone(), cx)))
                     .collect();
-                let _ = this.update(cx, |popups, cx| {
-                    popups.opening.clear();
-                    popups.windows.extend(opened);
-                    popups.sync_windows(cx);
-                });
+                let _ = this.update(cx, |popups, cx| popups.opened(opened, cx));
             });
         }
         if self.target.is_some_and(|target| !here.iter().any(|screen| screen.id == target)) {
-            self.target = None;
+            // Those still up move to the screen with focus.
+            self.target = self.focused_screen(cx);
+            cx.notify();
         }
+    }
+
+    /// The windows a deferred open made, by screen; then the screens are
+    /// looked at again, in case they changed meanwhile.
+    fn opened(&mut self, opened: Vec<(DisplayId, Option<WindowHandle<PopupWindow>>)>, cx: &mut Context<Self>) {
+        for (screen, window) in opened {
+            self.opening.retain(|id| *id != screen);
+            match window {
+                Some(window) => self.windows.push((screen, window)),
+                None => self.failed.push(screen),
+            }
+        }
+        self.sync_windows(cx);
     }
 
     fn close_windows(&mut self, cx: &mut App) {
@@ -242,9 +264,8 @@ impl Popups {
     /// time drains.
     pub fn step(&mut self, now: Instant, cx: &mut Context<Self>) {
         self.stack.step(now);
-        if !self.stack.busy() {
-            self.heights.borrow_mut().clear();
-        }
+        let entries = self.stack.entries();
+        self.heights.borrow_mut().retain(|key, _| entries.iter().any(|entry| entry.key == *key));
         if self.stack.counting() && !self.ticking {
             self.ticking = true;
             cx.spawn(async move |popups, cx| {
@@ -301,16 +322,30 @@ impl Popups {
             return;
         }
         self.pointer_in = inside;
-        if !inside {
+        let now = Instant::now();
+        if inside {
+            // GPUI still has the card it last saw hovered, so it sends no
+            // hover for it again: hold it now. Should the pointer be on
+            // another card, GPUI lets this one go next.
+            if let Some(key) = self.hovered {
+                self.stack.set_held(key, true, now);
+            }
+        } else {
             let held: Vec<u64> =
                 self.stack.entries().iter().filter(|entry| entry.held).map(|entry| entry.key).collect();
             for key in held {
-                self.hover(key, false, cx);
+                self.stack.set_held(key, false, now);
             }
         }
+        cx.notify();
     }
 
     fn hover(&mut self, key: u64, held: bool, cx: &mut Context<Self>) {
+        if held {
+            self.hovered = Some(key);
+        } else if self.hovered == Some(key) {
+            self.hovered = None;
+        }
         if held && !self.pointer_in {
             return;
         }

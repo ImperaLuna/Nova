@@ -383,8 +383,8 @@ impl Render for List {
         let items = model.items(cx).to_vec();
         let do_not_disturb = model.do_not_disturb(cx);
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64);
-        // Gone from the list: its stack and its menu with it.
-        self.expanded.retain(|app| items.iter().any(|item| &item.app == app));
+        // Gone from the list, or down to one: its stack and its menu with it.
+        self.expanded.retain(|app| items.iter().filter(|item| &item.app == app).count() > 1);
         self.menu_for = self.menu_for.filter(|id| items.iter().any(|item| item.id == *id));
         let heading = self.heading(items.len(), do_not_disturb, cx);
         let list = div()
