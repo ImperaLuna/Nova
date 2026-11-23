@@ -2973,6 +2973,7 @@ dependencies = [
  "nova-theme-info",
  "serde",
  "toml 0.8.23",
+ "unicode-segmentation",
 ]
 
 [[package]]

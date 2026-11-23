@@ -18,7 +18,7 @@
 //! GPUI, tested alone.
 
 use crate::Theme;
-use crate::tokens::{CARET_WIDTH, WEIGHT_BODY};
+use crate::tokens::{CARET_WIDTH, COMPOSING_UNDERLINE, WEIGHT_BODY};
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementInputHandler, EntityInputHandler, EventEmitter,
     FocusHandle, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
@@ -26,6 +26,7 @@ use gpui::{
     UTF16Selection, UnderlineStyle, Window, canvas, div, fill, point, px, size,
 };
 use std::ops::Range;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// What a [`TextField`] tells its owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,7 +125,7 @@ impl Editing {
     fn before(&self, by_word: bool) -> usize {
         let mut characters = self.text[..self.cursor].char_indices().rev().peekable();
         if !by_word {
-            return characters.next().map_or(0, |(at, _)| at);
+            return self.text[..self.cursor].grapheme_indices(true).next_back().map_or(0, |(at, _)| at);
         }
         // Over the gap, then over the word before it.
         while characters.next_if(|(_, character)| character.is_whitespace()).is_some() {}
@@ -140,7 +141,7 @@ impl Editing {
         let rest = &self.text[self.cursor..];
         let mut characters = rest.char_indices().peekable();
         if !by_word {
-            return self.cursor + characters.next().map_or(0, |(_, character)| character.len_utf8());
+            return self.cursor + rest.graphemes(true).next().map_or(0, str::len);
         }
         while characters.next_if(|(_, character)| character.is_whitespace()).is_some() {}
         while characters.next_if(|(_, character)| !character.is_whitespace()).is_some() {}
@@ -324,7 +325,11 @@ impl TextField {
             font: style.font(),
             color,
             background_color: background,
-            underline: composing.then(|| UnderlineStyle { color: Some(color), thickness: px(1.0), wavy: false }),
+            underline: composing.then_some(UnderlineStyle {
+                color: Some(color),
+                thickness: COMPOSING_UNDERLINE,
+                wavy: false,
+            }),
             strikethrough: None,
         };
         let text = self.text();
@@ -363,7 +368,9 @@ impl TextField {
     fn paint(&mut self, bounds: Bounds<Pixels>, line: ShapedLine, window: &mut Window, cx: &mut App) {
         let cursor = line.x_for_index(self.editing.cursor);
         let furthest = (bounds.size.width - CARET_WIDTH).max(px(0.0));
-        self.scroll = self.scroll.clamp((cursor - furthest).max(px(0.0)), cursor);
+        // No further than the line overflows: a line that fits isn't scrolled.
+        let overflow = (line.width - furthest).max(px(0.0));
+        self.scroll = self.scroll.clamp((cursor - furthest).max(px(0.0)), cursor.min(overflow));
         let origin = point(bounds.left() - self.scroll, bounds.top());
         let line_height = window.line_height();
         window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
@@ -547,6 +554,18 @@ mod tests {
         field.select(0..field.text().len());
         field.replace(field.selection(), "123456789");
         assert_eq!(field.text(), "12345");
+    }
+
+    #[test]
+    fn a_character_of_several_code_points_is_one_step() {
+        // A family emoji (joined people) and an e with a combining accent.
+        let mut field = editing("a\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}e\u{301}");
+        assert!(field.press("backspace", false, false));
+        assert_eq!(field.text(), "a\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}");
+        assert!(field.press("left", false, false));
+        assert_eq!(field.selection(), 1..1);
+        assert!(field.press("delete", false, false));
+        assert_eq!(field.text(), "a");
     }
 
     #[test]

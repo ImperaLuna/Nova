@@ -152,6 +152,8 @@ tokens! {
     SEGMENT_HEIGHT: px = 30.0, "segmentHeight";
     /// The text cursor in a field (`crate::TextField`).
     CARET_WIDTH: px = 2.0, "caretWidth";
+    /// The line under text an input method is still composing.
+    COMPOSING_UNDERLINE: px = 1.0, "composingUnderline";
     /// An app's icon in a row (`crate::AppIcon`). Without an image it is
     /// the app's letter on a swatch, this round at this size, the letter
     /// this share of the tile.

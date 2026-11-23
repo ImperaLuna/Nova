@@ -86,6 +86,7 @@ futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+unicode-segmentation = "1"
 # The local time, for the clock: chrono, which GPUI uses, is unmaintained
 # (RUSTSEC-2026-0543). The system's time zone from TZ or /etc/localtime.
 jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
