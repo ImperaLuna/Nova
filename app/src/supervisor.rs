@@ -96,6 +96,10 @@ struct Record {
     pid: Option<u32>,
     restarts: u32,
     last_crash: Option<Crash>,
+    /// When the UI got to its state ([`UiStatus::since`]).
+    since: Option<String>,
+    /// Why it isn't running while wanted ([`UiStatus::problem`]).
+    problem: Option<String>,
 }
 
 impl Supervisor {
@@ -131,6 +135,8 @@ impl Supervisor {
                 .and_then(|pid| nova_process::procfs::pss_kib(Path::new(nova_process::procfs::PROC), pid)),
             restarts: record.restarts,
             last_crash: record.last_crash.clone(),
+            since: record.since.clone(),
+            problem: record.problem.clone().filter(|_| state == UiState::Restarting),
         }
     }
 
@@ -190,6 +196,8 @@ impl Supervisor {
             if std::mem::take(&mut lock(&self.record).stopping) || matches!(outcome, Outcome::NotWanted) {
                 // Stopped on purpose: no crash, and a fresh backoff.
                 retry.reset();
+                failed_start = None;
+                self.not_running(None);
                 continue;
             }
             exit_if_session_over(settings, logger);
@@ -197,23 +205,17 @@ impl Supervisor {
             match outcome {
                 Outcome::Exited(exit) => {
                     failed_start = None;
+                    self.not_running(Some(format!("it stopped after {} s: {exit}", ran_for.as_secs())));
                     self.record_crash(&exit, ran_for, logger);
                 }
-                Outcome::NotStarted(problem) if failed_start.as_ref() != Some(&problem) => {
-                    // No output to keep, so no crash snapshot, and not a
-                    // restart: it never ran.
-                    logger.error(LOG_SOURCE, &format!("the UI didn't start: {problem}"));
-                    failed_start = Some(problem);
-                }
-                Outcome::NotStarted(_) | Outcome::NotWanted => {}
+                Outcome::NotStarted(problem) => self.failed_to_start(problem, &mut failed_start, logger),
+                Outcome::NotWanted => {}
             }
             if ran_for > HEALTHY_AFTER {
                 retry.reset();
             }
             let wait = retry.next();
-            if failed_start.is_none() {
-                logger.info(LOG_SOURCE, &format!("starting the UI again in {} s", wait.as_secs()));
-            }
+            logger.info(LOG_SOURCE, &format!("starting the UI again in {} s", wait.as_secs()));
             // Cut short by `stop`, or by `want(false)` (the loop then waits
             // until it's wanted again).
             let record = lock(&self.record);
@@ -240,6 +242,8 @@ impl Supervisor {
             match spawn(settings, &program) {
                 Ok(child) => {
                     record.pid = Some(child.id());
+                    record.since = Some(nova_log::now());
+                    record.problem = None;
                     logger.info(LOG_SOURCE, &format!("UI started (pid {}) from {}", child.id(), program.display()));
                     child
                 }
@@ -265,6 +269,30 @@ impl Supervisor {
             Ok(status) => describe_exit(status),
             Err(e) => format!("couldn't wait for the UI: {e}"),
         })
+    }
+
+    /// Notes a start that failed for `problem`. It never ran: no output to
+    /// keep, so no crash snapshot, and not a restart. The same reason as the
+    /// last try's (`failed_start`) is an error only once; each try after it
+    /// is the "starting again" info line.
+    fn failed_to_start(&self, problem: String, failed_start: &mut Option<String>, logger: &Logger) {
+        if failed_start.as_ref() == Some(&problem) {
+            return;
+        }
+        logger.error(LOG_SOURCE, &format!("the UI didn't start: {problem}"));
+        // Not running since the first failed try, not the latest.
+        if failed_start.is_none() {
+            self.not_running(None);
+        }
+        lock(&self.record).problem = Some(format!("it didn't start: {problem}"));
+        *failed_start = Some(problem);
+    }
+
+    /// Notes that the UI stopped running now, and why, if it should run.
+    fn not_running(&self, problem: Option<String>) {
+        let mut record = lock(&self.record);
+        record.since = Some(nova_log::now());
+        record.problem = problem;
     }
 
     fn record_crash(&self, exit: &str, ran_for: Duration, logger: &Logger) {

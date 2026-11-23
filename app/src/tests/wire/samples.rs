@@ -465,6 +465,8 @@ pub(super) fn status() -> Status {
                 time: "2026-10-22T13:40:00.000Z".into(),
                 log: "/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log".into(),
             }),
+            since: Some("2026-10-22T13:40:01.000Z".into()),
+            problem: None,
         },
         features: vec![FeatureState {
             id: "bar".into(),

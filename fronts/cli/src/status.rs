@@ -52,6 +52,10 @@ fn describe(status: &Status) -> String {
         line += &format!(", restarted {} time{}", ui.restarts, if ui.restarts == 1 { "" } else { "s" });
     }
     out += &row("UI", &line);
+    if let (UiState::Restarting, Some(problem)) = (ui.state, &ui.problem) {
+        let since = ui.since.as_deref().map(|since| format!(" {}", ago(since))).unwrap_or_default();
+        out += &row("", &format!("stopped{since}: {problem}"));
+    }
     if let Some(crash) = &ui.last_crash {
         out += &row("", &format!("last crash {}: see `nova logs --crash`", ago(&crash.time)));
     }
@@ -245,6 +249,8 @@ mod tests {
                 pss_kib: Some(180 * 1024),
                 restarts: 2,
                 last_crash: Some(Crash { time: "not a time".into(), log: "/x.log".into() }),
+                since: None,
+                problem: None,
             },
             features: vec![
                 FeatureState {
@@ -278,5 +284,15 @@ mod tests {
         assert!(text.contains("last crash not a time: see `nova logs --crash`"), "{text}");
         assert!(text.contains("features   bar on, nova-files on (full), recording missing wf-recorder"), "{text}");
         assert!(text.contains("compositor none followed"), "{text}");
+        assert!(!text.contains("stopped"), "a running UI has no problem line: {text}");
+
+        let mut stopped = status;
+        stopped.ui.state = UiState::Restarting;
+        stopped.ui.pid = None;
+        stopped.ui.since = Some("not a time".into());
+        stopped.ui.problem = Some("it didn't start: no nova-ui".into());
+        let text = describe(&stopped);
+        assert!(text.contains("UI         stopped, starting again"), "{text}");
+        assert!(text.contains("stopped not a time: it didn't start: no nova-ui"), "{text}");
     }
 }
