@@ -20,6 +20,7 @@
 # - gpui_platform
 #
 # Allowed workspace crates:
+# - nova-ai-usage-ui
 # - nova-bar-api
 # - nova-bar-ui
 # - nova-clock-ui
@@ -47,6 +48,7 @@ publish.workspace = true
 [dependencies]
 gpui.workspace = true
 gpui_platform.workspace = true
+nova-ai-usage-ui.workspace = true
 nova-bar-api.workspace = true
 nova-bar-ui.workspace = true
 nova-clock-ui.workspace = true
@@ -108,6 +110,7 @@ nova-stage = { path = "../framework-ui/stage" }
 nova-ui-client = { path = "../framework-ui/client" }
 
 # Each feature's ui, sorted by feature id.
+nova-ai-usage-ui = { path = "../features/ai-usage/ui" }
 nova-bar-ui = { path = "../features/bar/ui" }
 nova-clock-ui = { path = "../features/clock/ui" }
 nova-launcher-ui = { path = "../features/launcher/ui" }
@@ -117,6 +120,7 @@ nova-screenshot-ui = { path = "../features/screenshot/ui" }
 nova-workspaces-ui = { path = "../features/workspaces/ui" }
 
 # The daemon side's crates the UI side may use, by path: api and -info crates.
+nova-ai-usage-api = { path = "../features/ai-usage/api" }
 nova-app-info = { path = "../framework/app-info" }
 nova-carrier = { path = "../framework/carrier" }
 nova-bar-api = { path = "../features/bar/api" }
