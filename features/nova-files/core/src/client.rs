@@ -196,10 +196,10 @@ async fn read(signals: MessageStream, waiting: &Waiting, stop: &Stop) {
             Some(Err(_)) => continue,
             Some(Ok(message)) => message,
         };
-        if let Some((id, stage)) = stage(&message) {
-            if let Some(sender) = lock(waiting).get(&id) {
-                let _ = sender.send(stage);
-            }
+        if let Some((id, stage)) = stage(&message)
+            && let Some(sender) = lock(waiting).get(&id)
+        {
+            let _ = sender.send(stage);
         }
     }
 }
