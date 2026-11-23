@@ -5,7 +5,7 @@
 //! pop-up, the volume capsule) observes it instead of looking itself.
 
 use crate::tokens::{FALLBACK_REFRESH, SCREEN_POLL};
-use gpui::{App, AppContext, Context, DisplayId, Entity, Pixels, PlatformDisplay, SharedString, Size};
+use gpui::{App, AppContext, Context, DisplayId, Entity, Pixels, PlatformDisplay, Point, SharedString, Size};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -19,6 +19,12 @@ pub struct Screen {
     /// compositor gave none.
     pub name: SharedString,
     pub size: Size<Pixels>,
+    /// Where its top left corner is among the screens side by side, in the
+    /// compositor's layout (`screen.x` and `screen.y` in Quickshell): what
+    /// a recording's region counts from. GPUI divides `wl_output`'s
+    /// position by the output's whole-number scale, so it is right only on
+    /// screens at scale 1 (a fractional scale rounds up to 2 there).
+    pub origin: Point<Pixels>,
     /// The time between two of its frames.
     pub refresh: Duration,
 }
@@ -29,6 +35,7 @@ impl Screen {
             id: display.id(),
             name: display.name().unwrap_or_default().into(),
             size: display.bounds().size,
+            origin: display.bounds().origin,
             refresh: display.refresh_interval().unwrap_or(FALLBACK_REFRESH),
         }
     }
@@ -99,6 +106,7 @@ mod tests {
             id: DisplayId::new(id),
             name: name.into(),
             size: size(px(1920.0), px(1080.0)),
+            origin: gpui::point(px(0.0), px(0.0)),
             refresh: FALLBACK_REFRESH,
         }
     }

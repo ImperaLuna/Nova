@@ -2,7 +2,8 @@
 //! defined once here and every feature's ui draws with it, so the shell
 //! reads as one thing:
 //!
-//! - [`tokens`]: every size, opacity and timing, named.
+//! - [`tokens`]: every size, opacity and timing, named, and the font
+//!   families ([`Family`]: the face this system draws each with).
 //! - [`Theme`]: the active theme's colors and the fills derived from them.
 //!   Views read it while they render ([`Theme::of`]); [`Theme::set`] swaps
 //!   it and redraws, so a theme change needs nothing from a view.
@@ -28,7 +29,8 @@
 //! - [`Shape`], [`set_blur_region`]: what a window draws, as the region
 //!   the compositor blurs behind and takes clicks on.
 //! - [`motion`]: the panel curve and the spring. [`Wheel`]: a mouse
-//!   wheel's notches.
+//!   wheel's notches. [`fade_color`], [`fade`] and [`Hovered`]: the short
+//!   fades of a hover wash or a fill, kept by an element's id.
 //! - [`bytes`]: sizes in bytes as people read them.
 //! - [`ShellWindow`]: the options every shell window opens with. No other
 //!   crate builds `WindowOptions`.
@@ -40,6 +42,8 @@ mod app_icon;
 pub mod bytes;
 mod card_title;
 mod device_battery;
+mod fade;
+mod family;
 mod field;
 mod glass;
 pub mod graph;
@@ -66,6 +70,8 @@ mod window;
 pub use app_icon::AppIcon;
 pub use card_title::CardTitle;
 pub use device_battery::DeviceBattery;
+pub use fade::{Hovered, fade, fade_color, keyed};
+pub use family::Family;
 pub use field::{Editing, FieldEvent, TextField};
 pub use glass::Glass;
 pub use icon::{Glyph, Icon, IconAssets};
@@ -83,5 +89,5 @@ pub use theme::{Theme, mix};
 pub use tile::Tile;
 pub use toggle_switch::ToggleSwitch;
 pub use volume_icon::{OutputKind, VolumeGlyph};
-pub use wheel::Wheel;
+pub use wheel::{WHEEL_LINE, Wheel, scrolled};
 pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, NAMESPACE_PREFIX, ShellWindow};
