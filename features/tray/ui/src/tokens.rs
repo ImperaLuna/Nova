@@ -37,9 +37,9 @@ tokens! {
     TRAY_DOT_RING: px = 2.0, "trayDotRing";
     /// How much later each icon pops in after the one before it.
     TRAY_STAGGER: ms = 28, "trayStagger";
-    /// An app's menu: this wide, its padding, rows and corners.
+    /// An app's menu: this wide, its rows and corners (its padding is
+    /// `nova_look`'s `MENU_PAD`).
     MENU_WIDTH: px = 230.0, "menuWidth";
-    MENU_PAD: px = 6.0, "menuPad";
     MENU_ROW_HEIGHT: px = 32.0, "menuRowHeight";
     MENU_ROW_RADIUS: px = 10.0, "menuRowRadius";
     MENU_CHECK_SIZE: px = 14.0, "menuCheckSize";
@@ -49,6 +49,14 @@ tokens! {
     MENU_SEPARATOR_GAP: px = 4.0, "menuSeparatorGap";
     /// Between the bar and the menu, and how far past its icon it reaches.
     MENU_GAP: px = 8.0, "menuGap";
+    /// Quick settings' Tray card: its grid of every app, this many to a
+    /// row, each cell this tall with its icon this big, and this many rows
+    /// before it scrolls.
+    TRAY_GRID_COLUMNS: count = 8, "trayGridColumns";
+    TRAY_GRID_CELL: px = 36.0, "trayGridCell";
+    TRAY_GRID_ICON_SIZE: px = 20.0, "trayGridIconSize";
+    TRAY_GRID_GAP: px = 4.0, "trayGridGap";
+    TRAY_GRID_MAX_ROWS: count = 3, "trayGridMaxRows";
     /// The "+N" counts show once the pill has grown this far.
     REVEAL_PILL_COUNT: ratio = 0.8, "revealPillCount";
 }

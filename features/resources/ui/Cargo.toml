@@ -1,0 +1,35 @@
+# nova-resources-ui
+#
+# What the resources feature draws with GPUI in quick settings: the card of
+# rings at the drawer's foot (`resources.card`) and the page it opens
+# (`resources.page`), with CPU and memory over the last minutes and the
+# apps using the most memory, which a row can end.
+#
+# Allowed outside crates:
+# - gpui
+#
+# Allowed workspace crates:
+# - nova-look
+# - nova-resources-api
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-resources-ui"
+description = "The resources feature's UI for the GPUI program: quick settings' resources card and its page of apps to end"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-look.workspace = true
+nova-resources-api.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

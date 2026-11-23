@@ -3,8 +3,9 @@
 //! a menu entry reads and how tall a menu is. `ui/tray/tray.js` in today's
 //! shell; its tests (`ui/tests/tst_tray.qml`) are mirrored here.
 
-use crate::tokens::{MENU_PAD, MENU_ROW_HEIGHT, MENU_SEPARATOR_GAP, TRAY_FADE};
+use crate::tokens::{MENU_ROW_HEIGHT, MENU_SEPARATOR_GAP, TRAY_FADE};
 use gpui::{Pixels, px};
+use nova_look::tokens::MENU_PAD;
 use nova_look::tokens::{DIVIDER_WIDTH, PILL_BUTTON_GAP, PILL_BUTTON_SIZE};
 use nova_tray_api::{Tray, TrayMenuEntry};
 

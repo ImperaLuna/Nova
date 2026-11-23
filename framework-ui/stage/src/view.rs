@@ -233,6 +233,9 @@ pub(crate) struct StageView {
     aside_wake: Option<Task<()>>,
     /// Whether the bar's room was last told to keep its room.
     room_kept: bool,
+    /// Whether the window keeps the compositor from going idle, as it was
+    /// last told.
+    awake: bool,
     _observers: Vec<Subscription>,
 }
 
@@ -293,9 +296,15 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 aside: Aside::new(now),
                 aside_wake: None,
                 room_kept: true,
+                awake: false,
                 _observers: observers,
             };
             stage.sync_items(window, cx);
+            // A screen that came while keep awake is on.
+            if stage.panels.read(cx).awake {
+                stage.awake = true;
+                window.set_idle_inhibit(true);
+            }
             stage
         })
     });
@@ -394,6 +403,10 @@ impl StageView {
         let now = Instant::now();
         let id = self.screen.id;
         let panels = self.panels.read(cx);
+        if panels.awake != self.awake {
+            self.awake = panels.awake;
+            window.set_idle_inhibit(self.awake);
+        }
         // Raised while a panel is open, and until the last one has closed
         // all the way (`rest_once_closed`); and while the bar steps aside
         // for a fullscreen window, so touching the top edge brings the pills
