@@ -332,7 +332,9 @@ fn labels(saved: &Saved, lines: usize, cx: &App) -> impl IntoElement {
         .child(title);
     let detail = div().mt(LABEL_NUDGE).text_size(FONT_SIZE_SMALL).text_color(theme.fg_dim());
     let detail = match saved {
-        Saved::Failed { reason, .. } => detail.h(detail_height() * lines as f32).line_clamp(lines).child(reason.clone()),
+        Saved::Failed { reason, .. } => {
+            detail.h(detail_height() * lines as f32).line_clamp(lines).child(reason.clone())
+        }
         Saved::Shot(shot) => {
             let line = format!("{} · {} · PNG", folder_label(&shot.path), size_label(shot.width, shot.height));
             detail.h(detail_height()).whitespace_nowrap().overflow_hidden().text_ellipsis().child(line)

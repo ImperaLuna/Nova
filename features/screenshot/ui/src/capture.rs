@@ -53,7 +53,10 @@ pub enum Saved {
     Recording(SavedRecording),
     /// A recording didn't start after the countdown, or (`started`) its
     /// recorder ended without a frame: novad's reason.
-    Failed { reason: String, started: bool },
+    Failed {
+        reason: String,
+        started: bool,
+    },
 }
 
 /// A card's button.

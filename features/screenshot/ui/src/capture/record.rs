@@ -283,7 +283,8 @@ impl Capture {
                     other => other.to_string(),
                 };
                 eprintln!("WARN nova-ui: recording didn't start: {reason}");
-                let _ = capture.update(cx, |capture, cx| capture.show_card(Saved::Failed { reason, started: false }, cx));
+                let _ =
+                    capture.update(cx, |capture, cx| capture.show_card(Saved::Failed { reason, started: false }, cx));
             }
         })
         .detach();
