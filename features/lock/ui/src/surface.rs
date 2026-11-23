@@ -1,7 +1,6 @@
-//! One screen of the lock screen: a session lock surface as big as the
-//! screen, the backdrop, and the prompt when this is the screen in use.
-//! Keys go to the lock, whichever screen gets them. `LockSurface.qml` and
-//! `LockPrompt.qml` in today's shell.
+//! One screen of the lock screen: a session lock surface as big as the screen,
+//! the backdrop, and the prompt when this is the screen in use. Keys go to the
+//! lock, whichever screen gets them.
 //!
 //! It draws from its own copy of the prompt ([`Prompt`]), taken when the
 //! lock changes, so a screen that only shows the backdrop draws nothing

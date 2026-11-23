@@ -1,7 +1,6 @@
 //! A mouse wheel's notches, out of GPUI's scroll events: one notch steps a
 //! workspace or a volume level, and a touchpad's small deltas add up to
-//! one. Today's shell counts Qt's `angleDelta` against `Tokens.wheelNotch`
-//! the same way. And how far a wheel scrolls a list ([`scrolled`]).
+//! one. And how far a wheel scrolls a list ([`scrolled`]).
 
 use gpui::{Pixels, Point, ScrollDelta, ScrollEvent, point, px};
 

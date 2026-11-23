@@ -49,7 +49,7 @@ pub fn ease(progress: f32) -> f32 {
 }
 
 /// A value that moves to each new target on the panel curve, starting from
-/// wherever it is, like a QML `Behavior`: a panel toggled half-way turns
+/// wherever it is: a panel toggled half-way turns
 /// round from there.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Eased {

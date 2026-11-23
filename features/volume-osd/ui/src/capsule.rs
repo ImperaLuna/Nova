@@ -1,10 +1,9 @@
-//! The volume capsule: whenever the volume, mute or output in use changes,
-//! or a volume key is pressed, it slides in from the right edge of the
-//! focused screen, and slides away [`HOLD`] after the last change (not
-//! while the pointer is on it). It stays on the screen it came out on until
-//! it's gone, and stays in on a screen where quick settings is open (its
-//! slider shows the volume there), sliding away if that opens while it's
-//! out. `ui/volume/VolumeOsd.qml` in today's shell.
+//! The volume capsule: whenever the volume, mute or output in use changes, or a
+//! volume key is pressed, it slides in from the right edge of the focused
+//! screen, and slides away [`HOLD`] after the last change (not while the
+//! pointer is on it). It stays on the screen it came out on until it's gone,
+//! and stays in on a screen where quick settings is open (its slider shows the
+//! volume there), sliding away if that opens while it's out.
 //!
 //! Each screen has a window of its own ([`CapsuleWindow`]), opened when
 //! the overlay starts, never at the start of a motion (opening one stalls
@@ -42,7 +41,7 @@ pub struct Capsule {
     /// It was asked out and waits for its window to grow first.
     wants_out: bool,
     /// The slow swell eases away while the surface is still, and the liquid
-    /// eases to grey while muted, as the QML's `Behavior`s did.
+    /// eases to grey while muted.
     swell: Eased,
     muted: Eased,
     /// When the motion last stepped.

@@ -1,6 +1,6 @@
-//! `sound.page`: the Sound page in quick settings. The device in use with
-//! its volume on top, then tabs: each app's own volume, and every output
-//! and input to switch to. `SoundPage.qml` in today's shell.
+//! `sound.page`: the Sound page in quick settings. The device in use with its
+//! volume on top, then tabs: each app's own volume, and every output and input
+//! to switch to.
 //!
 //! Apps come with a name only; their icons are asked of novad's launcher
 //! (`app_icon`) once per name while the page shows, and drawn as the

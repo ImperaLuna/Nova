@@ -72,8 +72,8 @@ impl Logger {
         self.log(LogLevel::Error, source, message);
     }
 
-    /// One line a Quickshell process of Nova's printed, in Quickshell's
-    /// format, logged as from `source` (the UI's is `UI_LOG_SOURCE`).
+    /// One line the UI printed, `LEVEL message`, logged as from `source`
+    /// (the UI's is `UI_LOG_SOURCE`).
     pub fn ui_line(&self, source: &str, line: &str) {
         let (level, message) = parse_ui_line(line);
         self.log(level, source, message);
@@ -207,8 +207,8 @@ pub fn now() -> String {
     jiff::Timestamp::now().strftime("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
 }
 
-/// Splits Quickshell's `  WARN category: message` into level and the rest.
-/// Lines without a level (Quickshell's own banner, raw prints) count as info.
+/// Splits the UI's `WARN source: message` into level and the rest. Lines
+/// without a level (a library's raw prints) count as info.
 fn parse_ui_line(line: &str) -> (LogLevel, &str) {
     let line = line.trim_end();
     let trimmed = line.trim_start();

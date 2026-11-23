@@ -1,7 +1,6 @@
-//! The resources page's graph: CPU (a line over a filled area, in the
-//! accent) and memory (a line, in the second accent) over the history
-//! novad keeps, newest at the right, with quiet lines at a quarter, half
-//! and three quarters. `Graph.qml` in today's shell.
+//! The resources page's graph: CPU (a line over a filled area, in the accent)
+//! and memory (a line, in the second accent) over the history novad keeps,
+//! newest at the right, with quiet lines at a quarter, half and three quarters.
 
 use crate::tokens::{GRAPH_AREA_OPACITY, GRAPH_HEIGHT};
 use gpui::{App, Bounds, IntoElement, Pixels, RenderOnce, Styled, Window, canvas, fill, point, size};

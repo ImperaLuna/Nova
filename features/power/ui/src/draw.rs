@@ -1,6 +1,5 @@
 //! Draws the open power menu: "Session" and the uptime, a row per action,
-//! and why the last action failed. `ui/power/PowerMenu.qml`'s rows and
-//! `PowerRow.qml` in today's shell; the stage draws the glass, its fillets
+//! and why the last action failed. The stage draws the glass, its fillets
 //! and the motion.
 //!
 //! A row is its icon and label, filled with the accent while selected.

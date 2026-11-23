@@ -1,6 +1,5 @@
-//! What the lock feature draws with GPUI (AGENTS.md, "Porting a feature's
-//! UI to GPUI"): the lock screen (`lock.screen`, host `shell.overlays`).
-//! `ui/lock/*.qml` in today's shell.
+//! What the lock feature draws with GPUI (AGENTS.md, "Porting a feature's UI to
+//! GPUI"): the lock screen (`lock.screen`, host `shell.overlays`).
 //!
 //! novad says when to lock (`nova lock`, the power menu, before sleep);
 //! the compositor's session lock (ext-session-lock-v1) then shows nothing

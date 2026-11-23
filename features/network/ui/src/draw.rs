@@ -1,7 +1,6 @@
-//! How the network page looks: traffic over the last minute on the link
-//! in use, which link to prefer while a cable and Wi-Fi are both connected,
-//! the Wired row, Wi-Fi's switch, and the networks in reach, scrolling
-//! below them. `NetworkPage.qml` in today's shell.
+//! How the network page looks: traffic over the last minute on the link in use,
+//! which link to prefer while a cable and Wi-Fi are both connected, the Wired
+//! row, Wi-Fi's switch, and the networks in reach, scrolling below them.
 
 use crate::logic::{self, LinkIcon, Role};
 use crate::page::NetworkPage;
@@ -425,8 +424,8 @@ fn link_icon(icon: LinkIcon, size: Pixels, color: Hsla) -> Icon {
     }
 }
 
-/// Wi-Fi's icon for a network of `strength`: the arcs its signal reaches
-/// in `color`, the others faint, over the solid dot. `WifiIcon.qml`.
+/// Wi-Fi's icon for a network of `strength`: the arcs its signal reaches in
+/// `color`, the others faint, over the solid dot.
 fn wifi_icon(strength: u8, color: Hsla) -> AnyElement {
     let lit = logic::arcs(strength);
     let arcs = [Glyph::WIFI_ARC_INNER, Glyph::WIFI_ARC_MIDDLE, Glyph::WIFI_ARC_OUTER];

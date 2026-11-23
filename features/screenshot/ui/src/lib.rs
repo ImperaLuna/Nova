@@ -1,11 +1,9 @@
 //! What the screenshot and recording features draw with GPUI, as their
 //! manifests' slots name the views (`features/screenshot/feature.toml`,
 //! `features/recording/feature.toml`): `capture.overlay` (host
-//! `shell.overlays`, shared by both), the region picker, the card a saved
-//! shot or recording lands in and the marks around a region being
-//! recorded; and `recording.pill` (host `bar.right`), shown while a
-//! recording runs. `ui/capture` in today's shell, which stays the spec
-//! until it is removed.
+//! `shell.overlays`, shared by both), the region picker, the card a saved shot
+//! or recording lands in and the marks around a region being recorded; and
+//! `recording.pill` (host `bar.right`), shown while a recording runs.
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `capture`: the link to novad and what every screen shares, and the

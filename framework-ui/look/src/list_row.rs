@@ -1,6 +1,5 @@
-//! A list row in a quick settings page: an icon, a name with a line under
-//! it, and a status at its end ("In use"), quietly filled while selected.
-//! `ui/quick_settings/ListRow.qml` in today's shell.
+//! A list row in a quick settings page: an icon, a name with a line under it,
+//! and a status at its end ("In use"), quietly filled while selected.
 
 use crate::tokens::{FONT_SIZE, FONT_SIZE_SMALL, GAP, ICON_SIZE_MENU, LIST_ROW_HEIGHT, PAD, RADIUS_ROW, WEIGHT_LABEL};
 use crate::{Glyph, Icon, Theme};

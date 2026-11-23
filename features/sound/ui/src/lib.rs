@@ -1,17 +1,15 @@
-//! What the sound feature draws, with GPUI: the volume slider in quick
-//! settings (`quick-settings.sliders` slot `sound.slider` of
+//! What the sound feature draws, with GPUI: the volume slider in quick settings
+//! (`quick-settings.sliders` slot `sound.slider` of
 //! `features/sound/feature.toml`) and the Sound page its arrow opens
-//! (`quick-settings.pages` slot `sound.page`). `SoundSliderSlot.qml` and
-//! `SoundPage.qml` in `ui/quick_settings` in today's shell, which stay the
-//! spec until it is removed.
+//! (`quick-settings.pages` slot `sound.page`).
 //!
 //! Both follow novad's `sound` topic and change things with the sound
 //! feature's commands; what they show comes back as the next event.
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `slider`, `page`: the two views.
-//! - `logic`: what `quick_settings.js` and `volume.js` worked out for them
-//!   (the device in use, its icon, a row's second line), tested alone.
+//! - `logic`: what they work out (the device in use, its icon, a row's second
+//!   line), tested alone.
 
 mod logic;
 mod page;

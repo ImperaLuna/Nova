@@ -1,7 +1,7 @@
-//! What `ui/quick_settings/network.js` worked out, with no GPUI drawing in
-//! it: from a network event (`None` before the first), which link is in
-//! use, what the tile shows, each row's line and role, which networks are
-//! listed, a password's length, and how traffic reads.
+//! What the network views work out, with no GPUI drawing in it: from a network
+//! event (`None` before the first), which link is in use, what the tile shows,
+//! each row's line and role, which networks are listed, a password's length,
+//! and how traffic reads.
 
 use nova_look::Glyph;
 use nova_network_api::{

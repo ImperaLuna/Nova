@@ -271,7 +271,7 @@ pub const SHADOW_ROOM: Pixels = px(40.0);
 pub const WORKSPACE_INSET: Pixels = px(5.0);
 
 /// A dashed ring's dashes and the gaps between them, as long as each other
-/// (`ringDashes` in Tokens.qml, in Qt's units of the stroke's width).
+/// (in units of the stroke's width).
 pub const RING_DASH: f32 = 2.0;
 
 /// The grid line icons are drawn on.

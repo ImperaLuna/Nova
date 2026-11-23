@@ -22,7 +22,7 @@ pub struct Screen {
     /// fork reads it from xdg-output, as the compositor lays it out.
     pub size: Size<Pixels>,
     /// Where its top left corner is among the screens side by side, in the
-    /// compositor's layout (`screen.x` and `screen.y` in Quickshell): what
+    /// compositor's layout: what
     /// a recording's region counts from.
     pub origin: Point<Pixels>,
     /// The time between two of its frames.

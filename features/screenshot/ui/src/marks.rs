@@ -1,6 +1,5 @@
-//! The corner marks around a region being recorded, on its screen: just
-//! outside it, so they aren't in the recording. `ui/capture/RecordingMarks.qml`
-//! in today's shell.
+//! The corner marks around a region being recorded, on its screen: just outside
+//! it, so they aren't in the recording.
 //!
 //! Its own window on each screen, on the overlay layer, taking no clicks,
 //! no keyboard and no space: one pixel big while nothing is recorded there,

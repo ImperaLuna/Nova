@@ -1,5 +1,5 @@
 //! A pill and a panel drawn with the whole look kit, to look at and to
-//! screenshot beside today's shell: glass with its edge and shadow, text at
+//! screenshot: glass with its edge and shadow, text at
 //! each size and ink, icons, fills, a meter that eases in, the theme's
 //! colors, and a footer held inside the panel's rounded corners. The blur
 //! and click regions follow the two shapes.

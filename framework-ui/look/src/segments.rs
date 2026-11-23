@@ -1,5 +1,5 @@
-//! A row of tabs, one of them picked: the launcher's Apps and Files, a
-//! page's sections. `ui/theme/Segments.qml` in today's shell.
+//! A row of tabs, one of them picked: the launcher's Apps and Files, a page's
+//! sections.
 //!
 //! [`Segments`] draws the options side by side, as wide as each other, in
 //! the width its parent gives it, some with an icon before the label. It

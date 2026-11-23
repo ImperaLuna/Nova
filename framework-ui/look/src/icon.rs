@@ -4,7 +4,7 @@
 //! the color and size asked for, with round caps and joins, and can lay a
 //! second glyph solid underneath for the few icons with a solid part (a
 //! charging bolt, a pinned pin: which glyph is filled is the caller's
-//! choice, as it was in QML).
+//! choice).
 //!
 //! GPUI draws an SVG from the app's asset source as a mask it then tints.
 //! So each icon is a small SVG document made on demand from its glyphs

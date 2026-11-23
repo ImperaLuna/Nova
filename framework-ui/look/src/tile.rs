@@ -1,7 +1,6 @@
-//! A toggle tile in quick settings: an icon and a title, filled with the
-//! accent while on. The fill says its state, so no line under the title
-//! does. With an arrow at its end, a click there opens the tile's page
-//! instead of toggling. `ui/quick_settings/Tile.qml` in today's shell.
+//! A toggle tile in quick settings: an icon and a title, filled with the accent
+//! while on. The fill says its state, so no line under the title does. With an
+//! arrow at its end, a click there opens the tile's page instead of toggling.
 //!
 //! [`Tile::empty`] is a tile's place with nothing in it yet: quick settings
 //! keeps it for a feature whose tile isn't drawn here yet.

@@ -1,8 +1,8 @@
-//! How the Bluetooth page looks: the switch in its top row, why it can't
-//! turn on when it can't, then the devices connected, the known ones and
-//! the ones nearby, scrolling once they're longer than the page. Pairing
-//! questions, failures, a connected device's actions and Forget's confirm
-//! show under the device's row. `BluetoothPage.qml` in today's shell.
+//! How the Bluetooth page looks: the switch in its top row, why it can't turn
+//! on when it can't, then the devices connected, the known ones and the ones
+//! nearby, scrolling once they're longer than the page. Pairing questions,
+//! failures, a connected device's actions and Forget's confirm show under the
+//! device's row.
 
 use crate::logic::{self, Section};
 use crate::page::BluetoothPage;

@@ -1,9 +1,7 @@
-//! What the network feature draws, with GPUI, in quick settings: the
-//! network tile (`quick-settings.tiles` slot `network.tile` of
+//! What the network feature draws, with GPUI, in quick settings: the network
+//! tile (`quick-settings.tiles` slot `network.tile` of
 //! `features/network/feature.toml`) and the network page it opens
-//! (`quick-settings.pages` slot `network.page`). `NetworkTile.qml`,
-//! `NetworkPage.qml` and `WifiIcon.qml` in `ui/quick_settings` in today's
-//! shell, which stay the spec until it is removed.
+//! (`quick-settings.pages` slot `network.page`).
 //!
 //! Both follow novad's `network` topic and change things with the network
 //! feature's commands; what they show comes back as the next event. While
@@ -12,7 +10,7 @@
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `tile`, `page`: the two views; `draw` draws the page.
-//! - `logic`: what `network.js` worked out, tested alone.
+//! - `logic`: what the views work out, tested alone.
 //! - `tokens`: the page's own sizes.
 
 mod draw;

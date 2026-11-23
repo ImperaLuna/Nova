@@ -90,8 +90,7 @@ pub(crate) struct PanelItem {
     /// Off the strip: whether the panels' window has it on screen. The
     /// pill it grows out of is on the strip, and two windows never draw in
     /// the same frame, so the pill stays until the panel is drawn over it,
-    /// and the panel stays, closed, until the pill is drawn again
-    /// (`covering` in today's shell).
+    /// and the panel stays, closed, until the pill is drawn again.
     pub cover: Rc<Cell<bool>>,
 }
 
@@ -263,7 +262,7 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
     shell.namespace = STAGE_NAMESPACE;
     // The panels' window first: a compositor stacks the windows of one
     // layer by when they opened, and the strip stays over its panels (the
-    // bar over the wallpaper carousel), as in today's shell.
+    // bar over the wallpaper carousel).
     let (off_strip, beside) = (OffStripPanels::default(), Rc::new(Cell::new(px(0.0))));
     let shared_beside =
         panel_window::Shared { stage: WeakEntity::new_invalid(), panels: off_strip.clone(), beside: beside.clone() };

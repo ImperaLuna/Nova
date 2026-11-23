@@ -1,10 +1,9 @@
-//! One screen's capsule window (`CapsuleWindow.qml` and `Capsule.qml` in
-//! today's shell): on the overlay layer against the right edge, vertically
-//! centered, so it shows over fullscreen video too; taking no keyboard and
-//! no space, with clicks and blur only on the capsule. While nothing is
-//! out it rests a pixel big and draws nothing; it grows before the capsule
-//! comes out, and shrinks once it's gone, since a resize in a motion costs
-//! that motion frames. While out it draws every frame: the liquid never
+//! One screen's capsule window: on the overlay layer against the right edge,
+//! vertically centered, so it shows over fullscreen video too; taking no
+//! keyboard and no space, with clicks and blur only on the capsule. While
+//! nothing is out it rests a pixel big and draws nothing; it grows before the
+//! capsule comes out, and shrinks once it's gone, since a resize in a motion
+//! costs that motion frames. While out it draws every frame: the liquid never
 //! stops moving.
 //!
 //! The capsule's glass, liquid and shadow are one shader ([`crate::shader`]);
@@ -363,7 +362,7 @@ struct LabelAt {
 }
 
 /// The icon and number at the bottom of the capsule, readable on glass and
-/// on liquid alike (`CapsuleLabel.qml`).
+/// on liquid alike.
 fn label(at: LabelAt, face: &Rc<Cell<Bounds<Pixels>>>, cx: &App) -> impl IntoElement {
     let LabelAt { output, open, height, surface } = at;
     let theme = Theme::of(cx);

@@ -106,8 +106,7 @@ pub fn past_edge(open: Bounds<Pixels>, radius: Pixels) -> Bounds<Pixels> {
 }
 
 /// What a drawer grows out of when its pill isn't on screen: the right end
-/// of the bar's row, nothing wide. `QuickSettings.qml`'s `pill` in today's
-/// shell.
+/// of the bar's row, nothing wide.
 pub fn edge_origin(screen_width: Pixels) -> Bounds<Pixels> {
     Bounds { origin: point(screen_width - BAR_MARGIN, BAR_GAP), size: size(px(0.0), BAR_HEIGHT) }
 }

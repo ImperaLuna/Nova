@@ -1,4 +1,4 @@
-//! What `devices.js` worked out for the Devices card, with no GPUI drawing
+//! What the Devices card works out, with no GPUI drawing
 //! in it: each device's icon, how its link reads, how full its battery is
 //! drawn, when it reads as low, and the text beside it.
 

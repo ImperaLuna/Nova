@@ -1,5 +1,5 @@
-//! What `ResourcesCard.qml`, `ResourcesPage.qml`, `Graph.qml` and the `.js`
-//! they use worked out, with no GPUI drawing in it: the rings' readings,
+//! What the Resources card, page and graph work out, with no GPUI drawing
+//! in it: the rings' readings,
 //! the apps a search finds, and the numbers on an app's row.
 
 use nova_look::bytes::short_bytes;

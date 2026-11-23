@@ -1,7 +1,6 @@
 //! A tray app's menu, as its `com.canonical.dbusmenu` object serves it:
-//! one level at a time for the GPUI UI (`GetLayout` one deep, after
+//! one level at a time for the UI (`GetLayout` one deep, after
 //! `AboutToShow` so the app can fill it), and an entry's click (`Event`).
-//! Today's Quickshell UI reads menus itself.
 
 use nova_tray_api::{Toggle, TrayMenuEntry, TrayMenuLevel};
 use std::collections::HashMap;

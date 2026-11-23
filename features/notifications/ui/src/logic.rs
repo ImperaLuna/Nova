@@ -1,7 +1,5 @@
 //! The notifications' logic without drawing: the list's groups, how long
 //! a pop-up stays, how long ago one came, and a low battery alert's fill.
-//! `ui/notifications/notifications.js` and parts of `ui/text/duration.js`
-//! and `ui/quick_settings/devices.js` in today's shell.
 
 use nova_notifications_api::{Notification, Urgency};
 use nova_peripherals_api::{Battery, BatteryLevel};
@@ -142,7 +140,7 @@ mod tests {
         assert_eq!(letter("firefox"), "F");
         assert_eq!(letter("  7zip"), "7");
         assert_eq!(letter("--"), "?");
-        // launcher.js's swatch(), counted from 0: "firefox" is swatch 8 there.
+        // `nova_look::app_icon`'s swatch, counted from 0: "firefox" is 8 there.
         assert_eq!(swatch("firefox", 8), 7);
         assert_eq!(swatch("", 8), 0);
     }

@@ -1,10 +1,9 @@
 //! The pop-ups: a window of their own on each screen, on the overlay layer
-//! under the right pill, taking no keyboard and no space, with clicks and
-//! blur only on the cards, so they show over fullscreen windows too. The
-//! stack comes out on the screen that had focus when the first of them
-//! came, and stays there until they've all gone. None while quick settings
-//! is open: it shows the list. `ui/notifications/NotificationPopups.qml`
-//! in today's shell.
+//! under the right pill, taking no keyboard and no space, with clicks and blur
+//! only on the cards, so they show over fullscreen windows too. The stack comes
+//! out on the screen that had focus when the first of them came, and stays
+//! there until they've all gone. None while quick settings is open: it shows
+//! the list.
 //!
 //! Each screen's window opens when the overlay starts, never at the start
 //! of a motion (opening one stalls every window's frames), and is only as

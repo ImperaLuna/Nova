@@ -361,8 +361,7 @@ fn baseline_share(window: &Window) -> f32 {
 }
 
 /// The headline: the pill's number, big, with a smaller `%` on its
-/// baseline, the number's line centered in the headline's height as
-/// today's shell centers it.
+/// baseline, the number's line centered in the headline's height.
 fn hero(summary: &Summary, baseline: f32, theme: &Theme) -> Div {
     let color = percent_color(summary.main.as_ref(), theme);
     let top = (LINE_HEIGHT_HERO - FONT_SIZE_HERO * LINE_HEIGHT) / 2.0;

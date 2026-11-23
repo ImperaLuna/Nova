@@ -1,7 +1,5 @@
-//! Notifications' link to novad, shared by the pop-ups and the list: the
-//! list, do not disturb and the muted apps, the pop-ups' arrivals, and the
-//! commands. `ui/notifications/service/NotificationsService.qml` in today's
-//! shell.
+//! Notifications' link to novad, shared by the pop-ups and the list: the list,
+//! do not disturb and the muted apps, the pop-ups' arrivals, and the commands.
 
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Subscription, WeakEntity};
 use nova_notifications_api::{Command, Event, Notification, NotificationList, TOPIC};

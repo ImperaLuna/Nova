@@ -1,6 +1,5 @@
 //! What the launcher draws, with GPUI: the stage's `launcher` panel
 //! (`stage.panels` slot `launcher.panel` of `features/launcher/feature.toml`).
-//! `ui/launcher` in today's shell, which stays the spec until it is removed.
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `launcher`: the panel's view, one per screen: its state, its keys,

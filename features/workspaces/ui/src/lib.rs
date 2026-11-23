@@ -5,13 +5,11 @@
 //! draws the numbers and goes to one on a click.
 //!
 //! What it shows comes from novad's compositor event, the same on every
-//! compositor: the workspaces of the screen's output that have windows or
-//! show ([`numbers::shown`]). The one shown sits in a capsule that slides
-//! between numbers, the accent while the output has the focus and a quiet
-//! fill otherwise; a workspace whose window wants attention gets an accent
-//! number and a dot. Special workspaces (Hyprland's scratchpad) lead, a
-//! little apart. `WorkspaceList.qml` and `WorkspaceNumber.qml` in today's
-//! shell.
+//! compositor: the workspaces of the screen's output that have windows or show
+//! ([`numbers::shown`]). The one shown sits in a capsule that slides between
+//! numbers, the accent while the output has the focus and a quiet fill
+//! otherwise; a workspace whose window wants attention gets an accent number
+//! and a dot. Special workspaces (Hyprland's scratchpad) lead, a little apart.
 
 mod list;
 mod numbers;

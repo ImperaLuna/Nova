@@ -7,7 +7,7 @@
 //! each digit that changed rolls up and out while the new one rolls in from
 //! below ([`digits`]); the others stand still. `NOVA_FROZEN_TIME` (an ISO
 //! time like `2026-10-24T16:40`) shows a fixed time instead, for
-//! screenshots that don't change with the clock, as today's shell does.
+//! screenshots that don't change with the clock.
 
 mod digits;
 mod time;

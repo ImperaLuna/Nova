@@ -1,7 +1,6 @@
 //! What the tray works out, with no GPUI in it: which apps it shows and in
 //! which order, what the strip and the "+N" counts show as it scrolls, how
-//! a menu entry reads and how tall a menu is. `ui/tray/tray.js` in today's
-//! shell; its tests (`ui/tests/tst_tray.qml`) are mirrored here.
+//! a menu entry reads and how tall a menu is.
 
 use crate::tokens::{MENU_ROW_HEIGHT, MENU_SEPARATOR_GAP, TRAY_FADE};
 use gpui::{Pixels, px};
@@ -180,7 +179,7 @@ mod tests {
         }
     }
 
-    /// The tray as tst_tray.qml has it: Discord (Electron, no title),
+    /// A tray: Discord (Electron, no title),
     /// Steam (libayatana, hidden) and Claude asking for attention.
     fn tray() -> Tray {
         let discord = item(

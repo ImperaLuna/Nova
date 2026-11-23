@@ -1,6 +1,6 @@
 //! Component tests: novad driven through its real socket, with a real logger,
 //! supervisor, settings files and feature manifests. The stand-ins are the
-//! UI process in the crash tests, a shell script, since Quickshell needs a
+//! UI process in the crash tests, a shell script, since nova-ui needs a
 //! compositor, and compositor IPC servers replaying recorded niri and
 //! Hyprland sessions.
 

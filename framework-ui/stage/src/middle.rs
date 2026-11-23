@@ -1,6 +1,6 @@
 //! The point of the bar's center row that sits at the screen's middle.
-//! Today's shell keeps the central pill's time there while workspaces come
-//! and go on its left (the pill grows to the left, the time never moves).
+//! The central pill's time stays there while workspaces come and go on
+//! its left (the pill grows to the left, the time never moves).
 //!
 //! A view in the center row wraps that thing in [`middle`]. While the frame
 //! is laid out, the wrapper records its middle for its window; the stage

@@ -1,13 +1,12 @@
-// The volume capsule in one pass: a glass capsule with a liquid fill and a
-// soft shadow, from the IMP-56 spike, ported from today's shell
-// (`ui/volume/liquid.frag`). The surface is one slow swell longer than the
-// capsule is wide, plus the capsule's first sloshing mode when stirred, so
-// it stays a smooth curve and never ripples. Every color and size comes in
-// from the capsule's tokens (`shader.rs`); the numbers below are only math:
-// the waves' shape, the shading across the liquid's depth and width, and
-// the specks' random paths.
+// The volume capsule in one pass: a glass capsule with a liquid fill and a soft
+// shadow, from the IMP-56 spike. The surface is one slow swell longer than the
+// capsule is wide, plus the capsule's first sloshing mode when stirred, so it
+// stays a smooth curve and never ripples. Every color and size comes in from
+// the capsule's tokens (`shader.rs`); the numbers below are only math: the
+// waves' shape, the shading across the liquid's depth and width, and the
+// specks' random paths.
 //
-// It works in the window's logical pixels, as the QML did: `shade` gets
+// It works in the window's logical pixels: `shade` gets
 // device pixels, which it divides by the scale. quad.params:
 //   [0] the capsule: x, y, width, height
 //   [1] corner radius, glass between rim and liquid, level (0..1), time (s)

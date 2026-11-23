@@ -1,5 +1,5 @@
 //! A picture in a rounded box: the image at a path once it loads, else a
-//! music note on a quiet square (`MediaArt.qml`). For the app's icon (not
+//! music note on a quiet square. For the app's icon (not
 //! backed: no box behind the picture) and the track's cover in the panel
 //! (backed, and cut to the box's rounding).
 

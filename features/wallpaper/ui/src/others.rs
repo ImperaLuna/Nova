@@ -1,7 +1,6 @@
 //! The carousel's preview on the screens it isn't open on: each such
 //! screen's pick over the whole screen, where it would change, and the
-//! mark while the deck picks for that screen alone. `WallpaperPreview.qml`
-//! and the `preview` that `WallpaperService.qml` shares.
+//! mark while the deck picks for that screen alone.
 //!
 //! [`Previewed`] is what the open carousel previews, shared by every
 //! screen's carousel. It opens a window on each other screen once the

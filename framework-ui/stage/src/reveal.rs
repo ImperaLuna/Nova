@@ -1,6 +1,6 @@
-//! When a panel's content shows. Opening, it waits until the panel has
-//! grown part of the way, then fades in; closing, it follows the morph
-//! back, all at once. `MorphReveal` in today's shell.
+//! When a panel's content shows. Opening, it waits until the panel has grown
+//! part of the way, then fades in; closing, it follows the morph back, all at
+//! once.
 
 use nova_look::tokens::{DURATION_FADE, DURATION_PANEL, REVEAL_CONTENT};
 use std::time::Instant;

@@ -1,6 +1,6 @@
-//! What `quick_settings.js` and `volume.js` worked out for the slider and
-//! the Sound page, with no GPUI drawing in it: the device in use, the
-//! volume icon's output kind, a list row's icon and second line.
+//! What the slider and the Sound page work out, with no GPUI drawing in it: the
+//! device in use, the volume icon's output kind, a list row's icon and second
+//! line.
 
 use nova_look::{Glyph, OutputKind};
 use nova_sound_api::{Device, DeviceKind, Link, Sound};
@@ -40,7 +40,7 @@ pub fn kind_glyph(kind: DeviceKind) -> Glyph {
     }
 }
 
-/// How a device is connected, in words (`devices.js` `linkLabel`).
+/// How a device is connected, in words.
 pub fn link_label(link: Option<Link>) -> &'static str {
     match link {
         Some(Link::Bluetooth) => "Bluetooth",

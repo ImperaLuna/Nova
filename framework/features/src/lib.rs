@@ -84,8 +84,7 @@ pub const HOSTS: &[Host] = &[
     // The buttons at the right pill's end (and on quick settings, in the
     // same place).
     Host { name: "right-pill.buttons", owner: Some("bar"), views: Views::Ui },
-    // The tray in the right pill, before a divider and its buttons. Today's
-    // right pill draws the tray itself; nova-ui's draws this host's views.
+    // The tray in the right pill, before a divider and its buttons.
     Host { name: "right-pill.tray", owner: Some("bar"), views: Views::Ui },
     // The central pill's parts beside the launcher's search button: the
     // workspaces and the day and time.
@@ -224,7 +223,7 @@ impl Manifest {
             .unwrap_or(&[])
     }
 
-    /// Whether the feature draws anything, so the UI (Quickshell) has to run
+    /// Whether the feature draws anything, so the UI (nova-ui) has to run
     /// while it's on: it fills at least one slot with a UI view.
     pub fn has_ui(&self) -> bool {
         self.slots.iter().any(|slot| host(&slot.host).is_none_or(|host| host.views == Views::Ui))

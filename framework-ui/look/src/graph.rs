@@ -1,7 +1,6 @@
-//! A graph over time: a history's values as a line, newest at the right,
-//! and the area under one. The network page's traffic and the resources
-//! page draw with it. `graphPath` in `ui/quick_settings/quick_settings.js`
-//! in today's shell.
+//! A graph over time: a history's values as a line, newest at the right, and
+//! the area under one. The network page's traffic and the resources page draw
+//! with it.
 //!
 //! [`points`] places the values, with no GPUI drawing in it; [`line`] and
 //! [`area`] paint them from inside a `canvas`.

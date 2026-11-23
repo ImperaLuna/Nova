@@ -1,8 +1,7 @@
-//! The concave corner that joins glass to a screen edge: the power menu's
-//! tab curves into the right edge above and below it. A square of the
-//! glass's tint with a quarter circle cut from its corner away from the
-//! glass and the edge, and the glass's outline along the curve.
-//! `ui/power/EdgeFillet.qml` in today's shell.
+//! The concave corner that joins glass to a screen edge: the power menu's tab
+//! curves into the right edge above and below it. A square of the glass's tint
+//! with a quarter circle cut from its corner away from the glass and the edge,
+//! and the glass's outline along the curve.
 //!
 //! It takes clicks and blur like the glass beside it, all but its cutout:
 //! whoever draws one adds [`Fillet::shapes`] to its window's shapes

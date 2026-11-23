@@ -1,8 +1,8 @@
 //! The wire names a message type accepts, read from serde itself:
 //! deserializing an unknown variant makes serde report every name the enum
 //! accepts ([`Variants`] catches that list), so `rename_all` and new
-//! variants carry over with no list to keep. The protocol file for QML and
-//! the router read their names here.
+//! variants carry over with no list to keep. The router reads its names
+//! here.
 
 use serde::Deserialize;
 use serde::de::value::{MapDeserializer, StrDeserializer};

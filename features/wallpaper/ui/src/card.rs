@@ -49,10 +49,10 @@ pub struct CardLook {
     pub sized: f32,
 }
 
-/// Where today's shell has a card's chips, as stretches of the card along
-/// their middle line (two of the card's points each): "Now" from the
-/// right, the other screens' names from the left. Today's chips turn with
-/// the card, so these say what of them a nearer card leaves in view.
+/// Where a card's chips hang, as stretches of the card along their middle
+/// line (two of the card's points each): "Now" from the right, the other
+/// screens' names from the left. These say what of them a nearer card
+/// leaves in view.
 pub struct ChipPlaces {
     pub now: [(f32, f32); 2],
     pub marks: [(f32, f32); 2],
@@ -152,7 +152,7 @@ pub fn draw_card(
     .size_full();
 
     // The chips, flat, their corner on the turned card's point they hang
-    // from in today's shell.
+    // from.
     let pad = f32::from(PAD) * look.sized;
     let hang = |x: f32| {
         let (x, y) = tilt.onto_screen(x, -tilt.half_height + pad);

@@ -82,9 +82,8 @@ tokens! {
     DURATION_SEEK_HOLD: ms = 2000;
 }
 
-/// The equalizer between steps (GPUI only: today's shell jumps straight
-/// to each step). Its bars close in on a new height with these time
-/// constants, quick going up and slower coming down, and its outline has
+/// The equalizer between steps. Its bars close in on a new height with these
+/// time constants, quick going up and slower coming down, and its outline has
 /// this many points between two bars. It draws at most this many frames a
 /// second, whatever the screen's rate: each one redraws the whole stage.
 pub const DURATION_EQ_RISE: Duration = Duration::from_millis(40);

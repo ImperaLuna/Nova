@@ -1,9 +1,8 @@
-//! `tray.card`: every tray app in quick settings, hidden ones too and
-//! faded, in a grid a few rows high that scrolls. A left click on one with
-//! a menu shows that menu over the drawer, below its icon; on any other it
-//! runs the app and closes quick settings. A right click shows the menu, a
-//! middle click is the app's secondary action. `TrayCard.qml` and
-//! `TrayCardSlot.qml` in today's shell.
+//! `tray.card`: every tray app in quick settings, hidden ones too and faded, in
+//! a grid a few rows high that scrolls. A left click on one with a menu shows
+//! that menu over the drawer, below its icon; on any other it runs the app and
+//! closes quick settings. A right click shows the menu, a middle click is the
+//! app's secondary action.
 
 use crate::menu::TrayMenu;
 use crate::model::{self, Entry};

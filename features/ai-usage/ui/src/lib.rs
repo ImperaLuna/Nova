@@ -1,7 +1,6 @@
 //! What the AI usage feature draws, with GPUI: the `ai-usage.pill` view of
-//! `features/ai-usage/feature.toml` (host `bar.left`) and the `ai-usage`
-//! panel it grows into. `ui/ai_usage` in today's shell, which stays the
-//! spec until it is removed.
+//! `features/ai-usage/feature.toml` (host `bar.left`) and the `ai-usage` panel
+//! it grows into.
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `pill`: the shown tool's logo and its session percent, once novad has

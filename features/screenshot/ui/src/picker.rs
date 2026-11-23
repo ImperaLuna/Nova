@@ -1,12 +1,11 @@
-//! One screen's region picker: a screenshot's frozen frame, or the live
-//! screen when picking what to record, under a dim veil, and the toolbar
-//! at the top. In the Region mode a drag outlines a region; letting go
-//! takes a screenshot of it, or for a recording leaves it there with a
-//! Record button (or Enter) under it. In the Screen mode a click takes or
-//! records the whole screen, and the screen under the pointer is the one
-//! outlined. The count before a recording starts shows in the middle of
-//! what's recorded. Esc, a right click or close ends it.
-//! `ui/capture/CaptureWindow.qml` and `RegionPicker.qml` in today's shell.
+//! One screen's region picker: a screenshot's frozen frame, or the live screen
+//! when picking what to record, under a dim veil, and the toolbar at the top.
+//! In the Region mode a drag outlines a region; letting go takes a screenshot
+//! of it, or for a recording leaves it there with a Record button (or Enter)
+//! under it. In the Screen mode a click takes or records the whole screen, and
+//! the screen under the pointer is the one outlined. The count before a
+//! recording starts shows in the middle of what's recorded. Esc, a right click
+//! or close ends it.
 //!
 //! Its own window, on the overlay layer, so it covers fullscreen windows
 //! and the bar too (the frozen frame shows them as they were). While no

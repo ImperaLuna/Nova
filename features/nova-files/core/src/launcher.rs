@@ -147,7 +147,7 @@ fn typed(path: &Path, home: Option<&Path>) -> String {
 }
 
 /// Where each word of `query` first is in `name`, case aside, in UTF-16 code
-/// units (what QML's strings count), in order and without overlaps. A word
+/// units, in order and without overlaps. A word
 /// Nova Files matched by its letters or a typo isn't in the name as typed,
 /// so it marks nothing.
 fn marks(query: &str, name: &str) -> Vec<TextMark> {

@@ -1,6 +1,5 @@
-//! A quick settings page's top row: a round back button and the page's
-//! title, and a control at its end (the Bluetooth page's switch).
-//! `ui/quick_settings/PageHeader.qml` in today's shell.
+//! A quick settings page's top row: a round back button and the page's title,
+//! and a control at its end (the Bluetooth page's switch).
 //!
 //! Quick settings draws the right pill's buttons over the top right corner
 //! of its pages, where the pill had them, so a top row with something at
@@ -102,8 +101,8 @@ mod tests {
     #[test]
     fn the_top_row_leaves_room_for_the_pill_s_buttons() {
         assert_eq!(header_inset(0), px(0.0));
-        // QuickSettings.qml: output.width - pad - (buttonsX - inset) + gap,
-        // with the pill's right end BAR_MARGIN from the screen's.
+        // The screen's width - pad - (the buttons' x - inset) + gap, with
+        // the pill's right end BAR_MARGIN from the screen's.
         assert_eq!(header_inset(1), px(8.0 + 8.0 + 28.0 - 16.0 + 8.0));
         assert_eq!(header_inset(2), px(8.0 + 8.0 + 58.0 - 16.0 + 8.0));
     }

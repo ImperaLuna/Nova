@@ -1,6 +1,5 @@
 //! The region picker's, the card's and the recording's sums, without
-//! GPUI's windows: `ui/capture/capture.js`, `ui/text/duration.js`'s
-//! `clock` and `ui/theme/Countdown.qml` in today's shell.
+//! GPUI's windows.
 //! Every rectangle is in a window's logical pixels unless it says frame
 //! pixels.
 
@@ -132,8 +131,8 @@ pub fn around(clear: Bounds<Pixels>, screen: Size<Pixels>) -> [Bounds<Pixels>; 4
     ]
 }
 
-/// A card's time: it drains over `duration`, and holds while the pointer
-/// is on the card. `Countdown.qml` in today's shell.
+/// A card's time: it drains over `duration`, and holds while the pointer is on
+/// the card.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Countdown {
     duration: Duration,

@@ -1,8 +1,7 @@
-//! `resources.page`: CPU and memory over the last minutes, and the apps
-//! using the most memory now (each with all its processes), from novad's
-//! resources events. A search narrows the apps by name; an app's row can
-//! end it, after asking under the row. `ResourcesPage.qml` in today's
-//! shell.
+//! `resources.page`: CPU and memory over the last minutes, and the apps using
+//! the most memory now (each with all its processes), from novad's resources
+//! events. A search narrows the apps by name; an app's row can end it, after
+//! asking under the row.
 //!
 //! The card watches the machine while this page shows, so the page only
 //! follows the events.

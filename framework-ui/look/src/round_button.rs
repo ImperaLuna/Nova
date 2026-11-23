@@ -1,8 +1,7 @@
-//! A small round icon button: the notification list's ✕, ⋯, bell and gear,
-//! a network's ⋯, a password field's eye. Raised, or with
-//! [`RoundButton::quiet`] clear until hovered, for buttons that sit on a
-//! card or a row. `on` fills it with the accent (do not disturb).
-//! `ui/notifications/RoundButton.qml` in today's shell.
+//! A small round icon button: the notification list's ✕, ⋯, bell and gear, a
+//! network's ⋯, a password field's eye. Raised, or with [`RoundButton::quiet`]
+//! clear until hovered, for buttons that sit on a card or a row. `on` fills it
+//! with the accent (do not disturb).
 
 use crate::tokens::ICON_SIZE_SMALL;
 use crate::{Glyph, Icon, Theme};

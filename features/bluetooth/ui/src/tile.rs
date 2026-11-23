@@ -1,8 +1,7 @@
-//! `bluetooth.tile`: the Bluetooth tile. A click turns Bluetooth on when
-//! it's off, and opens the page when it's on: turning it off is the page's
-//! switch, so a click meant for the page doesn't drop the headphones.
-//! Turned off by a hardware switch, it opens the page, which says so.
-//! `BluetoothTile.qml` in today's shell.
+//! `bluetooth.tile`: the Bluetooth tile. A click turns Bluetooth on when it's
+//! off, and opens the page when it's on: turning it off is the page's switch,
+//! so a click meant for the page doesn't drop the headphones. Turned off by a
+//! hardware switch, it opens the page, which says so.
 
 use crate::{PAGE, QUICK_SETTINGS};
 use gpui::{App, Context, Entity, IntoElement, Render, Subscription, Window};

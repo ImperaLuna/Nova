@@ -1,7 +1,7 @@
-//! Slots: the places a feature's UI goes, from the `[[slot]]` entries of
-//! its manifest (`features/<id>/feature.toml`), which novad sends with each
-//! feature's state. A host shows the views of its slots, sorted by `order`,
-//! for the features that are ready. `ui/slots/slots.js` in today's shell.
+//! Slots: the places a feature's UI goes, from the `[[slot]]` entries of its
+//! manifest (`features/<id>/feature.toml`), which novad sends with each
+//! feature's state. A host shows the views of its slots, sorted by `order`, for
+//! the features that are ready.
 //!
 //! [`Slots`] is the list as novad last sent it, as an entity a host
 //! observes: it notifies when the features change. A feature that is off or

@@ -1,6 +1,6 @@
 //! What the pill and the panel show for one provider of novad's `ai_usage`
-//! event, with no drawing: `ui/ai_usage/usage.js` in today's shell. novad
-//! does the work (sources, resets); this only turns its numbers into text.
+//! event, with no drawing. novad does the work (sources, resets); this only
+//! turns its numbers into text.
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -165,7 +165,7 @@ mod tests {
         UsageLimit { window, percent, resets_at: Some(resets_at.to_owned()) }
     }
 
-    /// The event `ui/tests/tst_ai_usage.qml` reads, in the shape novad sends.
+    /// An event in the shape novad sends.
     fn event() -> AiUsage {
         AiUsage {
             shown: AiProvider::Codex,

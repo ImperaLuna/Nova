@@ -1,4 +1,4 @@
-//! The now-playing panel's content (`NowPlaying.qml`'s `PanelContent`):
+//! The now-playing panel's content:
 //! the app's name in the header row, which closes the panel; the cover
 //! beside the title, artist and album; the progress line to seek on with
 //! the times; the buttons; a chip per player to switch between them when
@@ -163,7 +163,7 @@ fn body(player: &MediaPlayer, cx: &App) -> Div {
         .w_full()
         .text_size(FONT_SIZE_TITLE)
         .font_weight(WEIGHT_TITLE)
-        // Today's shell spaces the title's two lines a little wider.
+        // The title's two lines sit a little wider apart.
         .line_height(relative(LINE_HEIGHT * TITLE_LINE))
         .line_clamp(TITLE_LINES)
         .text_ellipsis()

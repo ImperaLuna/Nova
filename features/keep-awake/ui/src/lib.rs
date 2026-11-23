@@ -1,11 +1,10 @@
 //! What keep awake draws, with GPUI: its tile in quick settings
 //! (`quick-settings.tiles` slot `keep-awake.tile` of
-//! `features/keep-awake/feature.toml`). `KeepAwakeTileSlot.qml` in
-//! `ui/quick_settings/slots` in today's shell.
+//! `features/keep-awake/feature.toml`).
 //!
 //! While it's on, every screen's stage holds off idle
 //! ([`Stage::keep_awake`]): no dimming, locking or sleeping. It lasts until
-//! the UI restarts, as today's shell has it, and ends when the feature is
+//! the UI restarts, and ends when the feature is
 //! turned off.
 
 use gpui::{App, AppContext, Context, IntoElement, Render, Subscription, Window};

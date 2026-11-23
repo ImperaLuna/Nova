@@ -143,10 +143,9 @@ pub(crate) fn frame(
     }
 }
 
-/// Where a tab against the right edge is at `now`, `open_size` big once
-/// open: it grows out of a nub at the edge, its corners never rounder than
-/// half its height, and its fillets grow with it. `PowerMenu.qml` in
-/// today's shell.
+/// Where a tab against the right edge is at `now`, `open_size` big once open:
+/// it grows out of a nub at the edge, its corners never rounder than half its
+/// height, and its fillets grow with it.
 fn tab_frame(panel: &PanelItem, open_size: Size<Pixels>, screen: Size<Pixels>, now: Instant) -> PanelFrame {
     let progress = panel.morph.value(now);
     let open = tab_box(open_size, screen);
@@ -173,7 +172,7 @@ impl StageView {
     /// Hides each pill an open panel lies over, and shows the others. A
     /// panel over the whole screen (the wallpaper carousel) lies under the
     /// strip, which opened after its window, and leaves the bar drawn over
-    /// it, as today's shell does.
+    /// it.
     fn give_way(&mut self, now: Instant) {
         let open: Vec<_> = self
             .panel_items()
@@ -240,7 +239,7 @@ fn record(shapes: &Shapes, radius: Pixels, counts: bool, keep: Option<(PillBox, 
 /// `origin` on the screen, and records its box in `shapes`. A panel that
 /// fades out records none: the compositor's blur can't fade, so it would
 /// stay an empty frosted box while the glass fades over it, and a click
-/// there reaches the window below. `glass: open` in today's `Launcher.qml`.
+/// there reaches the window below.
 pub(crate) fn panel(
     panel: &PanelItem,
     frame: &PanelFrame,

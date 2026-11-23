@@ -1,10 +1,8 @@
 //! The `capture.overlay` view (host `shell.overlays`), shared by
 //! screenshots and recordings: the region picker on every screen, the card
 //! a saved shot or recording lands in, on the screen that had focus when
-//! it was saved, and the marks around a region being recorded.
-//! `ui/capture/CaptureOverlay.qml`, `ShotCards.qml` and
-//! `service/ScreenshotService.qml` in today's shell; the recording's side
-//! is in [`record`].
+//! it was saved, and the marks around a region being recorded. The
+//! recording's side is in [`record`].
 //!
 //! This is the link to novad and the state every screen shares: the
 //! frozen frames, the toolbar's mode, a pick being saved, the card. Each

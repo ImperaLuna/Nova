@@ -1,6 +1,5 @@
-//! Sizes in bytes as people read them, for every list that shows one
-//! (quick settings' network and resources pages). `ui/text/bytes.js` in
-//! today's shell.
+//! Sizes in bytes as people read them, for every list that shows one (quick
+//! settings' network and resources pages).
 
 const UNITS: [&str; 5] = ["B", "K", "M", "G", "T"];
 /// A unit is shown from this many of the one below: "1000 B" reads as

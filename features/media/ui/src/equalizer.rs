@@ -2,8 +2,6 @@
 //! model picks new heights every `DURATION_EQ_STEP`; [`Levels`] eases the
 //! drawn heights toward them each frame, quick on the way up and slower on
 //! the way down, and [`outline`] joins them into one smooth shape.
-//!
-//! Today's shell (`ui/media/Equalizer.qml`) jumps straight to each step.
 
 use std::time::{Duration, Instant};
 

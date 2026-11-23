@@ -1,12 +1,10 @@
-//! The region picker's toolbar, where the central pill sits: a switch
-//! between a screenshot and a recording (while both are on and nothing
-//! records), what to take (a region or the whole screen), for a recording
-//! the sound too (the desktop's, the mic's), and close. It grows in from
-//! the pill's height as the picker opens, its glass and what is on it
-//! together. The sound buttons slide in on the right, so whatever is left
-//! of them stays put: the toolbar is placed by its width with them in.
-//! `ui/capture/CaptureToolbar.qml`, `CaptureSwitch.qml` and
-//! `CaptureButton.qml` in today's shell.
+//! The region picker's toolbar, where the central pill sits: a switch between a
+//! screenshot and a recording (while both are on and nothing records), what to
+//! take (a region or the whole screen), for a recording the sound too (the
+//! desktop's, the mic's), and close. It grows in from the pill's height as the
+//! picker opens, its glass and what is on it together. The sound buttons slide
+//! in on the right, so whatever is left of them stays put: the toolbar is
+//! placed by its width with them in.
 
 use crate::tokens::{BAR_HEIGHT, BUTTON_HEIGHT, BUTTON_PAD, SWITCH_PAD, SWITCH_WIDTH};
 use gpui::{
@@ -81,7 +79,7 @@ impl Layout {
         let scale = scale(grown);
         let now = self.base + self.extras * sounds;
         let (width, height) = (now * scale, BAR_HEIGHT * scale);
-        // Placed on whole pixels at full size, as the QML rounds its x.
+        // Placed on whole pixels at full size.
         let left = ((screen_width - self.full) / 2.0).round();
         let center = point(left + now / 2.0, BAR_GAP + BAR_HEIGHT / 2.0);
         bounds(point(center.x - width / 2.0, center.y - height / 2.0), size(width, height))

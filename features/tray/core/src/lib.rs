@@ -3,9 +3,8 @@
 //! Apps show tray icons as StatusNotifierItems on the session bus and
 //! register them with a watcher, `org.kde.StatusNotifierWatcher`. novad is
 //! that watcher, so the list lives as long as novad and survives UI
-//! restarts; today's Quickshell UI (its `SystemTray`) is the host that
-//! reads each item's icon and menu. The GPUI UI talks only to novad, so
-//! novad reads them too (`look`, `menu`): each item's picture as a file,
+//! restarts. The UI talks only to novad, so novad reads each item's icon
+//! and menu (`look`, `menu`): each item's picture as a file,
 //! whether it asks for attention, and its menu one level at a time. Only
 //! reading: nothing registers as a host, and nothing is sent to an app
 //! until the UI asks. Owned here rather than by the UI because Chromium
