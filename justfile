@@ -1,8 +1,5 @@
 # Run `just` to list recipes. Everything here works inside `nix develop`.
 
-# Codex model for `just review`
-review_model := "gpt-6.1-sol"
-
 default:
     @just --list
 
@@ -107,10 +104,3 @@ build:
 # Swap your running bar for this checkout's Nova; Ctrl+C puts it back
 run: build
     scripts/run.sh target/debug/nova
-
-# Needs the Codex CLI and `codex login`; not part of the dev shell or CI.
-# Codex reviews this branch against `base` (sends the diff to OpenAI). Fetches
-# main first, so the diff isn't taken against a stale local main.
-review base="origin/main":
-    git fetch -q origin main
-    codex review --base {{base}} -c model="{{review_model}}"
