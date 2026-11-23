@@ -6,7 +6,7 @@
 //! only the cards near the middle are built, the furthest first so nearer
 //! ones lie over them. `card.rs` draws one, turned.
 
-use crate::card::{CardLook, draw_card};
+use crate::card::{CardLook, ChipPlaces, draw_card};
 use crate::carousel::{Carousel, NAME};
 use crate::deck::{file_name, offset, shown};
 use crate::images::Wanted;
@@ -183,23 +183,42 @@ impl Carousel {
         let middle = self.screen.size.width / 2.0;
         let placed = self.placed(now);
         let deck_shown = self.deck_shown.value(now);
-        placed
-            .into_iter()
+        // Where each card is, the furthest first.
+        let turned: Vec<(Tilt, (f32, f32), f32)> = placed
+            .iter()
             .map(|card| {
-                let path = self.deck.images[card.index].clone();
                 let near = card.away.abs().min(1.0);
                 let far = (card.away.abs() - 1.0).max(0.0);
                 let across = card.away.signum() * (near * NEIGHBOUR + far * STEP) * f32::from(width) * spread;
                 let sized = 1.0 - near * (1.0 - SIDE_SCALE) - far * DEPTH_SCALE;
                 let turn = card.away.clamp(-1.0, 1.0) * TILT;
                 let tilt = Tilt::new(f32::from(width) * sized, f32::from(height) * sized, turn);
-                let at = point(middle + px(across), top + height / 2.0);
+                (tilt, (f32::from(middle) + across, f32::from(top + height / 2.0)), sized)
+            })
+            .collect();
+        let nearer: Vec<(Tilt, (f32, f32))> = turned.iter().map(|(tilt, at, _)| (*tilt, *at)).collect();
+        placed
+            .into_iter()
+            .enumerate()
+            .map(|(order, card)| {
+                let path = self.deck.images[card.index].clone();
+                let near = card.away.abs().min(1.0);
+                let (tilt, at, sized) = turned[order];
+                // A chip is drawn while at least half of today's turned one
+                // would be in view. Hidden under a nearer card, the flat
+                // one is wider and would stick out.
+                let marks: Vec<String> = self.deck.marks(&path).into_iter().map(str::to_owned).collect();
+                let chips = ChipPlaces::of(&tilt, sized, &marks, window);
+                let in_view = |[from, to]: [(f32, f32); 2]| {
+                    let half = ((from.0 + to.0) / 2.0, from.1);
+                    !tilt.hidden_under(at, half, half, &nearer[order + 1..])
+                };
                 let wanted = Wanted::new(&path, pixels);
                 let look = CardLook {
                     picture: self.cards.update(cx, |pictures, cx| pictures.get(&wanted, cx)),
                     picked: Some(card.index) == picked,
-                    now: self.deck.is_now(&path),
-                    marks: self.deck.marks(&path).into_iter().map(str::to_owned).collect(),
+                    now: self.deck.is_now(&path) && in_view(chips.now),
+                    marks: if in_view(chips.marks) { marks } else { Vec::new() },
                     dim: near * SIDE_DIM,
                     opacity: card.opacity * deck_shown,
                     sized,
@@ -210,7 +229,7 @@ impl Carousel {
                         if by == 0 { carousel.choose(cx) } else { carousel.step(by, cx) }
                     },
                 );
-                draw_card(look, tilt, at, clicked, cx).opacity(card.opacity).into_any_element()
+                draw_card(look, tilt, point(px(at.0), px(at.1)), clicked, cx).opacity(card.opacity).into_any_element()
             })
             .collect()
     }

@@ -57,6 +57,25 @@ impl Tilt {
             .is_some_and(|(x, y)| x.abs() <= self.half_width + margin && y.abs() <= self.half_height + margin)
     }
 
+    /// Whether the stretch of the card between `from` and `to` (points of
+    /// the card, the card's middle at `middle` on the screen) lies wholly
+    /// under one of `nearer`, each a card and where its middle is. Both
+    /// ends under a card is the whole stretch under: cards are convex and
+    /// the deck overlaps them one way.
+    pub fn hidden_under(
+        &self,
+        middle: (f32, f32),
+        from: (f32, f32),
+        to: (f32, f32),
+        nearer: &[(Tilt, (f32, f32))],
+    ) -> bool {
+        [from, to].into_iter().all(|(x, y)| {
+            let (x, y) = self.onto_screen(x, y);
+            let (x, y) = (middle.0 + x, middle.1 + y);
+            nearer.iter().any(|(card, at)| card.covers(x - at.0, y - at.1, 0.0))
+        })
+    }
+
     /// The box the card grown by `margin` fills on the screen: its left,
     /// top, right and bottom.
     pub fn reach(&self, margin: f32) -> [f32; 4] {
@@ -110,6 +129,19 @@ mod tests {
             let (back_x, back_y) = turned.onto_card(on_x, on_y).unwrap();
             assert!(near(back_x, x) && near(back_y, y), "{x} {y} came back as {back_x} {back_y}");
         }
+    }
+
+    #[test]
+    fn a_stretch_is_hidden_only_when_both_its_ends_are_under_a_nearer_card() {
+        // A neighbour to the left, its near edge tucked 40 under the middle card.
+        let neighbour = Tilt::new(400.0, 200.0, -50.0);
+        let (edge, _) = neighbour.onto_screen(200.0, 0.0);
+        let middle = [(Tilt::new(460.0, 230.0, 0.0), (edge - 40.0 + 230.0, 0.0))];
+        let at = |on_screen: f32| neighbour.onto_card(on_screen, 0.0).unwrap().0;
+        // 30 of the card's edge: wholly under. 60: its inner end shows.
+        assert!(neighbour.hidden_under((0.0, 0.0), (at(edge - 30.0), -80.0), (at(edge - 2.0), -80.0), &middle));
+        assert!(!neighbour.hidden_under((0.0, 0.0), (at(edge - 60.0), -80.0), (at(edge - 2.0), -80.0), &middle));
+        assert!(!neighbour.hidden_under((0.0, 0.0), (at(edge - 30.0), -80.0), (at(edge - 2.0), -80.0), &[]));
     }
 
     #[test]

@@ -3,16 +3,20 @@
 //! transforms; a shader that reads the picture does the turn). The shader
 //! draws the picture, its rounding, its dimming and its ring; the chips
 //! are text, which a shader can't turn, so they stay flat on the turned
-//! card's corners.
+//! card's corners. A flat chip is wider than today's turned one: where a
+//! nearer card hides most of today's chip, `draw.rs` leaves the flat one
+//! out ([`ChipPlaces`]), so no sliver of it shows.
 
 use crate::tilt::Tilt;
 use crate::tokens::{LEGEND_DOT, LOADING, RING};
 use gpui::{
     App, Bounds, Div, Hsla, InteractiveElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, RenderImage,
-    Rgba, SHADER_PARAMS, Styled, Window, canvas, div, px,
+    Rgba, SHADER_PARAMS, SharedString, Styled, TextRun, Window, canvas, div, font, px,
 };
-use nova_look::Theme;
-use nova_look::tokens::{CHIP_HEIGHT, CHIP_PAD, FONT_MONO, FONT_SIZE_SMALL, ICON_GAP, PAD, RADIUS_CARD, WEIGHT_LABEL};
+use nova_look::tokens::{
+    CHIP_HEIGHT, CHIP_PAD, FONT_MONO, FONT_SANS, FONT_SIZE_SMALL, ICON_GAP, PAD, RADIUS_CARD, WEIGHT_LABEL,
+};
+use nova_look::{Family, Theme};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -43,6 +47,45 @@ pub struct CardLook {
     /// The card's size beside the middle card's (1 there): Qt scales its
     /// rounding, its ring and its chips' place with it.
     pub sized: f32,
+}
+
+/// Where today's shell has a card's chips, as stretches of the card along
+/// their middle line (two of the card's points each): "Now" from the
+/// right, the other screens' names from the left. Today's chips turn with
+/// the card, so these say what of them a nearer card leaves in view.
+pub struct ChipPlaces {
+    pub now: [(f32, f32); 2],
+    pub marks: [(f32, f32); 2],
+}
+
+impl ChipPlaces {
+    pub fn of(tilt: &Tilt, sized: f32, marks: &[String], window: &Window) -> Self {
+        let chip = |text: &str, family: Family, extra: Pixels| {
+            f32::from(CHIP_PAD * 2.0 + extra + text_width(text, family, window))
+        };
+        let now_width = chip("Now", FONT_SANS, LEGEND_DOT + ICON_GAP);
+        let gaps = f32::from(ICON_GAP) * marks.len().saturating_sub(1) as f32;
+        let marks_width = marks.iter().map(|mark| chip(mark, FONT_MONO, px(0.0))).sum::<f32>() + gaps;
+        let pad = f32::from(PAD) * sized;
+        let y = -tilt.half_height + pad + f32::from(CHIP_HEIGHT) * sized / 2.0;
+        let (right, left) = (tilt.half_width - pad, -tilt.half_width + pad);
+        Self { now: [(right - now_width * sized, y), (right, y)], marks: [(left, y), (left + marks_width * sized, y)] }
+    }
+}
+
+/// How wide `text` is in a chip.
+fn text_width(text: &str, family: Family, window: &Window) -> Pixels {
+    let mut face = font(family);
+    face.weight = WEIGHT_LABEL;
+    let run = TextRun {
+        len: text.len(),
+        font: face,
+        color: gpui::black(),
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    window.text_system().shape_line(SharedString::from(text.to_owned()), FONT_SIZE_SMALL, &[run], None).width
 }
 
 /// What the shader is told about the card, in pixels (`card.wgsl` lists
