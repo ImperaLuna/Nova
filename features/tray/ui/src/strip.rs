@@ -293,7 +293,7 @@ fn fraction(elapsed: Duration, over: Duration) -> f32 {
 
 /// The dot of an app asking for attention, on an icon's top right, ringed
 /// in the background color; `grown` is its scale.
-fn attention_dot(grown: f32, cx: &App) -> impl IntoElement {
+pub(crate) fn attention_dot(grown: f32, cx: &App) -> impl IntoElement {
     let theme = Theme::of(cx);
     let size = TRAY_DOT_SIZE * grown;
     let corner = TRAY_DOT_RING + (TRAY_DOT_SIZE - size) / 2.0;

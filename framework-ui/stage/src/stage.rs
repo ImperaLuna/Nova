@@ -47,6 +47,9 @@ pub(crate) struct Panels {
     /// The page a panel with pages shows, other than its first
     /// ([`Stage::show_page`]).
     pages: HashMap<(DisplayId, SharedString), SharedString>,
+    /// Whether every screen's stage keeps the compositor from going idle
+    /// ([`Stage::keep_awake`]).
+    pub awake: bool,
 }
 
 impl Panels {
@@ -243,6 +246,22 @@ impl Stage {
             panels.fullscreen = outputs;
             changed
         });
+    }
+
+    /// While `awake`, every screen's stage keeps the compositor from going
+    /// idle (dimming, locking or sleeping the screen), as long as it is
+    /// shown: keep awake's tile. Where the compositor can't, it goes idle.
+    pub fn keep_awake(awake: bool, cx: &mut App) {
+        change(cx, |panels| {
+            let changed = panels.awake != awake;
+            panels.awake = awake;
+            changed
+        });
+    }
+
+    /// Whether the stages keep the compositor from going idle.
+    pub fn is_kept_awake(cx: &App) -> bool {
+        cx.try_global::<StageState>().is_some_and(|state| state.panels.read(cx).awake)
     }
 
     /// Calls `changed` each time a panel opens or closes, on any screen

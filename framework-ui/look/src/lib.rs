@@ -69,7 +69,7 @@ mod window;
 
 pub use app_icon::AppIcon;
 pub use card_title::CardTitle;
-pub use device_battery::DeviceBattery;
+pub use device_battery::{DeviceBattery, LOW_PERCENT};
 pub use fade::{Hovered, fade, fade_color, keyed};
 pub use family::Family;
 pub use field::{Editing, FieldEvent, TextField};
