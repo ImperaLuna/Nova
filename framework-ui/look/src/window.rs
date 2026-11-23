@@ -7,6 +7,9 @@
 //! shell. [`ShellWindow::options`] turns that cap off, along with the rest
 //! every shell window shares, so no feature builds `WindowOptions` itself
 //! (`scripts/lint-traps.sh` checks that).
+//!
+//! The one window that is no layer surface is the lock screen's, a session
+//! lock surface the compositor sizes to its screen ([`lock_surface`]).
 
 use gpui::{
     Bounds, DisplayId, Pixels, Size, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
@@ -92,6 +95,27 @@ impl ShellWindow {
     }
 }
 
+/// The options a lock screen's window on `display` opens with: a session
+/// lock surface (ext-session-lock-v1), opaque, as big as the screen. The
+/// compositor shows nothing else of the session while the lock holds, and
+/// sends the surface every key.
+pub fn lock_surface(display: DisplayId, size: Size<Pixels>) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds { origin: point(px(0.0), px(0.0)), size })),
+        display_id: Some(display),
+        titlebar: None,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        app_id: Some(APP_ID.into()),
+        // As for every shell window: GPUI's cap on a window without focus.
+        inactive_frame_interval: None,
+        window_background: WindowBackgroundAppearance::Opaque,
+        kind: WindowKind::SessionLock,
+        ..Default::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,5 +134,13 @@ mod tests {
         assert!(NAMESPACE.starts_with(NAMESPACE_PREFIX));
         assert_eq!(layer.exclusive_zone, Some(IGNORE_RESERVED_SPACE));
         assert_eq!(layer.keyboard_interactivity, KeyboardInteractivity::None);
+    }
+
+    #[test]
+    fn a_lock_surface_hides_what_is_behind_and_draws_at_the_screen_s_rate() {
+        let options = lock_surface(DisplayId::new(1), size(px(1920.0), px(1080.0)));
+        assert_eq!(options.kind, WindowKind::SessionLock);
+        assert_eq!(options.window_background, WindowBackgroundAppearance::Opaque);
+        assert_eq!(options.inactive_frame_interval, None);
     }
 }

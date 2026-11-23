@@ -57,6 +57,8 @@ let
     libxkbcommon
     wayland
     zstd
+    # The lock screen checks the password through libpam (features/lock/ui).
+    linux-pam
   ];
 
   common = {

@@ -89,6 +89,8 @@
             ./ui/ai_usage/ProviderLogo.qml
             # Quick settings' header draws Nova's own NixOS logo.
             ./ui/quick_settings/logos/nixos.svg
+            # The lock screen's PAM service, compiled into its check.
+            ./ui/lock/pam/nova-lock
           ];
         };
 

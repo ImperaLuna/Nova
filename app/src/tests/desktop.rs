@@ -212,8 +212,10 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
     let mut restarted = novad.connect();
     restarted.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
     assert_eq!(restarted.next_event("lock"), json!({"locked": true}));
-    // The screens stayed covered, so locking again answers at once.
+    // The screens stayed covered, so locking again answers at once. The UI
+    // hears it all the same: one about to let go of the lock keeps it.
     assert_eq!(novad.connect().request(1, "lock", None)["result"], Value::Null);
+    assert_eq!(restarted.next_event("lock"), json!({"locked": true}));
 
     assert_eq!(restarted.request(2, "report_unlocked", None)["result"], Value::Null);
     assert_eq!(restarted.next_event("lock"), json!({"locked": false}));

@@ -18,7 +18,7 @@ mod demo;
 mod replay;
 
 use args::Args;
-use gpui::{App, SharedString, Subscription};
+use gpui::{App, QuitMode, SharedString, Subscription};
 use gpui_platform::application;
 use nova_daemon_info::SOCKET_VAR;
 use nova_desktop_info::{Capability, Desktop, Output};
@@ -48,6 +48,12 @@ fn main() -> ExitCode {
         }
     };
     application().with_assets(IconAssets).run(move |cx: &mut App| {
+        // GPUI quits a Linux program when its last window closes, which
+        // every window does when the last screen goes (a monitor turned
+        // off). The lock screen must outlive that: the session lock is
+        // this process's, and a compositor that sees its locker die may
+        // not let the next one in.
+        cx.set_quit_mode(QuitMode::Explicit);
         Daemon::connect(socket, cx);
         // Followed for as long as the program runs.
         for followed in follow_novad(cx) {
@@ -74,6 +80,7 @@ fn register_features(cx: &mut App) {
     nova_clock_ui::register(cx);
     nova_keep_awake_ui::register(cx);
     nova_launcher_ui::register(cx);
+    nova_lock_ui::register(cx);
     nova_media_ui::register(cx);
     nova_microphone_ui::register(cx);
     nova_network_ui::register(cx);
