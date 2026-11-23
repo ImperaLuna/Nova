@@ -3,7 +3,7 @@
 //! connection) and libayatana (a bus name of its own) do.
 
 use super::*;
-use crate::test_items::{Item, MenuOnlyItem, register, serve_item};
+use crate::test_items::{Item, LookItem, Menu, MenuNode, MenuOnlyItem, register, serve_item};
 use nova_hub::{ClientQueue, Outgoing};
 use nova_session_bus::TestBus;
 use nova_test_support::{TempDir, eventually, wait_until};
@@ -46,6 +46,8 @@ impl Fixture {
             bus: Bus::Address(self.bus.address.clone()),
             state_file: self.dir.join("tray.json"),
             proc_root: self.dir.join("proc"),
+            icons: Arc::new(Icons::new(nova_icons::HICOLOR.into(), &[self.dir.join("share")], None)),
+            pictures: self.dir.join("pictures"),
         };
         let apps = apps.unwrap_or_else(|| AppIndex::of(None, &self.logger));
         Tray::start(sources, apps, Arc::clone(&self.hub), Arc::clone(&self.logger))
@@ -272,6 +274,10 @@ fn an_app_with_its_own_item_loses_its_bridged_x11_one() {
         title: id.into(),
         app: app.map(|app| App { id: app.into(), name: app.into(), description: None, icon: None }),
         menu_only: false,
+        icon: None,
+        attention: false,
+        has_menu: false,
+        is_menu: false,
     };
     let items = vec![
         (false, item("steam", Some("steam.desktop"))),
@@ -339,4 +345,117 @@ fn one_app_cant_fill_the_tray() {
     wait_until(WAIT, "the other app's item to be registered", || {
         watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").len() > MAX_ITEMS_PER_APP
     });
+}
+
+/// A menu entry with a label and the properties `more` adds, as Electron
+/// sends them.
+fn entry(id: i32, label: &str, more: Vec<(&'static str, zbus::OwnedVariant)>, children: Vec<MenuNode>) -> MenuNode {
+    let mut props = vec![
+        ("label", OwnedVariant::from(zbus::Str::from(label.to_owned()))),
+        ("enabled", true.into()),
+        ("visible", true.into()),
+    ];
+    props.extend(more);
+    MenuNode(id, props, children)
+}
+
+fn separator(id: i32) -> MenuNode {
+    MenuNode(id, vec![("type", OwnedVariant::from(zbus::Str::from("separator")))], vec![])
+}
+
+/// A menu with Discord's tray entries, in the properties Electron's
+/// DBusMenu uses: a checkbox, separators, a submenu, a hidden entry.
+fn discord_menu() -> MenuNode {
+    let checkmark =
+        || vec![("toggle-type", OwnedVariant::from(zbus::Str::from("checkmark"))), ("toggle-state", 1i32.into())];
+    let submenu = vec![("children-display", OwnedVariant::from(zbus::Str::from("submenu")))];
+    let hidden = vec![("visible", OwnedVariant::from(false))];
+    MenuNode(
+        0,
+        vec![("children-display", OwnedVariant::from(zbus::Str::from("submenu")))],
+        vec![
+            entry(1, "Open Discord", vec![], vec![]),
+            separator(2),
+            entry(3, "Mute", checkmark(), vec![]),
+            entry(4, "Voice && Video", submenu, vec![entry(5, "Input Device", vec![], vec![])]),
+            entry(6, "Update Ready!", hidden, vec![]),
+            separator(7),
+            entry(8, "Quit Discord", vec![], vec![]),
+        ],
+    )
+}
+
+#[test]
+fn an_item_s_picture_status_and_menu_are_read_for_the_gpui_ui() {
+    let fixture = Fixture::new("look");
+    std::fs::create_dir_all(fixture.dir.join("pictures")).unwrap();
+    std::fs::write(fixture.dir.join("pictures/0-old.png"), b"left by an earlier novad").unwrap();
+    let tray = fixture.tray(None);
+    assert!(!fixture.dir.join("pictures/0-old.png").exists(), "emptied at start");
+
+    let secondary = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let clicked = Arc::new(Mutex::new(Vec::new()));
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let app = fixture.connect();
+    let menu = Menu { root: discord_menu(), revision: 4, clicked: Arc::clone(&clicked), shown: Arc::clone(&shown) };
+    zbus::block_on(app.object_server().at("/MenuBar", menu)).unwrap();
+    // 1×1 opaque blue, ARGB.
+    let item = LookItem {
+        id: "chrome_status_icon_1".into(),
+        status: "Active".into(),
+        pixmap: (1, 1, vec![255, 0, 0, 255]),
+        secondary: Arc::clone(&secondary),
+    };
+    serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
+    let address = format!("{}/StatusNotifierItem", app.unique_name().unwrap());
+
+    let items = fixture.next_items();
+    let icon = PathBuf::from(items[0]["icon"].as_str().expect("a picture"));
+    assert!(icon.starts_with(fixture.dir.join("pictures")) && icon.is_file(), "{icon:?}");
+    assert_eq!(items[0]["has_menu"], true);
+    assert!(items[0].get("attention").is_none());
+
+    // A new message: Electron sets the status and says so.
+    zbus::block_on(async {
+        let iface = app.object_server().interface::<_, LookItem>("/StatusNotifierItem").await.unwrap();
+        iface.get_mut().await.status = "NeedsAttention".into();
+        LookItem::new_status(iface.signal_emitter(), "NeedsAttention").await.unwrap();
+    });
+    assert_eq!(fixture.next_items()[0]["attention"], true);
+
+    let level = tray.menu_level(&address, 0).unwrap();
+    assert_eq!(*shown.lock().unwrap(), [0], "told before it's read");
+    assert_eq!(level.revision, 4);
+    let labels: Vec<&str> = level.entries.iter().map(|entry| entry.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        ["Open Discord", "", "Mute", "Voice && Video", "", "Quit Discord"],
+        "the hidden entry is left out"
+    );
+    assert!(level.entries[1].separator);
+    assert_eq!((level.entries[2].toggle, level.entries[2].checked), (nova_tray_api::Toggle::Checkmark, true));
+    assert!(level.entries[3].submenu && !level.entries[0].submenu);
+    let inner = tray.menu_level(&address, 4).unwrap();
+    assert_eq!(inner.entries.iter().map(|entry| entry.id).collect::<Vec<_>>(), [5]);
+
+    tray.run_menu_entry(&address, 3, 4).unwrap();
+    assert_eq!(*clicked.lock().unwrap(), [3]);
+    // The app rebuilds its menu: a click read from the old one is refused.
+    zbus::block_on(async {
+        let iface = app.object_server().interface::<_, Menu>("/MenuBar").await.unwrap();
+        iface.get_mut().await.revision = 5;
+        Menu::layout_updated(iface.signal_emitter(), 5, 0).await.unwrap();
+    });
+    wait_until(WAIT, "the new revision to arrive", || tray.read_of(&address, |read| read.menu_revision) == Ok(Some(5)));
+    let refused = tray.run_menu_entry(&address, 8, 4).unwrap_err();
+    assert!(refused.contains("changed"), "{refused}");
+    assert_eq!(*clicked.lock().unwrap(), [3], "nothing else was clicked");
+
+    tray.secondary_activate(&address).unwrap();
+    assert_eq!(secondary.load(Ordering::SeqCst), 1);
+
+    drop(app);
+    assert_eq!(fixture.next_items(), json!([]));
+    assert!(!icon.exists(), "its picture goes with it");
+    tray.stop();
 }

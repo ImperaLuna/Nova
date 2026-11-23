@@ -1,0 +1,36 @@
+# nova-ai-usage-ui
+#
+# What the AI usage feature draws, with GPUI: its pill in the bar's left
+# row (`ai-usage.pill`) and the panel the pill grows into, with the plan
+# limits and the other tools.
+#
+# Allowed outside crates:
+# - gpui
+# - jiff
+#
+# Allowed workspace crates:
+# - nova-ai-usage-api
+# - nova-look
+# - nova-stage
+# - nova-ui-client
+
+[package]
+name = "nova-ai-usage-ui"
+description = "The AI usage pill and its panel for the GPUI program: plan limits, reset times and the other tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+jiff.workspace = true
+nova-ai-usage-api.workspace = true
+nova-look.workspace = true
+nova-stage.workspace = true
+nova-ui-client.workspace = true
+
+[lints]
+workspace = true

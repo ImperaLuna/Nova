@@ -131,6 +131,8 @@ tokens! {
     ICON_STROKE: ratio = 1.8, "iconStroke";
     /// Thin strokes, like a ring or a spinner's arc.
     STROKE_THIN: px = 1.5, "strokeThin";
+    /// A loading spinner's arc, in degrees of its ring.
+    SPINNER_SWEEP: ratio = 86.0, "spinnerSweep";
 
     // Panels: width, inner padding, the gap between sections, list rows
     // and meters.
@@ -217,6 +219,10 @@ pub const SHADOW_ROOM: Pixels = px(40.0);
 /// `(BAR_HEIGHT - WORKSPACE_SIZE) / 2` (a test holds it so).
 pub const WORKSPACE_INSET: Pixels = px(5.0);
 
+/// A dashed ring's dashes and the gaps between them, as long as each other
+/// (`ringDashes` in Tokens.qml, in Qt's units of the stroke's width).
+pub const RING_DASH: f32 = 2.0;
+
 /// The grid line icons are drawn on.
 pub const ICON_GRID: f32 = 24.0;
 
@@ -280,6 +286,7 @@ mod tests {
         let qml = qml_properties();
         assert_eq!(qml["easing"], "[0.2, 0.8, 0.2, 1, 1, 1]", "EASING is its first four numbers");
         assert_eq!(EASING, [0.2, 0.8, 0.2, 1.0]);
+        assert_eq!(qml["ringDashes"], format!("[{RING_DASH}, {RING_DASH}]"));
         assert_eq!(qml["shadowRoom"], "shadowBlur + shadowOffset");
         assert_eq!(SHADOW_ROOM, SHADOW_BLUR + SHADOW_OFFSET);
         // CentralPill.qml's numbersInset.

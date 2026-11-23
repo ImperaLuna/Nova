@@ -299,6 +299,10 @@ pub(super) fn tray() -> nova_tray_api::Tray {
                     icon: Some("discord".into()),
                 }),
                 menu_only: false,
+                icon: Some("/run/user/1000/nova/tray/0-4f1c2b9a7d3e5a60.png".into()),
+                attention: true,
+                has_menu: true,
+                is_menu: false,
             },
             TrayItem {
                 address: ":1.607/org/ayatana/NotificationItem/steam".into(),
@@ -306,6 +310,10 @@ pub(super) fn tray() -> nova_tray_api::Tray {
                 title: "Steam".into(),
                 app: None,
                 menu_only: true,
+                icon: None,
+                attention: false,
+                has_menu: true,
+                is_menu: false,
             },
         ],
         hidden: vec!["steam".into()],
@@ -467,5 +475,30 @@ pub(super) fn status() -> Status {
         }],
         log_dir: "/home/me/.local/state/nova".into(),
         desktop: None,
+    }
+}
+
+/// A `tray_menu` answer, shaped as Spotify's libdbusmenu menu reads.
+pub(super) fn tray_menu_level() -> nova_tray_api::TrayMenuLevel {
+    use nova_tray_api::{Toggle, TrayMenuEntry, TrayMenuLevel};
+    let entry = |id, label: &str| TrayMenuEntry {
+        id,
+        label: label.into(),
+        separator: false,
+        enabled: true,
+        toggle: Toggle::None,
+        checked: false,
+        submenu: false,
+    };
+    TrayMenuLevel {
+        revision: 3,
+        entries: vec![
+            entry(1, "_Show Spotify"),
+            TrayMenuEntry { separator: true, ..entry(2, "") },
+            TrayMenuEntry { toggle: Toggle::Checkmark, checked: true, ..entry(3, "Shuffle") },
+            TrayMenuEntry { enabled: false, ..entry(4, "Previous") },
+            TrayMenuEntry { submenu: true, ..entry(5, "Devices") },
+            entry(6, "_Quit"),
+        ],
     }
 }
