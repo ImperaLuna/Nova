@@ -6,9 +6,8 @@ feature completeness, then modularity and portability, then performance.
 
 `README.md` is written by hand by the maintainer. Don't edit it.
 
-This file is the only agent instruction file (Claude Code and Codex both read
-it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
-`AGENTS.md`.
+This file is the only agent instruction file. Don't add a `CLAUDE.md` or
+`CLAUDE.local.md`: Claude Code then skips `AGENTS.md`.
 
 ## Rules
 
@@ -685,7 +684,7 @@ when asked.
 
 ## Review guidelines
 
-For Codex reviews of pull requests.
+For the agent that reviews a pull request.
 
 - Check the rules above, and look hardest for races, lost updates, missed
   file changes, waits without a timeout and secrets that could reach a log.
