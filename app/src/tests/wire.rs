@@ -280,6 +280,7 @@ fn recording_lines() -> Vec<serde_json::Result<String>> {
             path: "/home/me/Videos/Recordings/Recording 2026-10-25 18-03-41.mp4".into(),
             duration_ms: 42_000,
         })),
+        encode(nova_recording_api::Event::RecordingFailed { reason: "wf-recorder wrote no frames".into() }),
         encode(nova_carrier::Request {
             id: None,
             command: nova_recording_api::Command::RecordingAction { id: 1, action: ScreenshotAction::Open },

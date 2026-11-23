@@ -18,6 +18,8 @@
 //! are [`RecordingConfig`]. Saved files are named, placed and acted on as
 //! screenshots are, through the [`SavedFiles`] port the app fills.
 
+mod mp4;
+
 use nova_base::lock;
 use nova_base::reply_slot::Slot;
 use nova_hub::{ClientId, Hub};
@@ -389,8 +391,11 @@ impl Recordings {
             if pid == own || running(pid) {
                 continue;
             }
-            if std::fs::metadata(&path).is_ok_and(|meta| meta.len() == 0) {
+            if std::fs::metadata(&path).is_ok_and(|meta| meta.len() == 0)
+                || mp4::contents(&path) == mp4::Contents::NoFrames
+            {
                 let _ = std::fs::remove_file(&path);
+                self.logger.info(LOG_SOURCE, &format!("{} from an earlier run held no frames", path.display()));
                 continue;
             }
             match self.files.place(&path, &folder.join(format!("{NAME_PREFIX}{stamp}")), EXTENSION) {
@@ -520,11 +525,19 @@ impl Keeper {
                 .error(LOG_SOURCE, &format!("{} stopped by itself ({status}): {message}", active.recorder.name()));
         }
         // Something was recorded: kept even when the recorder didn't finish
-        // cleanly, as players read most of a cut-off file.
+        // cleanly, as players read most of a cut-off file. A header with no
+        // frame after it (a recorder stalled waiting for sound, then
+        // killed) isn't a recording.
         let written = std::fs::metadata(&active.file).is_ok_and(|meta| meta.len() > 0);
-        if !written {
+        if !written || mp4::contents(&active.file) == mp4::Contents::NoFrames {
             let _ = std::fs::remove_file(&active.file);
-            self.logger.warn(LOG_SOURCE, "nothing was recorded");
+            let reason = if finished {
+                format!("{} recorded no frames", active.recorder.name())
+            } else {
+                format!("{} stopped before it recorded a frame", active.recorder.name())
+            };
+            self.logger.warn(LOG_SOURCE, &format!("nothing was recorded: {reason}"));
+            self.hub.publish(&Event::RecordingFailed { reason });
             return;
         }
         match self.files.place(&active.file, &active.stem, EXTENSION) {

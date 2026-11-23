@@ -90,6 +90,9 @@ Singleton {
     property var recording: null
     // A recording was saved: {id, path, duration_ms}.
     signal recordingSaved(var saved)
+    // The recorder ended without a frame, so nothing was saved: novad's
+    // reason.
+    signal recordingFailed(string reason)
     // The topics this process subscribes to on every connection. Topics of
     // features that are off send nothing.
     readonly property var topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_NETWORK, Protocol.TOPIC_BLUETOOTH, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
@@ -159,6 +162,8 @@ Singleton {
             recording = msg.data;
         } else if (msg.event === Protocol.EVENT_RECORDING_SAVED) {
             recordingSaved(msg.data);
+        } else if (msg.event === Protocol.EVENT_RECORDING_FAILED) {
+            recordingFailed(msg.data.reason);
         } else if (msg.event === Protocol.EVENT_HOST) {
             host = msg.data;
         } else if (msg.event === Protocol.EVENT_RESOURCES) {

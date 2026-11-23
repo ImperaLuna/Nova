@@ -58,6 +58,11 @@ pub enum Event {
     /// A recording was saved (feature `recording`). `id` names it in
     /// `recording_action`. Topic [`TOPIC`].
     RecordingSaved(SavedRecording),
+    /// The recorder exited without recording anything worth keeping (no
+    /// frames: a recorder stalled waiting for sound wrote only the file's
+    /// header). Nothing is saved; `reason` is one sentence for the card,
+    /// the rest is in the log. Topic [`TOPIC`].
+    RecordingFailed { reason: String },
 }
 
 impl Published for Event {
