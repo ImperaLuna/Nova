@@ -43,7 +43,7 @@ impl UsagePill {
     }
 
     fn summary(&self, cx: &gpui::App) -> Summary {
-        // The pill writes no times, so the zone is never read.
+        // The pill shows no times, so any zone will do.
         let usage = self.usage.read(cx).get();
         summarize(usage.and_then(shown), Timestamp::now(), &TimeZone::UTC)
     }

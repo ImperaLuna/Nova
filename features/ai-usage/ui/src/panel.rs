@@ -53,6 +53,8 @@ pub struct UsagePanel {
     countdown: Option<Task<()>>,
     /// The tallest it has been, and the size last handed to the stage.
     tallest: Pixels,
+    /// How many lines the hint wrapped to when last drawn.
+    message_lines: usize,
     asked: Size<Pixels>,
     _followed: Subscription,
 }
@@ -60,7 +62,7 @@ pub struct UsagePanel {
 impl UsagePanel {
     pub fn new(screen: &Screen, cx: &mut Context<Self>) -> Self {
         let usage = Live::follow(TOPIC, cx, |Event::AiUsage(usage)| Some(usage));
-        let followed = cx.observe(&usage, |_, _, cx| cx.notify());
+        let followed = cx.observe(&usage, |panel: &mut Self, _, cx| panel.usage_changed(cx));
         let mut panel = Self {
             screen: screen.clone(),
             usage,
@@ -70,11 +72,12 @@ impl UsagePanel {
             opened: None,
             countdown: None,
             tallest: px(0.0),
+            message_lines: 1,
             asked: size(PANEL_WIDTH, px(0.0)),
             _followed: followed,
         };
         // Before the first frame, a hint counts as one line.
-        let height = panel.height(1, cx);
+        let height = panel.height(cx);
         panel.asked.height = height;
         panel
     }
@@ -93,12 +96,20 @@ impl UsagePanel {
     }
 
     /// The height for what it shows now, taller only.
-    fn height(&mut self, message_lines: usize, cx: &App) -> Pixels {
+    fn height(&mut self, cx: &App) -> Pixels {
         let usage = self.data(cx);
         let summary = self.summary_of(usage.and_then(shown));
         let rows = usage.map_or(0, |usage| others(usage).count());
-        self.tallest = self.tallest.max(panel_height(&summary, rows, message_lines));
+        self.tallest = self.tallest.max(panel_height(&summary, rows, self.message_lines));
         self.tallest
+    }
+
+    /// New numbers: the stage learns the height now, so a closed panel
+    /// opens straight to it (its content isn't drawn until then).
+    fn usage_changed(&mut self, cx: &mut Context<Self>) {
+        let height = self.height(cx);
+        self.ask_for(height, cx);
+        cx.notify();
     }
 
     /// Called from `render` with whether the stage has the panel open.
@@ -119,7 +130,10 @@ impl UsagePanel {
             return;
         }
         self.now = Timestamp::now();
-        self.opened = Some(Instant::now());
+        // Opened again before it faded out: the meters stay as they are.
+        if self.opened.is_none() {
+            self.opened = Some(Instant::now());
+        }
         self.countdown = Some(cx.spawn(async move |panel, cx| {
             let mut open = true;
             while open {
@@ -229,7 +243,8 @@ impl Render for UsagePanel {
         if self.opened.is_some() && fill < 1.0 && summary.main.is_some() {
             window.request_animation_frame();
         }
-        let height = self.height(Self::lines(&summary.message, window), cx);
+        self.message_lines = Self::lines(&summary.message, window);
+        let height = self.height(cx);
         self.ask_for(height, cx);
         let theme = Theme::of(cx).clone();
         let rows: Vec<AnyElement> = usage

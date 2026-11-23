@@ -9,6 +9,8 @@
 
 use gpui::{Hsla, Image, ImageFormat, IntoElement, Pixels, Rgba, Styled, img};
 use nova_ai_usage_api::AiProvider;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 const CLAUDE: &str = "M13.827 3.52h3.603L24 20h-3.603l-6.57-16.48zm-7.258 0h3.767L16.906 20h-3.674l-1.343-3.461H5.017l-1.344 3.46H0L6.57 3.522zm4.132 9.959L8.453 7.687 6.205 13.48H10.7z";
@@ -34,9 +36,20 @@ fn document(provider: AiProvider, color: Hsla) -> String {
     )
 }
 
+thread_local! {
+    /// Each mark made so far, by tool and color: a spinning pill draws its
+    /// logo every frame.
+    static MADE: RefCell<HashMap<(&'static str, u32), Arc<Image>>> = RefCell::new(HashMap::new());
+}
+
 /// `provider`'s mark, `size` square, in `color`.
 pub fn logo(provider: AiProvider, size: Pixels, color: Hsla) -> impl IntoElement {
-    let picture = Arc::new(Image::from_bytes(ImageFormat::Svg, document(provider, color).into_bytes()));
+    let key = (path(provider), u32::from(Rgba::from(color)));
+    let picture = MADE.with_borrow_mut(|made| {
+        made.entry(key)
+            .or_insert_with(|| Arc::new(Image::from_bytes(ImageFormat::Svg, document(provider, color).into_bytes())))
+            .clone()
+    });
     img(picture).size(size).flex_none()
 }
 

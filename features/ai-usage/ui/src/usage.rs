@@ -10,10 +10,10 @@ use nova_ai_usage_api::{AiProvider, AiUsage, ProviderUsage, UsageState, UsageWin
 /// further tiers.
 pub const WARN_PERCENT: u8 = 80;
 
-const MINUTE_SECONDS: i64 = 60;
+const MINUTE_MS: i64 = 60 * 1000;
 const HOUR_MINUTES: i64 = 60;
 const DAY_MINUTES: i64 = 24 * HOUR_MINUTES;
-const DAY_SECONDS: i64 = DAY_MINUTES * MINUTE_SECONDS;
+const DAY_MS: i64 = DAY_MINUTES * MINUTE_MS;
 
 /// One limit, as the panel writes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,32 +92,31 @@ pub fn minutes(minutes: i64) -> String {
     }
 }
 
-/// A span of `seconds`, rounded up to whole minutes, so it never reads 0m
-/// before the reset.
-fn duration(seconds: i64) -> String {
-    minutes(((seconds + MINUTE_SECONDS - 1) / MINUTE_SECONDS).max(1))
+/// A span of `ms` milliseconds, rounded up to whole minutes, so it never
+/// reads 0m before the reset.
+fn duration(ms: i64) -> String {
+    minutes(((ms + MINUTE_MS - 1) / MINUTE_MS).max(1))
 }
 
-/// Seconds from `now` until `resets_at`, when that is a time still ahead.
+/// Milliseconds from `now` until `resets_at`, when that is a time still
+/// ahead.
 fn until(resets_at: Option<&str>, now: Timestamp) -> Option<(Timestamp, i64)> {
     let at: Timestamp = resets_at?.parse().ok()?;
-    let seconds = at.as_second() - now.as_second();
-    // Rounding up a part second still ahead keeps "1m" to the end.
-    let seconds = if at > now { seconds.max(1) } else { 0 };
-    (seconds > 0).then_some((at, seconds))
+    let ms = at.as_millisecond() - now.as_millisecond();
+    (ms > 0).then_some((at, ms))
 }
 
 /// "2h 14m left", or "" once the window has reset.
 pub fn left_text(resets_at: Option<&str>, now: Timestamp) -> String {
-    until(resets_at, now).map(|(_, seconds)| format!("{} left", duration(seconds))).unwrap_or_default()
+    until(resets_at, now).map(|(_, ms)| format!("{} left", duration(ms))).unwrap_or_default()
 }
 
 /// "Resets in 2h 14m" within a day, else "Resets Mon 04:00" in `zone`'s
 /// time.
 pub fn reset_text(resets_at: Option<&str>, now: Timestamp, zone: &TimeZone) -> String {
-    let Some((at, seconds)) = until(resets_at, now) else { return String::new() };
-    if seconds < DAY_SECONDS {
-        return format!("Resets in {}", duration(seconds));
+    let Some((at, ms)) = until(resets_at, now) else { return String::new() };
+    if ms < DAY_MS {
+        return format!("Resets in {}", duration(ms));
     }
     format!("Resets {}", at.to_zoned(zone.clone()).strftime("%a %H:%M"))
 }
@@ -161,9 +160,10 @@ pub fn shown(usage: &AiUsage) -> Option<&ProviderUsage> {
     usage.providers.iter().find(|provider| provider.provider == usage.shown).or(usage.providers.first())
 }
 
-/// The other providers, in novad's order.
+/// The other providers, in novad's order: all but the one the bar shows.
 pub fn others(usage: &AiUsage) -> impl Iterator<Item = &ProviderUsage> {
-    usage.providers.iter().filter(|provider| provider.provider != usage.shown)
+    let bar = shown(usage).map(|provider| provider.provider);
+    usage.providers.iter().filter(move |provider| Some(provider.provider) != bar)
 }
 
 #[cfg(test)]
@@ -257,6 +257,8 @@ mod tests {
         assert_eq!(left_text(Some("2026-10-23T08:59:30Z"), now()), "1h left");
         assert_eq!(left_text(Some("2026-10-26T10:00:00Z"), now()), "3d 2h left");
         assert_eq!(left_text(Some("2026-10-23T08:00:00Z"), now()), "");
+        let later: Timestamp = "2026-10-23T08:00:00.600Z".parse().unwrap();
+        assert_eq!(left_text(Some("2026-10-23T08:01:00.700Z"), later), "2m left", "rounded from the milliseconds");
     }
 
     #[test]
@@ -295,5 +297,6 @@ mod tests {
         assert_eq!(rest, [AiProvider::Claude]);
         usage.providers.remove(1);
         assert_eq!(shown(&usage).map(|provider| provider.provider), Some(AiProvider::Claude), "else the first");
+        assert_eq!(others(&usage).count(), 0, "which isn't listed again");
     }
 }
