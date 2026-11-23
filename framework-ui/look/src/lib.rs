@@ -27,7 +27,8 @@
 //! - [`Shape`], [`set_blur_region`]: what a window draws, as the region
 //!   the compositor blurs behind and takes clicks on.
 //! - [`motion`]: the panel curve and the spring. [`Wheel`]: a mouse
-//!   wheel's notches.
+//!   wheel's notches. [`fade_color`], [`fade`] and [`Hovered`]: the short
+//!   fades of a hover wash or a fill, kept by an element's id.
 //! - [`ShellWindow`]: the options every shell window opens with. No other
 //!   crate builds `WindowOptions`.
 //!
@@ -35,6 +36,7 @@
 //! and to screenshot.
 
 mod app_icon;
+mod fade;
 mod family;
 mod field;
 mod glass;
@@ -56,6 +58,7 @@ mod wheel;
 mod window;
 
 pub use app_icon::AppIcon;
+pub use fade::{Hovered, fade, fade_color, keyed};
 pub use family::Family;
 pub use field::{Editing, FieldEvent, TextField};
 pub use glass::Glass;
@@ -71,5 +74,5 @@ pub use style::{LookStyled, Touching};
 pub use theme::{Theme, mix};
 pub use tile::Tile;
 pub use volume_icon::{OutputKind, VolumeGlyph};
-pub use wheel::Wheel;
+pub use wheel::{WHEEL_LINE, Wheel, scrolled};
 pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, NAMESPACE_PREFIX, ShellWindow};
