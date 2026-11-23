@@ -17,8 +17,7 @@
 
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    MouseExitEvent, MouseMoveEvent, ParentElement, Render, ScrollEvent, StatefulInteractiveElement, Styled,
-    Subscription, Window, div,
+    ParentElement, Render, ScrollEvent, StatefulInteractiveElement, Styled, Subscription, Window, div,
 };
 use nova_bar_api::Panel as BarPanel;
 use nova_desktop_info::{Capability, Desktop, Event as DesktopEvent, Step};
@@ -54,10 +53,6 @@ struct CentralPill {
     shown: Shown,
     /// The search button's hover wash: 0 none, 1 full.
     search_hover: Eased,
-    /// The pointer left the screen's stage and hasn't moved on it since.
-    /// GPUI tests hover again from the last position it knew, which stays
-    /// on the button, so `on_hover` alone turns the wash back on.
-    pointer_away: bool,
     wheel: Wheel,
     _observers: Vec<Subscription>,
 }
@@ -80,7 +75,6 @@ impl CentralPill {
             desktop,
             shown,
             search_hover: Eased::lasting(0.0, DURATION_FAST, Instant::now()),
-            pointer_away: false,
             wheel: Wheel::default(),
             _observers: observers,
         };
@@ -123,7 +117,7 @@ impl CentralPill {
     }
 
     fn hover_search(&mut self, hovered: bool, cx: &mut Context<Self>) {
-        let target = if hovered && !self.pointer_away { 1.0 } else { 0.0 };
+        let target = if hovered { 1.0 } else { 0.0 };
         if self.search_hover.target() != target {
             self.search_hover.set_target(target, Instant::now());
             cx.notify();
@@ -152,14 +146,6 @@ impl CentralPill {
             .cursor_pointer()
             .child(Icon::new(Glyph::SEARCH).size(ICON_SIZE_SMALL).color(icon))
             .on_hover(cx.listener(|pill, hovered: &bool, _, cx| pill.hover_search(*hovered, cx)))
-            .on_mouse_move(cx.listener(|pill, _: &MouseMoveEvent, _, cx| {
-                pill.pointer_away = false;
-                pill.hover_search(true, cx);
-            }))
-            .on_mouse_exit(cx.listener(|pill, _: &MouseExitEvent, _, cx| {
-                pill.pointer_away = true;
-                pill.hover_search(false, cx);
-            }))
             .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, _, cx| {
                 Stage::toggle(BarPanel::Launcher.name(), screen, cx);
             })
