@@ -5,11 +5,10 @@
 //! which stays the spec until it is removed.
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
-//! - `card`: the card; `battery`: a device's little battery.
+//! - `card`: the card.
 //! - `logic`: what `devices.js` worked out, tested alone.
 //! - `tokens`: the feature's own sizes.
 
-mod battery;
 mod card;
 mod logic;
 mod tokens;

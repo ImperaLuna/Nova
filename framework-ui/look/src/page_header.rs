@@ -82,7 +82,15 @@ impl RenderOnce for PageHeader {
                     .on_click(move |event, window, cx| back(event, window, cx))
                     .child(Icon::new(Glyph::LEFT)),
             )
-            .child(div().flex_1().min_w_0().truncate().text_size(FONT_SIZE_HEADING).font_weight(WEIGHT_TITLE).child(self.title))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(FONT_SIZE_HEADING)
+                    .font_weight(WEIGHT_TITLE)
+                    .child(self.title),
+            )
             .when_some(self.end, |row, end| row.child(div().flex_none().child(end)))
     }
 }

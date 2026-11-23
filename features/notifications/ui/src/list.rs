@@ -27,7 +27,7 @@ use nova_look::tokens::{
     ICON_GAP, ICON_SIZE_SMALL, LABEL_NUDGE, PAD, RADIUS_CARD, RADIUS_CONTROL, RADIUS_SEGMENT, ROW_INSET, WEIGHT_LABEL,
     WEIGHT_TITLE,
 };
-use nova_look::{RoundButton, Glyph, Icon, LookStyled, Theme};
+use nova_look::{Glyph, Icon, LookStyled, RoundButton, Theme};
 use nova_notifications_api::Notification;
 use nova_stage::{Screen, Stage};
 use std::collections::HashSet;

@@ -23,7 +23,7 @@ use nova_look::tokens::{
     FONT_MONO, FONT_SIZE, FONT_SIZE_MICRO, FONT_SIZE_SMALL, GAP, ICON_GAP, LABEL_NUDGE, PAD, SHADOW_ROOM, WEIGHT_LABEL,
     WEIGHT_TITLE,
 };
-use nova_look::{RoundButton, Glass, Glyph, Theme};
+use nova_look::{Glass, Glyph, RoundButton, Theme};
 use nova_notifications_api::{Notification, Urgency};
 use std::time::Instant;
 

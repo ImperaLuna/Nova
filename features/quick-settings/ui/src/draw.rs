@@ -11,12 +11,12 @@
 use crate::drawer::Drawer;
 use crate::logic::{self, Logo};
 use crate::tokens::WIDTH;
-use nova_look::tokens::QUICK_SETTINGS_PAD as PAD;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, AnyView, Context, Font, FontStyle, Image, ImageFormat, IntoElement, ObjectFit, ParentElement, Pixels,
     Render, SharedString, Styled, StyledImage, TextRun, Window, div, font, img, px,
 };
+use nova_look::tokens::QUICK_SETTINGS_PAD as PAD;
 use nova_look::tokens::{
     BAR_GAP, BAR_HEIGHT, BAR_MARGIN, FONT_DISPLAY, FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP,
     ICON_GAP, ICON_SIZE_MENU, ICON_SIZE_SMALL, LOGO_SIZE, PILL_BUTTON_GAP, PILL_BUTTON_INSET, QUICK_SETTINGS_GAP,

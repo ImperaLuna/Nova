@@ -74,9 +74,7 @@ impl RenderOnce for DeviceBattery {
             .justify_center()
             .child(level)
             .when(self.charging, |body| {
-                body.child(
-                    Icon::new(Glyph::BOLT).filled(Glyph::BOLT).size(DEVICE_BOLT_SIZE).color(theme.on_accent),
-                )
+                body.child(Icon::new(Glyph::BOLT).filled(Glyph::BOLT).size(DEVICE_BOLT_SIZE).color(theme.on_accent))
             });
         let nub = div().flex_none().w(DEVICE_BATTERY_NUB_WIDTH).h(DEVICE_BATTERY_NUB_HEIGHT).rounded_full().bg(rim);
         div().flex_none().flex().items_center().child(body).child(nub)

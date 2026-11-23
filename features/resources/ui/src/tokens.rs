@@ -25,9 +25,9 @@ tokens! {
     /// A ring on the card: this wide, its arc this thick.
     RING_SIZE: px = 52.0, "ringSize";
     RING_STROKE: px = 4.0, "ringStroke";
-    /// The page's graph, its lines and the CPU's area under its line.
+    /// The page's graph, and the CPU's area under its line (its lines are
+    /// `nova_look`'s `GRAPH_LINE`).
     GRAPH_HEIGHT: px = 72.0, "graphHeight";
-    GRAPH_LINE: px = 2.0, "graphLine";
     GRAPH_AREA_OPACITY: ratio = 0.22, "graphAreaOpacity";
     /// A legend's dot beside the graph.
     LEGEND_DOT: px = 7.0, "legendDot";

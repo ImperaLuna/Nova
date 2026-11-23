@@ -7,7 +7,8 @@
 //!
 //! novad samples the machine only while some connection watches
 //! (`watch_resources`): this program watches while any screen's drawer
-//! shows the card or the page ([`watch`]).
+//! shows the card or the page (a `nova_ui_client::Watch`, kept by the
+//! card).
 //!
 //! - [`register`]: the one thing `nova-ui` calls.
 //! - `card` (with `ring`), `page` (with `graph`): the two views.
@@ -20,7 +21,6 @@ mod logic;
 mod page;
 mod ring;
 mod tokens;
-mod watch;
 
 use gpui::{App, AppContext};
 

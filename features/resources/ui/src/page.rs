@@ -280,7 +280,7 @@ impl Page {
                     })),
             )
             .child(cell().font_family(FONT_MONO).text_color(theme.fg).child(logic::cpu(app.cpu)))
-            .child(cell().font_family(FONT_MONO).text_color(theme.fg_dim()).child(logic::bytes(app.memory)))
+            .child(cell().font_family(FONT_MONO).text_color(theme.fg_dim()).child(nova_look::bytes::bytes(app.memory)))
             .child(div().flex_none().w(END_BUTTON_WIDTH).h(END_BUTTON_HEIGHT).children(end));
         let confirm = asked.then(|| self.confirm(app, &theme, cx));
         div().flex().flex_col().child(line).children(confirm).into_any_element()

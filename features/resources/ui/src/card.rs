@@ -10,7 +10,7 @@
 
 use crate::logic;
 use crate::ring::Ring;
-use crate::{PAGE, QUICK_SETTINGS, watch};
+use crate::{PAGE, QUICK_SETTINGS};
 use gpui::{
     Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled,
     Subscription, Window, div,
@@ -18,9 +18,9 @@ use gpui::{
 use nova_look::motion::ease;
 use nova_look::tokens::{DURATION_FILL, DURATION_PANEL, GAP, ICON_SIZE_SMALL, PAD, RADIUS_CARD, REVEAL_FILL};
 use nova_look::{CardTitle, Glyph, Icon, Theme};
-use nova_resources_api::{Event, Resources, TOPIC};
+use nova_resources_api::{Command, Event, Resources, TOPIC};
 use nova_stage::{Screen, Stage};
-use nova_ui_client::Live;
+use nova_ui_client::{Live, Watch};
 use std::time::Instant;
 
 pub struct Card {
@@ -31,7 +31,9 @@ pub struct Card {
     open: bool,
     since: Instant,
     fill_at_close: f32,
-    /// Whether this screen watches the machine, as last told.
+    /// novad samples the machine while some screen's card wants it.
+    watch: Entity<Watch>,
+    /// Whether this screen wants it, as last told.
     watching: bool,
     _followed: Vec<Subscription>,
 }
@@ -41,11 +43,12 @@ impl Card {
         let resources = Live::follow(TOPIC, cx, |Event::Resources(resources)| Some(resources));
         let mut followed = vec![cx.observe(&resources, |_, _, cx| cx.notify())];
         followed.extend(Stage::observe_panels(cx, |card, cx| card.follow_stage(cx)));
-        // Gone with its screen or its feature: this screen watches no more.
-        let id = screen.id;
-        followed.push(cx.on_release(move |card, cx| {
+        let watch = Watch::named("resources", |watching| Command::WatchResources { watching }, cx);
+        // Gone with its screen or its feature: this screen wants it no more.
+        let me = cx.entity_id();
+        followed.push(cx.on_release(move |card: &mut Self, cx| {
             if card.watching {
-                watch::set(id, false, cx);
+                Watch::want(&card.watch, me, false, cx);
             }
         }));
         let mut card = Self {
@@ -54,6 +57,7 @@ impl Card {
             open: false,
             since: Instant::now(),
             fill_at_close: 0.0,
+            watch,
             watching: false,
             _followed: followed,
         };
@@ -68,7 +72,8 @@ impl Card {
         let watching = open && page.as_deref().is_none_or(|page| page == PAGE);
         if watching != self.watching {
             self.watching = watching;
-            cx.defer(move |cx| watch::set(screen, watching, cx));
+            let (watch, me) = (self.watch.clone(), cx.entity_id());
+            cx.defer(move |cx| Watch::want(&watch, me, watching, cx));
         }
         if open != self.open {
             let now = Instant::now();

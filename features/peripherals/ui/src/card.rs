@@ -6,7 +6,6 @@
 //! devices never push the cards below off the drawer. `DevicesCard.qml` in
 //! today's shell.
 
-use crate::battery::DeviceBattery;
 use crate::logic::{self, Tone};
 use crate::tokens::{
     DEVICE_CHIP_GAP, DEVICE_CHIP_HEIGHT, DEVICE_CHIP_PAD, DEVICE_ICON_SIZE, DEVICE_LEVEL_WIDTH, DEVICE_LINK_ICON_SIZE,
@@ -20,7 +19,7 @@ use nova_look::motion::Eased;
 use nova_look::tokens::{
     DURATION_FILL, DURATION_PANEL, FONT_SIZE, FONT_SIZE_MICRO, FONT_SIZE_SMALL, GAP, MENU_PAD, RADIUS_CARD,
 };
-use nova_look::{CardTitle, Icon, Theme};
+use nova_look::{CardTitle, DeviceBattery, Icon, Theme};
 use nova_peripherals_api::{Event, Peripheral, Peripherals, TOPIC};
 use nova_stage::Shown;
 use nova_ui_client::Live;
@@ -142,7 +141,7 @@ fn device_row(device: &Peripheral, fill: f32, opacity: f32, cx: &gpui::App) -> A
         .child(Icon::new(logic::icon(device.kind)).size(DEVICE_ICON_SIZE).color(theme.fg))
         .child(div().flex_1().min_w_0().truncate().text_size(FONT_SIZE).text_color(theme.fg).child(device.name.clone()))
         .children(chip)
-        .children(device.battery.map(|_| DeviceBattery::new(fill, low, device.charging)))
+        .children(device.battery.map(|_| DeviceBattery::new(fill).low(low).charging(device.charging)))
         .child(
             div()
                 .flex_none()
