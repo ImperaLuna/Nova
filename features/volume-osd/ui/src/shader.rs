@@ -1,6 +1,10 @@
 //! The capsule's one shader (`liquid.wgsl`): its glass, liquid and shadow,
 //! painted with the fork's `paint_shader` over the whole window, and the
 //! numbers it reads.
+//!
+//! Its glass is its own, not the look kit's `Glass`, as it was in today's
+//! shell: a sheen and a rim lit from the top left that the liquid lies
+//! under, all in the one pass that also stretches with the capsule.
 
 use crate::logic::CapsuleBox;
 use crate::motion::LiquidMotion;

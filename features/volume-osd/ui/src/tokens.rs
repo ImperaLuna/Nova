@@ -28,6 +28,15 @@ pub const HOLD: Duration = Duration::from_millis(1500);
 /// How far a press moves before it's a drag, not a click: Qt's
 /// `startDragDistance`, which today's shell takes from the platform.
 pub const DRAG_DISTANCE: Pixels = px(10.0);
+/// Its window while nothing is out: as small as the compositor takes.
+pub const RESTING: Pixels = px(1.0);
+/// Points along each corner of the dashed outline with no output.
+pub const CORNER_POINTS: usize = 12;
+/// The longest time one frame of its motion covers, so a frame after a
+/// pause doesn't throw the springs; and how far out it still counts as
+/// out on its way in.
+pub const FRAME_MAX: Duration = Duration::from_millis(33);
+pub const GONE: f32 = 0.002;
 /// The longest it waits for its window to grow before it comes out in the
 /// one it has: a compositor answers within a frame or two.
 pub const GROW_WAIT: Duration = Duration::from_millis(100);

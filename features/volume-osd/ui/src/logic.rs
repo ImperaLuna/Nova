@@ -51,6 +51,12 @@ pub fn label(output: Option<Output>) -> String {
     output.map_or_else(|| "–".into(), |output| format!("{}", (output.volume * 100.0).round() as i64))
 }
 
+/// How far from the right edge the capsule's left side gets: its slide
+/// overshoots by up to OVERSHOOT before it lands.
+pub fn widest() -> f32 {
+    (f32::from(WIDTH + EDGE_GAP) * (1.0 + OVERSHOOT)).ceil()
+}
+
 /// Where the capsule is drawn, in its window's pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CapsuleBox {

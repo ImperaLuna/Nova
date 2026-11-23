@@ -6,16 +6,11 @@
 //! it is shown, so a hidden one costs nothing.
 
 use crate::tokens::{
-    FIZZ, FIZZ_PACE, IDLE_WAVE, LEVEL, SLIDE, SLOSH_DECAY, SLOSH_GAIN, SLOSH_MAX, TILT, TILT_GAIN, TILT_MAX,
+    FIZZ, FIZZ_PACE, FRAME_MAX, GONE, IDLE_WAVE, LEVEL, SLIDE, SLOSH_DECAY, SLOSH_GAIN, SLOSH_MAX, TILT, TILT_GAIN,
+    TILT_MAX,
 };
 use nova_look::motion::SpringState;
 use std::time::Duration;
-
-/// The longest time one frame covers, so a frame after a pause doesn't
-/// throw the springs.
-const FRAME_MAX: Duration = Duration::from_millis(33);
-/// Out by less than this, on its way in, it has gone.
-const GONE: f32 = 0.002;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LiquidMotion {
@@ -100,6 +95,8 @@ mod tests {
             highest = highest.max(motion.open.value);
         }
         assert!(highest > 1.02, "it never overshot: {highest}");
+        let room = crate::logic::widest() / f32::from(crate::tokens::WIDTH + crate::tokens::EDGE_GAP);
+        assert!(highest <= room, "its window is too narrow for the overshoot: {highest}");
         assert!((motion.open.value - 1.0).abs() < 1e-3);
         motion.open_target = 0.0;
         run(&mut motion, 400);

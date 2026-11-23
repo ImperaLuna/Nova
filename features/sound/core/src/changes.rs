@@ -59,6 +59,28 @@ pub fn press(listing: &Listing, key: VolumeKey) -> Result<Vec<Request>, String> 
     Ok(vec![Request::SetSinkVolume(device_volume(sink.index, at_level(&sink.cvolume, next)))])
 }
 
+/// Writes into `listing` what `requests` asked of its outputs, as if the
+/// server had already listed it: keys pressed faster than the server lists
+/// each step from the one before, not all from the same volume. The next
+/// listing replaces it with what the server did.
+pub fn apply(listing: &mut Listing, requests: &[Request]) {
+    for request in requests {
+        match request {
+            Request::SetSinkVolume(params) => {
+                if let Some(sink) = listing.sinks.iter_mut().find(|sink| Some(sink.index) == params.device_index) {
+                    sink.cvolume = params.volume;
+                }
+            }
+            Request::SetSinkMute(params) => {
+                if let Some(sink) = listing.sinks.iter_mut().find(|sink| Some(sink.index) == params.device_index) {
+                    sink.muted = params.mute;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The volume `direction` (1 or -1) steps of `step` from `volume`, on the
 /// step grid, to the percent. Nova's own controls stop at 100%: up leaves
 /// a volume another app set above it alone, down steps from 100%.

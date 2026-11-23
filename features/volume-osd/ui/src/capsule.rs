@@ -258,7 +258,7 @@ impl Capsule {
     /// never have come out there.
     fn follow_quick_settings(&mut self, cx: &mut Context<Self>) {
         let Some(target) = self.target else { return };
-        if self.motion.shown() && Stage::is_open(QUICK_SETTINGS, target, cx) {
+        if (self.motion.shown() || self.wants_out) && Stage::is_open(QUICK_SETTINGS, target, cx) {
             self.go_in(cx);
         }
     }

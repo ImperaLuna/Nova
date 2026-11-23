@@ -69,6 +69,9 @@ pub struct Sound {
     /// The connection that asks, with its count, while there is one. Never
     /// taken while `state` is held.
     asking: Mutex<Option<(Link, u64)>>,
+    /// Held through a key's press, so two keys at once step one after
+    /// the other.
+    pressing: Mutex<()>,
     /// Wakes the follower: something changed, the server went, or stop.
     wake: Condvar,
     hub: Arc<Hub>,
@@ -107,6 +110,7 @@ impl Sound {
             follows_bluetooth,
             state: Mutex::new(State::default()),
             asking: Mutex::new(None),
+            pressing: Mutex::new(()),
             wake: Condvar::new(),
             hub,
             logger,
@@ -139,9 +143,22 @@ impl Sound {
     }
 
     /// Does what a volume key asks of the output in use
-    /// ([`changes::press`]), as [`Self::change`] does a command.
+    /// ([`changes::press`]), as [`Self::change`] does a command. The kept
+    /// listing takes the change at once ([`changes::apply`]), so the next
+    /// key steps from it.
     pub fn press(&self, key: VolumeKey) -> Result<(), String> {
-        self.ask(|listing| changes::press(listing, key))
+        let _pressing = lock(&self.pressing);
+        let (requests, listed_by) = match &lock(&self.state).listing {
+            Some((listing, connection)) => (changes::press(listing, key)?, *connection),
+            None => return Err(NO_SERVER.into()),
+        };
+        self.send(&requests, listed_by)?;
+        if let Some((listing, connection)) = lock(&self.state).listing.as_mut()
+            && *connection == listed_by
+        {
+            changes::apply(listing, &requests);
+        }
+        Ok(())
     }
 
     /// Sends the server the requests `requests` makes of the latest

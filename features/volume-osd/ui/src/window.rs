@@ -17,7 +17,7 @@
 use crate::capsule::Capsule;
 use crate::logic::{self, CapsuleBox};
 use crate::shader::{self, Look};
-use crate::tokens::{DRAG_DISTANCE, EDGE_GAP, GROW_WAIT, LABEL_PAD, RIM_GLOW_OPACITY, WIDTH};
+use crate::tokens::{CORNER_POINTS, DRAG_DISTANCE, GROW_WAIT, LABEL_PAD, RESTING, RIM_GLOW_OPACITY};
 use gpui::{
     App, AppContext, Bounds, Context, CursorStyle, Div, DragMoveEvent, Entity, Hsla, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, PathBuilder, Pixels, Point, Render, ScrollEvent,
@@ -38,16 +38,12 @@ use std::time::Instant;
 /// The capsule's layer surfaces, for the compositor's rules (niri blurs
 /// `^nova-`).
 const NAMESPACE: &str = "nova-volume";
-/// A window with nothing out: as small as the compositor takes.
-const RESTING: Pixels = px(1.0);
-/// Points along each corner of the dashed outline.
-const CORNER_POINTS: usize = 12;
 
 /// The window's size with the capsule out: as big as it gets plus its
 /// shadow.
 fn full_size() -> gpui::Size<Pixels> {
     let height = (logic::tallest() + 2.0 * f32::from(SHADOW_ROOM)).ceil();
-    size(WIDTH + EDGE_GAP + SHADOW_ROOM, px(height))
+    size(px(logic::widest()) + SHADOW_ROOM, px(height))
 }
 
 pub struct CapsuleWindow {
@@ -474,12 +470,13 @@ fn rounded_rect(bounds: Bounds<Pixels>, inset: f32, radius: f32) -> Vec<Point<Pi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tokens::{EDGE_GAP, WIDTH};
 
     #[test]
     fn the_window_holds_the_tallest_capsule_and_its_shadow() {
         let full = full_size();
         assert!(f32::from(full.height) >= logic::tallest() + 2.0 * f32::from(SHADOW_ROOM));
-        assert_eq!(full.width, WIDTH + EDGE_GAP + SHADOW_ROOM);
+        assert!(full.width > WIDTH + EDGE_GAP + SHADOW_ROOM, "room for the slide's overshoot");
     }
 
     #[test]

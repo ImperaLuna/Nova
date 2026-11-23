@@ -370,6 +370,24 @@ fn a_volume_key_steps_the_output_in_use_and_mutes_it() {
 }
 
 #[test]
+fn keys_pressed_faster_than_the_server_lists_each_take_a_step() {
+    let fixture = Fixture::new("keys-fast");
+    let _server = fixture.server();
+    let sound = fixture.sound();
+    assert!(close(&fixture.next()["outputs"][0]["volume"], 0.4));
+    for _ in 0..3 {
+        sound.press(VolumeKey::Up).unwrap();
+    }
+    fixture.until(|sound| close(&sound["outputs"][0]["volume"], 0.55));
+    // Mute and unmute at once leave it as it was.
+    sound.press(VolumeKey::Mute).unwrap();
+    sound.press(VolumeKey::Mute).unwrap();
+    sound.press(VolumeKey::Up).unwrap();
+    let stepped = fixture.until(|sound| close(&sound["outputs"][0]["volume"], 0.6));
+    assert_eq!(stepped["outputs"][0]["muted"], false);
+}
+
+#[test]
 fn a_volume_key_at_full_changes_nothing() {
     let fixture = Fixture::new("keys-full");
     let _server = fixture.server();
