@@ -179,7 +179,7 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
     let mut shell = ShellWindow::new(screen.id, size(screen.size.width, height));
     shell.namespace = STAGE_NAMESPACE;
     // niri stacks the surfaces of one layer by when they opened, so the panels' window opens first:
-    // https://wayland.app/protocols/wlr-layer-shell-unstable-v1
+    // https://linear.app/imperaluna/issue/IMP-427
     let (off_strip, beside) = (OffStripPanels::default(), Rc::new(Cell::new(px(0.0))));
     let shared_beside =
         panel_window::Shared { stage: WeakEntity::new_invalid(), panels: off_strip.clone(), beside: beside.clone() };

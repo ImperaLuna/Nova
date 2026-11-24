@@ -14,6 +14,8 @@ const EXTENSIONS: [&str; 3] = ["png", "svg", "xpm"];
 const MAX_KEPT: usize = 4096;
 const MAX_NAME_BYTES: usize = 255;
 
+// Searching an icon theme cost 33-154 ms a name on the UI thread, which every screen's animations waited on:
+// https://linear.app/imperaluna/issue/IMP-158
 pub struct Icons {
     theme: String,
     base_dirs: Vec<PathBuf>,

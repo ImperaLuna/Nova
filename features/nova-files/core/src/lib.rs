@@ -12,6 +12,8 @@ use std::time::Duration;
 pub const ID: &str = "nova-files";
 pub const LAUNCHER_MODE: &str = "launcher";
 const LOG_SOURCE: &str = "nova-files";
+// Nova Files answers a warm search of a real Home in about 30 ms:
+// https://linear.app/imperaluna/issue/FIL-29
 pub const STAGES_WAIT: Duration = Duration::from_millis(100);
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 

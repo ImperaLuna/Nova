@@ -1,4 +1,6 @@
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
+// Each carousel open kept 30 to 100 MB (592 MB after use against 144 MB at start); 1 MB sits above a frame's
+// allocations and below every picture: https://linear.app/imperaluna/issue/IMP-462
 const OWN_MAPPING_FROM: std::ffi::c_int = 1024 * 1024;
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]

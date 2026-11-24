@@ -21,6 +21,8 @@ struct Utilization {
     memory: c_uint,
 }
 
+// Starting NVML loads libcuda (about 19 MB), so the library is loaded only while resources are watched:
+// https://linear.app/imperaluna/issue/IMP-151
 pub struct Library {
     handle: *mut c_void,
     init: unsafe extern "C" fn() -> c_int,

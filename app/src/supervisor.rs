@@ -282,6 +282,8 @@ fn spawn(settings: &UiSettings, program: &Path) -> std::io::Result<Child> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // The death signal follows the spawning thread; the supervisor thread lives as long as novad:
+    // https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html
     nova_process::child::die_with_novad(&mut command, libc::SIGTERM);
     command.spawn()
 }
