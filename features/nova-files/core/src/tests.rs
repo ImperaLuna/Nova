@@ -93,6 +93,8 @@ fn a_newer_search_ends_the_wait_for_a_first_stage() {
         let superseded = answered.recv_timeout(TIMEOUT).expect("the first search's wait ended");
         assert_eq!(superseded.unwrap(), Vec::<PathBuf>::new());
     });
+    // The cancel is sent without a reply; the search after it comes later.
+    client.search("nothing", 30, TIMEOUT).unwrap();
     assert_eq!(lock(&fixture.stand_in.asked).cancelled, [1]);
 }
 
@@ -103,8 +105,8 @@ fn a_search_with_no_stage_in_time_says_so() {
     let dir = TempDir::new("nova-files-no-stage");
     let bus = TestBus::start(&dir.join("bus"));
     let _stand_in = StandIn::serve(&bus.address, ROOT);
-    let client =
-        super::client::Client::connect(&nova_session_bus::Bus::Address(bus.address.clone()), STAGES_WAIT).unwrap();
+    let mut client = client(&bus.address);
+    client.first_stage_wait = STAGES_WAIT;
     let error = client.search("late", 30, STAGES_WAIT).unwrap_err();
     assert!(error.contains("didn't answer"), "{error}");
 }

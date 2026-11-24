@@ -61,7 +61,7 @@ pub struct Client {
     /// How long a search waits for its first stage: as long as a call may
     /// take, since Nova Files sends none until its index is open, which
     /// the first search after it starts waits for.
-    first_stage_wait: Duration,
+    pub(crate) first_stage_wait: Duration,
     waiting: Waiting,
     /// The last search's id, while it may still be going.
     going: Mutex<Option<u64>>,
@@ -118,7 +118,15 @@ impl Client {
         stages: &mpsc::Receiver<Stage>,
     ) -> Result<Vec<PathBuf>, String> {
         let id = call.0;
-        let older = lock(&self.going).replace(id);
+        let older = {
+            let mut going = lock(&self.going);
+            // Searches start on their own threads: one that got here after
+            // a newer one is already superseded.
+            if going.is_some_and(|newer| newer > id) {
+                return Ok(Vec::new());
+            }
+            going.replace(id)
+        };
         if let Some(older) = older {
             // Its wait ends now, and Nova Files stops working on it.
             lock(&self.waiting).remove(&older);
