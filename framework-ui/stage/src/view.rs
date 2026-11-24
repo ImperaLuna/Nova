@@ -399,11 +399,13 @@ impl StageView {
         }
         self.layer_asked_on_screen = true;
         let stage = cx.weak_entity();
-        window.on_next_frame(move |window, cx| {
-            let overlay = stage.read_with(cx, |stage, _| stage.held.overlay).unwrap_or(false);
-            if overlay {
-                window.set_layer(Layer::Overlay);
-            }
+        window.on_next_frame(move |window, _| {
+            window.on_next_frame(move |window, cx| {
+                let overlay = stage.read_with(cx, |stage, _| stage.held.overlay).unwrap_or(false);
+                if overlay {
+                    window.set_layer(Layer::Overlay);
+                }
+            });
         });
     }
 
