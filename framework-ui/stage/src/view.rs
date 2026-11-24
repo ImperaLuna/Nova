@@ -149,6 +149,7 @@ pub(crate) struct StageView {
     pub center_drawn: bool,
     height: Rc<Cell<Pixels>>,
     held: Held,
+    layer_asked_on_screen: bool,
     pub panel_window: Option<WindowHandle<PanelWindow>>,
     panel_window_due: bool,
     beside_held: Hold,
@@ -211,6 +212,7 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 center_drawn: true,
                 height: Rc::new(Cell::new(height)),
                 held: Held::default(),
+                layer_asked_on_screen: false,
                 panel_window,
                 panel_window_due: false,
                 beside_held: Hold::default(),
@@ -387,6 +389,24 @@ impl StageView {
         }
         self.fit(window, cx, false);
         cx.notify();
+    }
+
+    // Hyprland 0.57 drops a layer change committed before a surface's first frame; once it keeps one, drop this:
+    // https://github.com/hyprwm/Hyprland/blob/v0.57.2/src/desktop/view/LayerSurface.cpp#L315-L326
+    pub fn ask_layer_once_on_screen(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.layer_asked_on_screen {
+            return;
+        }
+        self.layer_asked_on_screen = true;
+        let stage = cx.weak_entity();
+        window.on_next_frame(move |window, _| {
+            window.on_next_frame(move |window, cx| {
+                let overlay = stage.read_with(cx, |stage, _| stage.held.overlay).unwrap_or(false);
+                if overlay {
+                    window.set_layer(Layer::Overlay);
+                }
+            });
+        });
     }
 
     pub fn rest_once_closed(&mut self, window: &mut Window, cx: &mut App, now: Instant) {
