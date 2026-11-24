@@ -9,7 +9,9 @@
 //! which the bus starts it for (D-Bus activation) and which it leaves after
 //! a few idle minutes. `Search` returns at once and its stages come as
 //! `Found` signals sent only to the caller, until one is `done`; a search
-//! waits [`STAGES_WAIT`] for that, then answers with the stages it has.
+//! waits [`STAGES_WAIT`] after the first for that, then answers with the
+//! stages it has. The first search after Nova Files starts opens its index
+//! before any stage comes, so the first stage may take as long as a call.
 //! Starting a search cancels the one before if it's still going.
 //! `Complete` answers at once with the entries a typed path (`~/Doc`) can
 //! complete to, read from its folder as it is now. `Open`
@@ -40,11 +42,13 @@ pub const ID: &str = "nova-files";
 /// The feature's mode with only the search service, no Nova Files windows.
 pub const LAUNCHER_MODE: &str = "launcher";
 const LOG_SOURCE: &str = "nova-files";
-/// How long a search waits for its last stage. Nova Files answers a warm
-/// search of a real Home in about 30 ms; past this, what came is shown.
+/// How long a search waits for its last stage after the first. Nova Files
+/// answers a warm search of a real Home in about 30 ms; past this, what
+/// came is shown.
 pub const STAGES_WAIT: Duration = Duration::from_millis(100);
-/// How long a call (and connecting) may take. The first call starts Nova
-/// Files, so it gets longer than a search waits for stages.
+/// How long a call (and connecting) may take, and a search's first stage.
+/// The first call starts Nova Files, and its first search opens the index,
+/// so both get longer than a search waits for later stages.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Where the feature finds Nova Files and what it needs to show its finds.
