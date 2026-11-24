@@ -88,12 +88,10 @@ impl PanelItem {
         turned
     }
 
-    fn set_size(&mut self, size: Size<Pixels>, now: Instant) -> bool {
-        let (width, height) = (f32::from(size.width), f32::from(size.height));
-        let changed = self.width.target() != width || self.height.target() != height;
-        self.width.set_target(width, now);
-        self.height.set_target(height, now);
-        changed
+    fn follow(&mut self, open: bool, size: Option<Size<Pixels>>, now: Instant) -> bool {
+        let closed = self.closed(now);
+        let resized = size.is_some_and(|size| resize(&mut self.width, &mut self.height, size, closed, now));
+        self.set_open(open, now) | resized
     }
 
     pub fn closed(&self, now: Instant) -> bool {
@@ -348,7 +346,7 @@ impl StageView {
         let (mut focus, mut beside_focus, mut beside_moved) = (None, None, false);
         for (panel, (open, size, left)) in self.panel_items_mut().zip(targets) {
             let opened = open && panel.morph.target() == 0.0;
-            let moved = panel.set_open(open, now) | size.is_some_and(|size| panel.set_size(size, now));
+            let moved = panel.follow(open, size, now);
             panel.left = left;
             beside_moved |= moved && !panel.on_strip();
             if opened && panel.spec.rules().closes_on_esc() {
@@ -614,5 +612,50 @@ impl StageView {
         for window in [self.catcher.take(), self.bar_room.take()].into_iter().flatten() {
             satellites::close(window, cx);
         }
+    }
+}
+
+fn resize(width: &mut Eased, height: &mut Eased, size: Size<Pixels>, at_once: bool, now: Instant) -> bool {
+    let (to_width, to_height) = (f32::from(size.width), f32::from(size.height));
+    let changed = width.target() != to_width || height.target() != to_height;
+    if at_once {
+        width.jump_to(to_width, now);
+        height.jump_to(to_height, now);
+    } else {
+        width.set_target(to_width, now);
+        height.set_target(to_height, now);
+    }
+    changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{px, size};
+
+    fn lengths(now: Instant) -> (Eased, Eased) {
+        (Eased::lasting(300.0, DURATION_RESIZE, now), Eased::lasting(200.0, DURATION_RESIZE, now))
+    }
+
+    #[test]
+    fn a_closed_panel_takes_its_new_size_at_once() {
+        let now = Instant::now();
+        let (mut width, mut height) = lengths(now);
+        assert!(resize(&mut width, &mut height, size(px(400.0), px(100.0)), true, now));
+        assert!(width.settled(now) && height.settled(now));
+        assert_eq!((width.value(now), height.value(now)), (400.0, 100.0));
+        width.set_target(500.0, now);
+        assert!(!width.settled(now + DURATION_RESIZE / 2));
+        assert!(width.settled(now + DURATION_RESIZE));
+    }
+
+    #[test]
+    fn a_shown_panel_grows_to_its_new_size() {
+        let now = Instant::now();
+        let (mut width, mut height) = lengths(now);
+        assert!(resize(&mut width, &mut height, size(px(400.0), px(100.0)), false, now));
+        assert!(!width.settled(now));
+        assert_eq!(width.value(now), 300.0);
+        assert!(!resize(&mut width, &mut height, size(px(400.0), px(100.0)), false, now));
     }
 }

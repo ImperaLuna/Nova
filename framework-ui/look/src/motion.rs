@@ -58,6 +58,10 @@ impl Eased {
         self.started = now;
     }
 
+    pub fn jump_to(&mut self, target: f32, now: Instant) {
+        *self = Self::lasting(target, self.duration, now);
+    }
+
     pub fn target(&self) -> f32 {
         self.to
     }
@@ -175,6 +179,17 @@ mod tests {
         assert!(!value.settled(half_way + DURATION_PANEL / 2));
         assert!(value.settled(half_way + DURATION_PANEL));
         assert_eq!(value.value(half_way + DURATION_PANEL), 0.0);
+    }
+
+    #[test]
+    fn a_jump_takes_the_target_at_once_even_mid_motion() {
+        let start = Instant::now();
+        let mut value = Eased::at(0.0, start);
+        value.set_target(1.0, start);
+        let half_way = start + DURATION_PANEL / 2;
+        value.jump_to(0.25, half_way);
+        assert!(value.settled(half_way));
+        assert_eq!((value.value(half_way), value.target()), (0.25, 0.25));
     }
 
     #[test]
