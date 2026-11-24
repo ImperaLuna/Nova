@@ -1,3 +1,4 @@
+use crate::day::DayNames;
 use crate::digits::{Digit, Digits};
 use gpui::{
     AnyElement, Context, Div, FontWeight, IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Window,
@@ -9,7 +10,6 @@ use nova_look::Theme;
 use nova_look::tokens::{FONT_MONO, FONT_SIZE, GAP, WEIGHT_LABEL, WEIGHT_TITLE};
 use std::time::{Duration, Instant};
 
-const DAY_FORMAT: &str = "%a %-d";
 const TIME_FORMAT: &str = "%H:%M";
 const FROZEN_TIME_VAR: &str = "NOVA_FROZEN_TIME";
 const ON_THE_MINUTE: Duration = Duration::from_millis(5);
@@ -17,6 +17,8 @@ const ON_THE_MINUTE: Duration = Duration::from_millis(5);
 pub struct ClockTime {
     now: DateTime,
     digits: Digits,
+    names: DayNames,
+    day: SharedString,
 }
 
 impl ClockTime {
@@ -34,13 +36,18 @@ impl ClockTime {
             })
             .detach();
         }
-        Self { digits: Digits::new(&now.strftime(TIME_FORMAT).to_string(), Instant::now()), now }
+        let names = DayNames::of_system();
+        let day = names.day(now.date()).into();
+        Self { digits: Digits::new(&now.strftime(TIME_FORMAT).to_string(), Instant::now()), now, names, day }
     }
 
     fn show(&mut self, now: DateTime, cx: &mut Context<Self>) {
-        let changed = now.strftime(TIME_FORMAT).to_string() != self.now.strftime(TIME_FORMAT).to_string()
-            || now.date() != self.now.date();
+        let new_day = now.date() != self.now.date();
+        let changed = new_day || now.strftime(TIME_FORMAT).to_string() != self.now.strftime(TIME_FORMAT).to_string();
         self.now = now;
+        if new_day {
+            self.day = self.names.day(now.date()).into();
+        }
         if changed {
             self.digits.set(&now.strftime(TIME_FORMAT).to_string(), Instant::now());
             cx.notify();
@@ -120,8 +127,7 @@ impl Render for ClockTime {
         }
         let theme = Theme::of(cx);
         let cell = Cell::of(window, WEIGHT_TITLE);
-        let day =
-            div().font_weight(WEIGHT_LABEL).text_color(theme.fg_dim()).child(self.now.strftime(DAY_FORMAT).to_string());
+        let day = div().font_weight(WEIGHT_LABEL).text_color(theme.fg_dim()).child(self.day.clone());
         let time = div()
             .flex()
             .items_center()
@@ -156,9 +162,8 @@ mod tests {
     }
 
     #[test]
-    fn it_writes_the_day_and_time_as_today_s_pill() {
+    fn it_writes_the_time_as_today_s_pill() {
         let time = at(9, 5, 0, 0);
-        assert_eq!(time.strftime(DAY_FORMAT).to_string(), "Sat 24");
         assert_eq!(time.strftime(TIME_FORMAT).to_string(), "09:05");
     }
 

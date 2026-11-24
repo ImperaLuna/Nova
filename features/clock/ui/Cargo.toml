@@ -5,7 +5,11 @@
 #
 # Allowed outside crates:
 # - gpui
+# - icu_calendar
+# - icu_datetime
+# - icu_locale_core
 # - jiff
+# - writeable
 #
 # Allowed workspace crates:
 # - nova-look
@@ -23,7 +27,11 @@ workspace = "../../../app-ui"
 
 [dependencies]
 gpui.workspace = true
+icu_calendar.workspace = true
+icu_datetime.workspace = true
+icu_locale_core.workspace = true
 jiff.workspace = true
+writeable.workspace = true
 nova-look.workspace = true
 nova-stage.workspace = true
 

@@ -1,3 +1,4 @@
+mod day;
 mod digits;
 mod time;
 
