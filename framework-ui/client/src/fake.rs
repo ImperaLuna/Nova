@@ -163,7 +163,9 @@ impl Shared {
                 .entry(topic)
                 .or_insert_with(Instant::now);
             let Some((at, first_wait)) = playback(since.elapsed(), self.recorded.pace, events.len()) else { continue };
-            client.send(&events[at]);
+            for current in current_events(&events[..=at]) {
+                client.send(current);
+            }
             let later = &events[at + 1..];
             if !later.is_empty() {
                 let (client, later, pace) = (Arc::clone(client), later.to_vec(), self.recorded.pace);
@@ -173,10 +175,20 @@ impl Shared {
     }
 }
 
+pub(crate) fn current_events(played: &[Value]) -> Vec<&Value> {
+    let name = |event: &Value| event.get("event").cloned();
+    played
+        .iter()
+        .enumerate()
+        .filter(|(at, event)| played[at + 1..].iter().all(|later| name(later) != name(event)))
+        .map(|(_, event)| event)
+        .collect()
+}
+
 pub(crate) fn playback(elapsed: Duration, pace: Duration, events: usize) -> Option<(usize, Duration)> {
     let last = events.checked_sub(1)?;
     if pace.is_zero() {
-        return Some((last, Duration::ZERO));
+        return Some((0, Duration::ZERO));
     }
     let played = usize::try_from(elapsed.as_nanos() / pace.as_nanos()).unwrap_or(usize::MAX);
     let at = played.min(last);

@@ -285,4 +285,13 @@ fn playback_follows_the_clock_from_the_first_listener() {
     assert_eq!(playback(Duration::from_millis(130), pace, 3), Some((1, Duration::from_millis(70))));
     assert_eq!(playback(Duration::from_secs(9), pace, 3).map(|(at, _)| at), Some(2), "it stays at the last event");
     assert_eq!(playback(Duration::ZERO, pace, 0), None);
+    assert_eq!(playback(Duration::from_secs(9), Duration::ZERO, 3), Some((0, Duration::ZERO)), "no pace plays it all");
+}
+
+#[test]
+fn a_late_listener_gets_the_latest_event_of_each_kind() {
+    use crate::fake::current_events;
+    let played =
+        [json!({"event": "weather", "data": 1}), json!({"event": "storm"}), json!({"event": "weather", "data": 2})];
+    assert_eq!(current_events(&played), [&played[1], &played[2]]);
 }
