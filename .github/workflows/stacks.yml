@@ -7,8 +7,7 @@ name: Stacks
 # nothing re-runs it; this makes that visible at once, without starting CI.
 # Restacking (scripts/stack.sh restack) pushes, which runs this again (IMP-351).
 #
-# Runs main's script on a GitHub-hosted machine, never the pushed code, so it
-# doesn't wait behind CI on the self-hosted runners.
+# Runs main's script, never the pushed code.
 on:
   push:
     branches: ['**']

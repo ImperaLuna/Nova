@@ -16,8 +16,7 @@ name: Update PRs
 # and holds its pull_request run for approval.
 #
 # Runs no PR code (pull_request_target and workflow_run run main's workflow
-# and script), on a GitHub-hosted machine, so it doesn't queue behind CI on
-# the self-hosted runner.
+# and script).
 on:
   push:
     branches: [main]

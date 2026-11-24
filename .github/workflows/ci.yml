@@ -1,9 +1,7 @@
 name: CI
 
-# Runs on a self-hosted NixOS runner (ImperaLuna's desktop) while Nova is
-# young, so rapid pushes cost no GitHub minutes. To move back to GitHub's
-# runners: set `runs-on: ubuntu-latest` and add
-# `- uses: cachix/install-nix-action@v31` after checkout.
+# Runs on GitHub's runners, so it needs no machine of ours and a pull request
+# from a fork can't touch one.
 #
 # One job, `fast`, runs every flake check (build, cargo tests, lints) on
 # every push. `checks`, the status the ruleset and the merge lane
@@ -11,12 +9,21 @@ name: CI
 # side's crates out of every daemon build, so a UI-only PR gets the daemon's
 # checks from the store.
 #
+# The Nix store comes from the GitHub Actions cache, keyed by the files the
+# dependency builds come from (GPUI alone is some seven hundred crates). A
+# run that misses its key restores the newest store, builds what changed and
+# saves the result. A pull request can read only its own caches and main's,
+# so a push to main runs too, only to fill main's cache: when the key is
+# already there it stops in under a minute without building.
+#
 # `closed` starts a run with every job skipped, only so the concurrency group
 # below cancels the branch's queued or running run once its PR merges or
 # closes, rather than spend a runner on code that has landed (IMP-326).
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 # PR code runs here; it gets a token that can only read.
@@ -25,25 +32,59 @@ permissions:
 
 # A newer run for the same branch cancels the older one. Keyed by branch, not
 # ref, so a PR run and a run started by hand on the same branch don't both
-# take the runner.
+# run. A run on main finishes, so the cache it fills is saved.
 concurrency:
   group: ci-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   fast:
     name: fast checks
     if: github.event.action != 'closed'
-    runs-on: [self-hosted, nova]
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    # A run with no cache to start from builds every dependency.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # The files the dependency builds come from: a change to any other
+      # file rebuilds only Nova's own crates.
+      - name: cache key
+        id: key
+        run: echo "key=nix-${{ hashFiles('flake.lock', '**/Cargo.lock', '**/Cargo.toml', '**/*.nix') }}" >>"$GITHUB_OUTPUT"
+      # The store and the build outgrow the runner's free space; these are
+      # toolchains Nova never uses.
+      - name: free disk space in the background
+        run: nohup sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL >/dev/null 2>&1 &
+      - uses: cachix/install-nix-action@v31
+        with:
+          # Keep what the checks were built from (compilers, compiled
+          # dependencies) through the garbage collection before a save.
+          extra_nix_config: |
+            keep-outputs = true
+            keep-derivations = true
+      # On main the run only fills the cache: nothing to do when it is there.
+      - name: look for main's cache
+        id: probe
+        if: github.event_name == 'push'
+        uses: nix-community/cache-nix-action/restore@v7
+        with:
+          primary-key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+      - name: restore the Nix store
+        id: cache
+        if: steps.probe.outputs.hit-primary-key != 'true'
+        uses: nix-community/cache-nix-action/restore@v7
+        with:
+          primary-key: ${{ steps.key.outputs.key }}
+          restore-prefixes-first-match: nix-
       # What `nix flake check` evaluates (outputs, modules), without building.
       - name: nix flake check --no-build
+        if: steps.probe.outputs.hit-primary-key != 'true'
         run: nix flake check --no-build
       - name: flake checks
+        if: steps.probe.outputs.hit-primary-key != 'true'
         run: |
           checks=.#checks.x86_64-linux
           names=$(nix eval --raw "$checks" --apply 'c: builtins.concatStringsSep " " (builtins.attrNames c)')
@@ -51,15 +92,26 @@ jobs:
           for name in $names; do
             targets+=("$checks.$name")
           done
-          nix build -L --no-link --keep-going "${targets[@]}"
+          # The links are the garbage collection's roots.
+          nix build -L --out-link "$RUNNER_TEMP/checks/result" --keep-going "${targets[@]}"
+      # Only what these checks used goes into the cache, not what an older
+      # store brought along.
+      - name: drop what the checks didn't use
+        if: steps.cache.outputs.hit-primary-key == 'false'
+        run: nix store gc
+      - name: save the Nix store
+        if: steps.cache.outputs.hit-primary-key == 'false'
+        uses: nix-community/cache-nix-action/save@v7
+        with:
+          primary-key: ${{ steps.key.outputs.key }}
 
   # The status the ruleset requires: green when the fast checks passed.
   checks:
     name: checks
     needs: [fast]
     # Not on a run a newer push cancelled (that head no longer matters), nor
-    # on a closed PR.
-    if: ${{ !cancelled() && github.event.action != 'closed' }}
+    # on a closed PR, nor on main's cache run.
+    if: ${{ !cancelled() && github.event.action != 'closed' && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

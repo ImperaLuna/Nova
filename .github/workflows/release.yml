@@ -6,9 +6,9 @@ name: Release
 # release. x86_64 only: the runner is x86_64, and install.sh builds from
 # source where there's no archive.
 #
-# Runs on GitHub's runners, never the self-hosted ones: those run every PR
-# branch's code, and anything a branch left behind there (a git hook in the
-# workspace, say) would run here with a token that can replace the archive.
+# Runs on a fresh machine of GitHub's, never one that ran a PR branch's code:
+# anything a branch left behind there (a git hook in the workspace, say)
+# would run here with a token that can replace the archive.
 on:
   push:
     tags: ["v*"]

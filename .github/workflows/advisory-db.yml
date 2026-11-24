@@ -7,8 +7,8 @@ name: Bump advisory-db
 # Bump advisory-db.
 #
 # Two jobs: `update` runs `nix flake update` with a
-# read-only token on the self-hosted runner; `pr` holds the write token, runs
-# no repo code and only takes flake.lock, on a fresh GitHub-hosted machine.
+# read-only token; `pr` holds the write token, runs no repo code and only
+# takes flake.lock, on a fresh machine.
 # It pushes and opens the PR with the PUSH_TOKEN secret, so CI starts on the
 # PR like any other (see update-prs.yml for why not GITHUB_TOKEN).
 on:
@@ -31,7 +31,7 @@ env:
 jobs:
   update:
     name: nix flake update advisory-db
-    runs-on: [self-hosted, nova]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       sha: ${{ steps.update.outputs.sha }}
@@ -42,6 +42,7 @@ jobs:
         with:
           ref: ${{ env.DEFAULT_BRANCH }}
           persist-credentials: false
+      - uses: cachix/install-nix-action@v31
       - name: update
         id: update
         run: |
