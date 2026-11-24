@@ -335,6 +335,9 @@ never by closing its windows.
 - The contract's flags are on `Panel`: `.exclusive(false)` to stay open
   beside the others, `.closes_on_click_outside(false)`, `.takes_typing`,
   `.top` and `.radius` for a panel that isn't the usual shape.
+  `.steady(view)` draws a view over the content that the stage never
+  fades, for what stays put over the pill a panel grows out of (quick
+  settings' pill buttons).
 - A panel changes size only with `Stage::resize(name, screen, size, cx)`,
   open or not; an open one eases there. The view never sizes its own glass.
 - A view redraws by itself (`cx.notify()` when what it shows changed) and
