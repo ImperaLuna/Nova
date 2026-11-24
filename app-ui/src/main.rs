@@ -1,6 +1,7 @@
 mod args;
 mod demo;
 mod memory;
+mod process_name;
 mod replay;
 
 use args::Args;
@@ -33,6 +34,7 @@ impl log::Log for GpuiErrors {
 
 fn main() -> ExitCode {
     memory::give_back_large_blocks();
+    process_name::follow_command_line();
     if log::set_logger(&GpuiErrors).is_ok() {
         log::set_max_level(log::LevelFilter::Error);
     }
