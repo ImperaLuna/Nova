@@ -61,6 +61,56 @@ fn past_the_wait_the_stages_so_far_answer_and_the_next_search_cancels_it() {
     assert_eq!(lock(&fixture.stand_in.asked).cancelled, [1]);
 }
 
+/// The first search after Nova Files starts waits for its index: its
+/// stage comes well after the wait for later stages, and is still the
+/// answer.
+#[test]
+fn a_first_stage_later_than_the_stage_wait_is_still_the_answer() {
+    let fixture = Fixture::new("late");
+    let client = &fixture.client();
+    std::thread::scope(|scope| {
+        let (answer, answered) = std::sync::mpsc::channel();
+        scope.spawn(move || answer.send(client.search("late", 30, STAGES_WAIT)).unwrap());
+        assert!(answered.recv_timeout(STAGES_WAIT * 3).is_err(), "no answer before the first stage");
+        fixture.stand_in.release_late.send(()).unwrap();
+        assert_eq!(answered.recv_timeout(TIMEOUT).unwrap().unwrap(), paths(&["/h/late.txt"]));
+    });
+}
+
+/// A newer search ends the wait of one still waiting for its first stage
+/// at once, and cancels it.
+#[test]
+fn a_newer_search_ends_the_wait_for_a_first_stage() {
+    let fixture = Fixture::new("superseded");
+    let client = &fixture.client();
+    std::thread::scope(|scope| {
+        let (answer, answered) = std::sync::mpsc::channel();
+        scope.spawn(move || answer.send(client.search("late", 30, STAGES_WAIT)).unwrap());
+        // Once Nova Files has the first search, the next one starts.
+        let late = lock(&fixture.stand_in.late_asked).recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(late, 1);
+        assert_eq!(client.search("kit", 30, TIMEOUT).unwrap().len(), 2);
+        let superseded = answered.recv_timeout(TIMEOUT).expect("the first search's wait ended");
+        assert_eq!(superseded.unwrap(), Vec::<PathBuf>::new());
+    });
+    // The cancel is sent without a reply; the search after it comes later.
+    client.search("nothing", 30, TIMEOUT).unwrap();
+    assert_eq!(lock(&fixture.stand_in.asked).cancelled, [1]);
+}
+
+/// No first stage within a call's time is no answer, said as such, not
+/// nothing found.
+#[test]
+fn a_search_with_no_stage_in_time_says_so() {
+    let dir = TempDir::new("nova-files-no-stage");
+    let bus = TestBus::start(&dir.join("bus"));
+    let _stand_in = StandIn::serve(&bus.address, ROOT);
+    let mut client = client(&bus.address);
+    client.first_stage_wait = STAGES_WAIT;
+    let error = client.search("late", 30, STAGES_WAIT).unwrap_err();
+    assert!(error.contains("didn't answer"), "{error}");
+}
+
 #[test]
 fn a_failed_search_says_why() {
     let fixture = Fixture::new("failed");

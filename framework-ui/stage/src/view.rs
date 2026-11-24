@@ -466,7 +466,16 @@ impl StageView {
             let keyboard = if held.keyboard { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
             window.set_keyboard_interactivity(keyboard);
         }
-        if held.overlay && !self.held.overlay {
+        // Each new reason to be over a fullscreen window says so again, even
+        // to a window already told (IMP-470). Hyprland 0.57 drops a change of
+        // layer committed before the surface's first frame (`onCommit` returns
+        // while unmapped:
+        // https://github.com/hyprwm/Hyprland/blob/v0.57.2/src/desktop/view/LayerSurface.cpp#L315-L326),
+        // so a stage that opens beside a fullscreen window stayed on the top
+        // layer, its panels unseen under that window. Once Hyprland keeps
+        // such a change, only `!self.held.overlay` is needed here.
+        let again = self.aside.new_reason_over_fullscreen(any_open, fullscreen);
+        if held.overlay && (!self.held.overlay || again) {
             // Over a fullscreen window while a panel is open: compositors
             // draw a focused fullscreen window over the top layer.
             window.set_layer(Layer::Overlay);
