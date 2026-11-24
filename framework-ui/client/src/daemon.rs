@@ -93,20 +93,26 @@ impl Daemon {
 
     pub fn call<R: DeserializeOwned + 'static>(command: impl Serialize, cx: &App) -> Task<Result<R, Refusal>> {
         let (sender, answer) = oneshot::channel();
-        if let Some(daemon) = cx.try_global::<Self>() {
+        let asked = cx.try_global::<Self>().and_then(|daemon| {
             let crossing = daemon.crossing.clone();
-            daemon.link.request(command, move |result| {
+            let asked = daemon.link.request(command, move |result| {
                 let hand_over = Box::new(move || {
                     let _ = sender.send(result);
                 });
                 let _ = crossing.unbounded_send(Crossing::Answer(hand_over));
             });
-        }
+            asked.map(|asked| (Rc::downgrade(&daemon.link), asked))
+        });
         cx.spawn(async move |cx| {
             let mut too_late = cx.background_executor().timer(REPLY_TIMEOUT).fuse();
             let result = futures::select_biased! {
                 result = answer.fuse() => result.unwrap_or(Err(Refusal::NotConnected)),
-                () = too_late => Err(Refusal::TimedOut),
+                () = too_late => {
+                    if let Some((link, asked)) = asked.and_then(|(link, asked)| Some((link.upgrade()?, asked))) {
+                        link.forget(asked);
+                    }
+                    Err(Refusal::TimedOut)
+                }
             }?;
             serde_json::from_value(result).map_err(|e| Refusal::Unreadable(format!("novad sent an odd result: {e}")))
         })
@@ -122,7 +128,9 @@ impl Daemon {
             }
         };
         match cx.try_global::<Self>() {
-            Some(daemon) => daemon.link.request(command, refused),
+            Some(daemon) => {
+                daemon.link.request(command, refused);
+            }
             None => refused(Err(Refusal::NotConnected)),
         }
     }
