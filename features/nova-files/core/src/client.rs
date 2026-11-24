@@ -58,6 +58,10 @@ type Waiting = Arc<Mutex<HashMap<u64, Sender<Stage>>>>;
 
 pub struct Client {
     connection: Connection,
+    /// How long a search waits for its first stage: as long as a call may
+    /// take, since Nova Files sends none until its index is open, which
+    /// the first search after it starts waits for.
+    first_stage_wait: Duration,
     waiting: Waiting,
     /// The last search's id, while it may still be going.
     going: Mutex<Option<u64>>,
@@ -79,11 +83,21 @@ impl Client {
         let stop = Arc::new(Stop::default());
         let (reader_waiting, reader_stop) = (Arc::clone(&waiting), Arc::clone(&stop));
         std::thread::spawn(move || zbus::block_on(read(signals, &reader_waiting, &reader_stop)));
-        Ok(Self { connection, waiting, going: Mutex::new(None), next_id: AtomicU64::new(1), stop })
+        Ok(Self {
+            connection,
+            first_stage_wait: timeout,
+            waiting,
+            going: Mutex::new(None),
+            next_id: AtomicU64::new(1),
+            stop,
+        })
     }
 
     /// Searches for `query`: the paths of every stage that came within
-    /// `wait` of the search starting, best first.
+    /// `wait` of the first one, best first. No stage at all is no answer,
+    /// not nothing found: the search fails once the first stage is later
+    /// than a call may take. A newer search ends this one's wait, with
+    /// what came so far.
     pub fn search(&self, query: &str, limit: u32, wait: Duration) -> Result<Vec<PathBuf>, String> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (sender, stages) = mpsc::channel();
@@ -95,7 +109,8 @@ impl Client {
     }
 
     /// Calls Search with `call`, its arguments (id, query, limit), and
-    /// gathers what it finds in `stages` until it's done or `wait` passes.
+    /// gathers what it finds in `stages` until it's done, `wait` passes
+    /// after the first stage, or a newer search starts.
     fn run_search(
         &self,
         call: (u64, &str, u32),
@@ -103,13 +118,17 @@ impl Client {
         stages: &mpsc::Receiver<Stage>,
     ) -> Result<Vec<PathBuf>, String> {
         let id = call.0;
-        if let Some(older) = lock(&self.going).replace(id) {
+        let older = lock(&self.going).replace(id);
+        if let Some(older) = older {
+            // Its wait ends now, and Nova Files stops working on it.
+            lock(&self.waiting).remove(&older);
             self.cancel(older);
         }
         zbus::block_on(self.connection.call_method(Some(APP_ID), PATH, Some(INTERFACE), SEARCH, &call))
             .map_err(|e| e.to_string())?;
-        let deadline = Instant::now() + wait;
+        let mut deadline = Instant::now() + self.first_stage_wait;
         let mut paths = Vec::new();
+        let mut heard = false;
         loop {
             match stages.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                 Ok(Stage::Found { paths: found, done }) => {
@@ -118,12 +137,19 @@ impl Client {
                         self.finished(id);
                         return Ok(paths);
                     }
+                    if !heard {
+                        heard = true;
+                        deadline = Instant::now() + wait;
+                    }
                 }
                 Ok(Stage::Failed(reason)) => return Err(format!("Nova Files couldn't search: {reason}")),
                 // Past the wait: what came is the answer, and the search is
                 // cancelled when the next one starts.
-                Err(RecvTimeoutError::Timeout) => return Ok(paths),
-                Err(RecvTimeoutError::Disconnected) => return Err("the signals stopped".into()),
+                Err(RecvTimeoutError::Timeout) if heard => return Ok(paths),
+                Err(RecvTimeoutError::Timeout) => return Err("Nova Files didn't answer in time".into()),
+                // A newer search took over; this answer is no longer
+                // looked at.
+                Err(RecvTimeoutError::Disconnected) => return Ok(paths),
             }
         }
     }
