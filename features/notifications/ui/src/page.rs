@@ -9,7 +9,7 @@ use gpui::{
 use nova_look::tokens::{
     FONT_SIZE, FONT_SIZE_SMALL, LIST_ROW_HEIGHT, PAD, QUICK_SETTINGS_GAP, RADIUS_ROW, WEIGHT_LABEL,
 };
-use nova_look::{LookStyled, PageHeader, Theme, ToggleSwitch};
+use nova_look::{LookStyled, PageHeader, Theme, ToggleSwitch, wheel_list};
 use nova_stage::Stage;
 
 const QUICK_SETTINGS: &str = "quick-settings";
@@ -28,18 +28,13 @@ impl Page {
 }
 
 impl Render for Page {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::of(cx);
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let soft = Theme::of(cx).fg_soft();
         let list = self.model.read(cx).list(cx).cloned();
         let do_not_disturb = list.as_ref().is_some_and(|list| list.do_not_disturb);
         let screen = self.screen;
         let header =
             PageHeader::new("Notifications", move |_, _, cx| Stage::show_page(QUICK_SETTINGS, screen, None, cx));
-        let dnd = SwitchRow { lead: None, title: "Do not disturb".into(), on: do_not_disturb, selected: true }.build(
-            "do-not-disturb",
-            cx,
-            move |_, _, cx| model::set_do_not_disturb(!do_not_disturb, cx),
-        );
         let apps: Vec<AnyElement> = list
             .as_ref()
             .map(|list| {
@@ -63,12 +58,17 @@ impl Render for Page {
                     .collect()
             })
             .unwrap_or_default();
-        let has_apps = !apps.is_empty();
-        div().size_full().body_text(cx).flex().flex_col().gap(QUICK_SETTINGS_GAP).child(header).child(dnd).when(
-            has_apps,
-            |page| {
-                page.child(div().px(PAD).text_size(FONT_SIZE_SMALL).text_color(theme.fg_soft()).child("APPS"))
-                    .child(div().id("apps").flex_1().min_h_0().overflow_y_scroll().flex().flex_col().children(apps))
+        let apps = (!apps.is_empty())
+            .then(|| wheel_list("apps", window, cx).flex_1().min_h_0().flex().flex_col().children(apps));
+        let dnd = SwitchRow { lead: None, title: "Do not disturb".into(), on: do_not_disturb, selected: true }.build(
+            "do-not-disturb",
+            cx,
+            move |_, _, cx| model::set_do_not_disturb(!do_not_disturb, cx),
+        );
+        div().size_full().body_text(cx).flex().flex_col().gap(QUICK_SETTINGS_GAP).child(header).child(dnd).when_some(
+            apps,
+            |page, apps| {
+                page.child(div().px(PAD).text_size(FONT_SIZE_SMALL).text_color(soft).child("APPS")).child(apps)
             },
         )
     }
