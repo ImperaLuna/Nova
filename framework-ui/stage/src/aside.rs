@@ -91,6 +91,11 @@ impl Aside {
         self.settle(now);
     }
 
+    /// Whether a panel is open on the screen.
+    pub fn held(&self) -> bool {
+        self.held
+    }
+
     pub fn set_held(&mut self, held: bool, now: Instant) {
         self.advance(now);
         self.held = held;

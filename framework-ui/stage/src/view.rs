@@ -466,7 +466,13 @@ impl StageView {
             let keyboard = if held.keyboard { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
             window.set_keyboard_interactivity(keyboard);
         }
-        if held.overlay && !self.held.overlay {
+        // Each new reason to be over a fullscreen window says so again, even
+        // to a window already told: Hyprland drops a change of layer it gets
+        // before the surface's first frame (a fullscreen window when the
+        // stage opens), and the stage then sits on the top layer, unseen
+        // under a fullscreen window, panels and all (IMP-470).
+        let new_reason = (any_open && !self.aside.held()) || (fullscreen && !self.aside.fullscreen());
+        if held.overlay && (!self.held.overlay || new_reason) {
             // Over a fullscreen window while a panel is open: compositors
             // draw a focused fullscreen window over the top layer.
             window.set_layer(Layer::Overlay);
