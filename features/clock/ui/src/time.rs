@@ -17,7 +17,6 @@ const ON_THE_MINUTE: Duration = Duration::from_millis(5);
 pub struct ClockTime {
     now: DateTime,
     digits: Digits,
-    names: DayNames,
     day: SharedString,
 }
 
@@ -36,9 +35,8 @@ impl ClockTime {
             })
             .detach();
         }
-        let names = DayNames::of_system();
-        let day = names.day(now.date()).into();
-        Self { digits: Digits::new(&now.strftime(TIME_FORMAT).to_string(), Instant::now()), now, names, day }
+        let day = cx.global::<DayNames>().day(now.date()).into();
+        Self { digits: Digits::new(&now.strftime(TIME_FORMAT).to_string(), Instant::now()), now, day }
     }
 
     fn show(&mut self, now: DateTime, cx: &mut Context<Self>) {
@@ -46,7 +44,7 @@ impl ClockTime {
         let changed = new_day || now.strftime(TIME_FORMAT).to_string() != self.now.strftime(TIME_FORMAT).to_string();
         self.now = now;
         if new_day {
-            self.day = self.names.day(now.date()).into();
+            self.day = cx.global::<DayNames>().day(now.date()).into();
         }
         if changed {
             self.digits.set(&now.strftime(TIME_FORMAT).to_string(), Instant::now());
