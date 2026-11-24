@@ -5,10 +5,13 @@
 #
 # Allowed outside crates:
 # - gpui
+# - icu_collator
+# - icu_locale_core
 #
 # Allowed workspace crates:
 # - nova-app-info
 # - nova-launcher-api
+# - nova-locale
 # - nova-look
 # - nova-nova-files-api
 # - nova-stage
@@ -26,8 +29,11 @@ workspace = "../../../app-ui"
 
 [dependencies]
 gpui.workspace = true
+icu_collator.workspace = true
+icu_locale_core.workspace = true
 nova-app-info.workspace = true
 nova-launcher-api.workspace = true
+nova-locale.workspace = true
 nova-look.workspace = true
 nova-nova-files-api.workspace = true
 nova-stage.workspace = true

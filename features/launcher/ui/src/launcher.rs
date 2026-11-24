@@ -1,3 +1,4 @@
+use crate::order::AppOrder;
 use crate::rows::{Layout, Row, completion, rows, step, types_path};
 use crate::tokens::{
     EMPTY_HEIGHT, LABEL_HEIGHT, LAUNCHER_GAP, LAUNCHER_PAD, LAUNCHER_TOP, LAUNCHER_WIDTH, ROW_GAP, ROW_HEIGHT, ROWS,
@@ -58,7 +59,11 @@ pub struct Launcher {
 impl Launcher {
     pub fn new(screen: &Screen, cx: &mut Context<Self>) -> Self {
         let field = cx.new(|cx| TextField::new(cx).max_chars(LAUNCHER_SEARCH_MAX_CHARS));
-        let apps = Live::follow(TOPIC, cx, |Event::Launcher(apps)| Some(apps));
+        let order = AppOrder::of_system();
+        let apps = Live::follow(TOPIC, cx, move |Event::Launcher(mut apps)| {
+            order.sort(&mut apps.apps);
+            Some(apps)
+        });
         let slots = Stage::slots(cx);
         let mut followed = vec![
             cx.subscribe(&field, |launcher, _, _: &FieldEvent, cx| launcher.typed(cx)),
