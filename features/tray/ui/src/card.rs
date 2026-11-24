@@ -7,11 +7,11 @@ use crate::tokens::{
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Anchor, AnyElement, AppContext, Bounds, Context, Entity, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Window, anchored, canvas, deferred, div, point,
+    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, Styled, Subscription, Window, anchored, canvas,
+    deferred, div, point,
 };
 use nova_look::tokens::{DIM_OPACITY, DIVIDER_WIDTH, GAP, MENU_PAD, PAD, RADIUS_CARD, RADIUS_CONTROL};
-use nova_look::{AppIcon, CardTitle, Theme};
+use nova_look::{AppIcon, CardTitle, Theme, wheel_list};
 use nova_stage::{Screen, Shown, Stage};
 use nova_tray_api::{Command, Event, TOPIC, Tray};
 use nova_ui_client::{Daemon, Live};
@@ -167,7 +167,7 @@ impl Card {
 }
 
 impl Render for Card {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let count = self.apps.len();
         let apps = self.apps.clone();
         let cells: Vec<AnyElement> = apps.iter().map(|app| self.icon(app, cx)).collect();
@@ -197,18 +197,9 @@ impl Render for Card {
             .child(
                 div().flex().justify_between().child(CardTitle::new("Tray")).child(CardTitle::new(apps_count(count))),
             )
-            .child(
-                div().p(MENU_PAD).rounded(RADIUS_CARD).bg(theme.surface_raised()).child(
-                    div()
-                        .id("tray-grid")
-                        .max_h(most)
-                        .overflow_y_scroll()
-                        .flex()
-                        .flex_col()
-                        .gap(TRAY_GRID_GAP)
-                        .children(rows),
-                ),
-            )
+            .child(div().p(MENU_PAD).rounded(RADIUS_CARD).bg(theme.surface_raised()).child(
+                wheel_list("tray-grid", window, cx).max_h(most).flex().flex_col().gap(TRAY_GRID_GAP).children(rows),
+            ))
             .children(self.menu(cx))
     }
 }
