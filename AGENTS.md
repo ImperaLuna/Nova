@@ -316,7 +316,7 @@ rest it commits nothing. It resizes only while nothing moves: what is new
 is laid out unseen, the window grows once, and the motion starts in the
 frame after. `Stage::observe_open` calls it back
 whenever a panel opens, closes or resizes (the pop-ups pause while quick
-settings is open), and when `Stage::logs_frames` is set it logs its own
+settings shows its first page), and when `Stage::logs_frames` is set it logs its own
 frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
 `features/notifications/ui` (`popups.rs`, `window.rs`) is the worked example.
 

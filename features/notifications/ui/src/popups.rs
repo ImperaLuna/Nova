@@ -30,6 +30,7 @@ pub struct Popups {
     desktop: Entity<Live<Desktop>>,
     features: Entity<Live<Vec<FeatureState>>>,
     list_open: bool,
+    list_on: Vec<DisplayId>,
     _followed: Vec<Subscription>,
 }
 
@@ -54,6 +55,7 @@ impl Popups {
                 followed.push(cx.observe(&screens, |popups: &mut Self, _, cx| {
                     popups.failed.clear();
                     popups.sync_windows(cx);
+                    popups.follow_list(cx);
                 }));
             }
             let this = cx.weak_entity();
@@ -74,6 +76,7 @@ impl Popups {
                 desktop,
                 features,
                 list_open: false,
+                list_on: Vec::new(),
                 _followed: followed,
             }
         });
@@ -188,20 +191,32 @@ impl Popups {
         cx.notify();
     }
 
+    /// The list shows where quick settings is open on its first page.
     fn follow_list(&mut self, cx: &mut Context<Self>) {
-        let open = Stage::screens(cx)
-            .map(|screens| screens.read(cx).list().iter().any(|screen| Stage::is_open(QUICK_SETTINGS, screen.id, cx)))
-            .unwrap_or(false);
-        if open == self.list_open {
+        let on: Vec<DisplayId> = Stage::screens(cx)
+            .map(|screens| {
+                let shown = |screen: &&Screen| {
+                    Stage::is_open(QUICK_SETTINGS, screen.id, cx)
+                        && Stage::page(QUICK_SETTINGS, screen.id, cx).is_none()
+                };
+                screens.read(cx).list().iter().filter(shown).map(|screen| screen.id).collect()
+            })
+            .unwrap_or_default();
+        if on == self.list_on {
             return;
         }
-        self.list_open = open;
-        if open {
-            self.stack.clear(Instant::now());
-        } else if crate::logic::unread(self.model.read(cx).items(cx)) > 0 {
+        let (open, left) = crate::logic::list_moved(&self.list_on, &on);
+        self.list_on = on;
+        if left && crate::logic::unread(self.model.read(cx).items(cx)) > 0 {
             model::read_all(cx);
         }
-        cx.notify();
+        if open != self.list_open {
+            self.list_open = open;
+            if open {
+                self.stack.clear(Instant::now());
+            }
+            cx.notify();
+        }
     }
 
     pub fn top(&self, cx: &App) -> Pixels {
