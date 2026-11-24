@@ -499,9 +499,6 @@ crates `nova-<id>-api` and `nova-<id>` (`_` for `-` in Rust paths).
   names in the api or `-info` crate of their message (the envelope and the
   log feed in `nova-carrier`), Rust constants in the crate
   that owns them. Never copy a literal into a second file.
-- Each crate and module opens with a comment saying what it does
-  and how. Read it before changing that code and keep it true in the same
-  change.
 - No magic numbers or strings. Give values a named constant that says what
   they mean (`tokens::RADIUS_ROW`, not `14`). Every design value (gradient
   stops, opacities and easing too) is a token, even when one view uses it;
@@ -519,6 +516,28 @@ crates `nova-<id>-api` and `nova-<id>` (`_` for `-` in Rust paths).
   branches. If a workaround is truly unavoidable (an upstream bug), keep it
   in one place with a comment linking the issue and how to remove it.
 - Leave code cleaner than you found it, but keep refactors in their own commit.
+
+## Comments
+
+Code carries no comments. Names say what the code does; when they can't,
+reshape the code. A rule or limit the code relies on ("never", "only", "at
+most") becomes a type, a test or a lint, not a sentence. What a change
+leaves unsolved goes under "Known gaps" in the PR body. Only these stay:
+
+- `// SAFETY:` on an unsafe block.
+- Docs (`///`, `//!`) in each feature's `api` crate (`features/*/api`) and
+  the framework's `-info` crates (`framework/*-info`): the contract the
+  daemon, the UI and the fronts build on.
+- A licence header (`// SPDX-License-Identifier:`).
+- A fact forced by the kernel, a compositor, a spec or a dependency, true
+  today, in one or two plain lines that link its source (`https://`). A
+  link to the GPUI fork names the pinned commit, so a new pin rechecks it. A
+  workaround for an upstream bug links the issue and says how to remove it.
+
+A lint's reason goes in `#[expect(lint, reason = "...")]`. When a change
+makes a kept comment false, fix it in the same change. `just comments`
+checks Rust files (rules and their tests in `scripts/ast-grep/comments`),
+the same rules as Nova Files.
 
 ## Rules and their checks
 
