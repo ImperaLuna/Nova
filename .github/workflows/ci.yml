@@ -43,8 +43,9 @@ jobs:
     name: fast checks
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
-    # A run with no cache to start from builds every dependency.
-    timeout-minutes: 150
+    # A run with no cache to start from builds every dependency, in about
+    # 50 minutes.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
