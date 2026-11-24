@@ -1,4 +1,3 @@
-use crate::app_icon::AppIcon;
 use crate::model::{self, Model};
 use crate::tokens::ROW_ICON;
 use gpui::prelude::FluentBuilder as _;
@@ -9,7 +8,7 @@ use gpui::{
 use nova_look::tokens::{
     FONT_SIZE, FONT_SIZE_SMALL, LIST_ROW_HEIGHT, PAD, QUICK_SETTINGS_GAP, RADIUS_ROW, WEIGHT_LABEL,
 };
-use nova_look::{LookStyled, PageHeader, Theme, ToggleSwitch};
+use nova_look::{AppIcon, LookStyled, PageHeader, Theme, ToggleSwitch};
 use nova_stage::Stage;
 
 const QUICK_SETTINGS: &str = "quick-settings";
@@ -48,13 +47,11 @@ impl Render for Page {
                     .enumerate()
                     .map(|(at, app)| {
                         let muted = list.muted.contains(&app.name);
-                        let icon = AppIcon::new(
-                            app.app_id.clone().unwrap_or_else(|| app.name.clone()),
-                            app.name.clone(),
-                            ROW_ICON,
-                        )
-                        .icon(app.icon.as_deref())
-                        .into_any_element();
+                        let icon =
+                            AppIcon::new(app.app_id.clone().unwrap_or_else(|| app.name.clone()), app.name.clone())
+                                .size(ROW_ICON)
+                                .icon(app.icon.as_deref())
+                                .into_any_element();
                         let name = app.name.clone();
                         SwitchRow { lead: Some(icon), title: app.name.clone(), on: !muted, selected: false }
                             .build(("app", at), cx, move |_, _, cx| model::mute(&name, !muted, cx))
