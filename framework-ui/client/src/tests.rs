@@ -221,3 +221,68 @@ fn odd_lines_are_ignored() {
     assert_eq!(next(&incoming), event("tide", Value::Null));
     assert!(incoming.try_recv().is_err());
 }
+
+#[test]
+fn a_call_given_up_on_is_forgotten() {
+    use std::io::{BufRead, BufReader, Write};
+    let dir = TempDir::new("client-forget");
+    let listener = std::os::unix::net::UnixListener::bind(socket(&dir)).unwrap();
+    let (asked_sender, asked_seen) = mpsc::channel::<()>();
+    let (answer_sender, answer_wait) = mpsc::channel::<()>();
+    let novad = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.write_all(b"{\"v\":2,\"event\":\"hello\",\"data\":{\"daemon\":\"slow\"}}\n").unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut request = String::new();
+        reader.read_line(&mut request).unwrap();
+        asked_sender.send(()).unwrap();
+        answer_wait.recv_timeout(WAIT).unwrap();
+        reader.read_line(&mut request).unwrap();
+        stream.write_all(b"{\"v\":2,\"id\":1,\"result\":\"late\"}\n{\"v\":2,\"id\":2,\"result\":\"pong\"}\n").unwrap();
+        let _ = reader.read_line(&mut request);
+    });
+    let (link, incoming) = link(&socket(&dir));
+    assert_eq!(next(&incoming), Incoming::Connected { daemon: "slow".into() });
+    let (replied, reply) = mpsc::channel();
+    let asked = link.request(Command::Ping, move |result| {
+        let _ = replied.send(result);
+    });
+    asked_seen.recv_timeout(WAIT).unwrap();
+    assert_eq!(link.waiting(), 1);
+    link.forget(asked.expect("the request was sent"));
+    assert_eq!(link.waiting(), 0, "the caller gave up, so nothing waits for its answer");
+    answer_sender.send(()).unwrap();
+    assert_eq!(answer(&link, Command::Ping), Ok("pong".into()), "the late answer came first");
+    assert_eq!(reply.try_recv(), Err(mpsc::TryRecvError::Disconnected), "and reached nobody");
+    drop(link);
+    novad.join().unwrap();
+}
+
+#[test]
+fn a_late_listener_gets_the_event_playback_is_at() {
+    let dir = TempDir::new("client-late");
+    let mut recorded = recorded();
+    recorded.pace = Duration::from_millis(400);
+    let _novad = FakeDaemon::start(&socket(&dir), recorded).unwrap();
+    let (first, first_incoming) = link(&socket(&dir));
+    first.subscribe(WEATHER);
+    assert_eq!(next(&first_incoming), connected());
+    assert_eq!(next(&first_incoming), event("weather", json!({"sky": "rain"})));
+    assert_eq!(next(&first_incoming), event("weather", json!({"sky": "sun"})));
+    let (second, second_incoming) = link(&socket(&dir));
+    second.subscribe(WEATHER);
+    assert_eq!(next(&second_incoming), connected());
+    assert_eq!(next(&second_incoming), event("weather", json!({"sky": "sun"})));
+    assert_eq!(next(&second_incoming), event("storm", Value::Null));
+    assert_eq!(next(&first_incoming), event("storm", Value::Null));
+}
+
+#[test]
+fn playback_follows_the_clock_from_the_first_listener() {
+    use crate::fake::playback;
+    let pace = Duration::from_millis(100);
+    assert_eq!(playback(Duration::ZERO, pace, 3), Some((0, pace)));
+    assert_eq!(playback(Duration::from_millis(130), pace, 3), Some((1, Duration::from_millis(70))));
+    assert_eq!(playback(Duration::from_secs(9), pace, 3).map(|(at, _)| at), Some(2), "it stays at the last event");
+    assert_eq!(playback(Duration::ZERO, pace, 0), None);
+}

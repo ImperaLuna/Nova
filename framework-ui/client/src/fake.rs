@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const VERSION: &str = "fake";
 const RECORDING: &str = "jsonl";
@@ -64,6 +64,7 @@ struct Shared {
     recorded: Recorded,
     stopped: AtomicBool,
     clients: Mutex<Vec<Arc<Client>>>,
+    playing_since: Mutex<HashMap<String, Instant>>,
 }
 
 impl FakeDaemon {
@@ -84,6 +85,7 @@ impl FakeDaemon {
             recorded,
             stopped: AtomicBool::new(false),
             clients: Mutex::default(),
+            playing_since: Mutex::default(),
         });
         let on_thread = Arc::clone(&shared);
         std::thread::spawn(move || on_thread.serve(&listener));
@@ -154,14 +156,32 @@ impl Shared {
         client.reply(id, Outcome::Result(Value::Null));
         for topic in topics {
             let Some(events) = self.recorded.by_topic.get(&topic) else { continue };
-            let Some((first, later)) = events.split_first() else { continue };
-            client.send(first);
+            let since = *self
+                .playing_since
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry(topic)
+                .or_insert_with(Instant::now);
+            let Some((at, first_wait)) = playback(since.elapsed(), self.recorded.pace, events.len()) else { continue };
+            client.send(&events[at]);
+            let later = &events[at + 1..];
             if !later.is_empty() {
                 let (client, later, pace) = (Arc::clone(client), later.to_vec(), self.recorded.pace);
-                std::thread::spawn(move || client.play(&later, pace));
+                std::thread::spawn(move || client.play(&later, first_wait, pace));
             }
         }
     }
+}
+
+pub(crate) fn playback(elapsed: Duration, pace: Duration, events: usize) -> Option<(usize, Duration)> {
+    let last = events.checked_sub(1)?;
+    if pace.is_zero() {
+        return Some((last, Duration::ZERO));
+    }
+    let played = usize::try_from(elapsed.as_nanos() / pace.as_nanos()).unwrap_or(usize::MAX);
+    let at = played.min(last);
+    let next_due = pace.saturating_mul(u32::try_from(at + 1).unwrap_or(u32::MAX));
+    Some((at, next_due.saturating_sub(elapsed)))
 }
 
 const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -187,10 +207,11 @@ impl Client {
         }
     }
 
-    fn play(&self, events: &[Value], pace: Duration) {
+    fn play(&self, events: &[Value], first_wait: Duration, pace: Duration) {
         let (_never, wait) = mpsc::channel::<()>();
-        for event in events {
-            if wait.recv_timeout(pace) != Err(RecvTimeoutError::Timeout) || self.gone.load(Ordering::SeqCst) {
+        for (index, event) in events.iter().enumerate() {
+            let due = if index == 0 { first_wait } else { pace };
+            if wait.recv_timeout(due) != Err(RecvTimeoutError::Timeout) || self.gone.load(Ordering::SeqCst) {
                 return;
             }
             self.send(event);
