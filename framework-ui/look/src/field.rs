@@ -167,6 +167,12 @@ impl TextField {
         self
     }
 
+    /// Typing and pasting stop at `max_chars` (0: no limit). Text already in
+    /// the field stays as it is.
+    pub fn set_max_chars(&mut self, max_chars: usize) {
+        self.editing.max_chars = max_chars;
+    }
+
     pub fn focus_handle(&self) -> FocusHandle {
         self.focus.clone()
     }

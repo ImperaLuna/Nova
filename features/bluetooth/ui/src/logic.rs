@@ -124,6 +124,14 @@ pub fn buttons(ask: &PairingAsk, incoming: bool) -> (&'static str, Option<&'stat
     }
 }
 
+/// How many characters the field for `ask` takes, as today's shell.
+pub fn code_max(ask: &PairingAsk) -> usize {
+    match ask {
+        PairingAsk::EnterPasskey => PASSKEY_MAX_DIGITS,
+        _ => nova_bluetooth_api::BLUETOOTH_PIN_MAX_BYTES,
+    }
+}
+
 pub fn valid_code(ask: &PairingAsk, text: &str) -> bool {
     match ask {
         PairingAsk::EnterPin => {
@@ -208,6 +216,8 @@ mod tests {
         assert!(!valid_code(&PairingAsk::EnterPin, ""));
         assert!(!valid_code(&PairingAsk::EnterPin, "a b"));
         assert!(!valid_code(&PairingAsk::EnterPin, &"1".repeat(17)));
+        assert_eq!(code_max(&PairingAsk::EnterPin), 16);
+        assert_eq!(code_max(&PairingAsk::EnterPasskey), 6);
         assert!(valid_code(&PairingAsk::EnterPasskey, " 123456 "));
         assert!(!valid_code(&PairingAsk::EnterPasskey, "1234567"));
         assert!(!valid_code(&PairingAsk::EnterPasskey, "12a"));
