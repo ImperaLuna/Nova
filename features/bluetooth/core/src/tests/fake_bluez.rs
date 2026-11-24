@@ -1,39 +1,20 @@
-//! The stand-in for BlueZ: an adapter and its devices on the test's bus,
-//! as BlueZ's D-Bus API describes them.
-
 use super::*;
 
-/// What the fake's `Pair` asks the agent.
 #[derive(Clone, Copy)]
 pub(super) enum Pairing {
-    /// `RequestConfirmation` with this passkey.
     Confirm(u32),
-    /// `DisplayPasskey`, then pairs once the test says the code was typed.
     Show(u32),
 }
 
-/// The fake's state, shared by its objects.
 pub(super) struct Fake {
     pub(super) objects: BTreeMap<String, Interfaces>,
-    /// Every call novad made, like `Pair /org/bluez/hci0/dev_…`.
     pub(super) calls: Vec<String>,
-    /// The agent novad registered: its bus name and path.
     pub(super) agent: Option<(String, String)>,
     pub(super) pairing: Pairing,
-    /// `/sys/class/rfkill/rfkill0/soft`: `Powered` is refused while it says 1.
     pub(super) soft_block: PathBuf,
-    /// How many `StartDiscovery` calls to refuse, as an adapter still
-    /// coming up does.
     pub(super) refuse_discovery: usize,
-    /// Whether `Connect` fails as BlueZ does when it tried LE and gave up.
     pub(super) abort_le: bool,
-    /// How many times a device that plays music connects without it, as
-    /// a headset that refuses A2DP right after connecting does.
     pub(super) refuse_a2dp: usize,
-    /// A step that waits until a `Disconnect` or `CancelPairing` releases
-    /// it: a `Connect` to a device that doesn't answer (BlueZ cancels it
-    /// on `Disconnect`; powering off is refused meanwhile), or a slow
-    /// `Trusted` write.
     pub(super) held: Option<Held>,
 }
 
@@ -88,12 +69,10 @@ impl FakeBlueZ {
         lock(&self.fake).calls.clone()
     }
 
-    /// Changes a property, and says so as BlueZ does.
     pub(super) fn change(&self, path: &str, interface: &str, name: &str, value: OwnedVariant) {
         zbus::block_on(changed(&self.connection, &self.fake, (path, interface, name), value));
     }
 
-    /// A property goes, as BlueZ says it (`RSSI` when discovery stops).
     pub(super) fn invalidate(&self, path: &str, interface: &str, name: &str) {
         lock(&self.fake).objects.get_mut(path).unwrap().get_mut(interface).unwrap().remove(name);
         let changed: HashMap<String, OwnedVariant> = HashMap::new();
@@ -107,7 +86,6 @@ impl FakeBlueZ {
         .unwrap();
     }
 
-    /// A device goes, as BlueZ says it.
     pub(super) fn remove(&self, path: &str) {
         let interfaces: Vec<String> = lock(&self.fake).objects.remove(path).unwrap().into_keys().collect();
         let path = ObjectPath::try_from(path).unwrap();
@@ -121,16 +99,12 @@ impl FakeBlueZ {
         .unwrap();
     }
 
-    /// The device at `address` starts pairing by itself (a phone pairing
-    /// with this computer): BlueZ asks the agent to confirm `passkey`.
     pub(super) fn confirm_from(&self, address: &str, passkey: u32) -> zbus::Result<()> {
         let device = ObjectPath::try_from(device_path(address)).unwrap();
         zbus::block_on(ask_agent(&self.connection, &self.fake, "RequestConfirmation", &(device, passkey)))
     }
 }
 
-/// Sets the property `(path, interface, name)` to `value` and says so on the
-/// bus.
 pub(super) async fn changed(connection: &Connection, fake: &Shared, property: (&str, &str, &str), value: OwnedVariant) {
     let (path, interface, name) = property;
     let properties = {
@@ -161,7 +135,6 @@ pub(super) async fn ask_agent<B: serde::Serialize + zbus::wire::DynamicType>(
     connection.call_method(Some(name.as_str()), path.as_str(), Some("org.bluez.Agent1"), method, body).await.map(|_| ())
 }
 
-/// The errors the fake answers with, named as BlueZ names them.
 #[derive(Debug, zbus::DBusError)]
 #[zbus(prefix = "org.bluez.Error")]
 pub(super) enum BlueZError {
@@ -261,7 +234,6 @@ impl FakeAdapter {
         bool::try_from(&lock(&self.0).objects[ADAPTER_PATH][ADAPTER]["Powered"]).unwrap()
     }
 
-    /// Refused while blocked, like BlueZ.
     #[zbus(property)]
     async fn set_powered(&self, on: bool, #[zbus(connection)] connection: &Connection) -> Result<(), BlueZError> {
         let blocked = {
@@ -290,8 +262,6 @@ impl FakeDevice {
         lock(&self.fake).calls.push(format!("{call} {}", self.path));
     }
 
-    /// Waits, when the test holds this step, until it's released; true
-    /// when it was.
     async fn hold(&self, step: Hold) -> bool {
         match lock(&self.fake).held.as_mut() {
             Some(held) if held.step == step => held.waiting = true,
@@ -309,13 +279,10 @@ impl FakeDevice {
         .await
     }
 
-    /// Where BlueZ puts the A2DP transport of a device that plays music.
     fn transport(&self) -> String {
         format!("{}/sep1/fd0", self.path)
     }
 
-    /// A device that plays music brings its A2DP transport up, unless the
-    /// test has it refuse: BlueZ adds the transport under the device.
     async fn music_up(&self, connection: &Connection) {
         let interfaces = {
             let mut fake = lock(&self.fake);
@@ -332,7 +299,6 @@ impl FakeDevice {
                 return;
             }
             let transport: Properties = HashMap::from([
-                // This computer's end: the source, playing to the device.
                 ("UUID".into(), text(bluez::A2DP_SOURCE)),
                 ("Device".into(), path(&self.path)),
                 ("State".into(), text("idle")),
@@ -348,7 +314,6 @@ impl FakeDevice {
             .unwrap();
     }
 
-    /// Disconnected, its transport goes.
     async fn music_down(&self, connection: &Connection) {
         if lock(&self.fake).objects.remove(&self.transport()).is_none() {
             return;
@@ -361,7 +326,6 @@ impl FakeDevice {
             .unwrap();
     }
 
-    /// Releases a held step; true when one was waiting.
     fn release(&self) -> bool {
         let mut fake = lock(&self.fake);
         let Some(held) = fake.held.as_mut().filter(|held| held.waiting) else { return false };
@@ -375,7 +339,6 @@ impl FakeDevice {
 
 #[interface(name = "org.bluez.Device1")]
 impl FakeDevice {
-    /// Asks the agent as BlueZ would, then pairs, or fails as BlueZ does.
     async fn pair(&self, #[zbus(connection)] connection: &Connection) -> Result<(), BlueZError> {
         self.log("Pair");
         let device = ObjectPath::try_from(self.path.as_str()).unwrap();
@@ -386,7 +349,6 @@ impl FakeDevice {
             }
             Pairing::Show(passkey) => {
                 ask_agent(connection, &self.fake, "DisplayPasskey", &(device, passkey, 0u16)).await.unwrap();
-                // Until the test types it: it sets the property itself.
                 wait_until(WAIT, "the code typed on the device", || {
                     lock(&self.fake).calls.iter().any(|call| call == "typed")
                 });
@@ -437,7 +399,6 @@ impl FakeDevice {
 
     fn cancel_pairing(&self) {
         self.log("CancelPairing");
-        // Pairing is over by now: there's nothing for BlueZ to cancel.
         self.release();
     }
 

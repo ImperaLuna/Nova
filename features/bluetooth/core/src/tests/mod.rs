@@ -1,14 +1,3 @@
-//! Bluetooth against a stand-in for BlueZ only: a private `dbus-daemon` per
-//! test with a fake `org.bluez` that serves an adapter and its devices as
-//! BlueZ's D-Bus API describes them (`GetManagedObjects`, the signals,
-//! `Pair` calling the registered agent back), and a `/sys/class/rfkill`
-//! and `/dev/rfkill` in the test's folder. novad's agent registers on that
-//! bus, never on the machine's.
-//!
-//! The devices are written from BlueZ's documented properties, not
-//! recorded: the desktop these tests were written for has Bluetooth
-//! blocked.
-
 use super::*;
 use bluez::MEDIA_TRANSPORT;
 use nova_carrier::log::LogLevel;
@@ -26,9 +15,7 @@ use zbus::wire::{OwnedVariant, Str};
 mod fake_bluez;
 use fake_bluez::*;
 
-/// How long a test waits for what should come at once.
 const WAIT: Duration = Duration::from_secs(15);
-/// How long A2DP may take to come up here: the fake brings it at once.
 const AUDIO_WAIT_HERE: Duration = Duration::from_millis(500);
 const ADAPTER_PATH: &str = "/org/bluez/hci0";
 const HEADPHONES: &str = "00:1B:66:AA:BB:CC";
@@ -37,7 +24,6 @@ const BUDS: &str = "C4:30:18:44:55:66";
 const NAMELESS: &str = "4C:11:22:33:44:55";
 const BATTERY: &str = "org.bluez.Battery1";
 const A2DP_SINK: &str = "0000110b-0000-1000-8000-00805f9b34fb";
-/// LE Audio's published audio capabilities.
 const LE_AUDIO: &str = "00001850-0000-1000-8000-00805f9b34fb";
 
 fn device_path(address: &str) -> String {
@@ -52,12 +38,10 @@ fn path(value: &str) -> OwnedVariant {
     OwnedVariant::from(ObjectPath::try_from(value.to_owned()).unwrap())
 }
 
-/// A device as BlueZ lists it.
 fn device(address: &str, name: Option<&str>, icon: &str, paired: bool, connected: bool) -> Interfaces {
     let mut properties: Properties = HashMap::from([
         ("Address".into(), text(address)),
         ("Adapter".into(), path(ADAPTER_PATH)),
-        // BlueZ's alias for a nameless device is its address with dashes.
         ("Alias".into(), text(&name.map_or_else(|| address.replace(':', "-"), str::to_owned))),
         ("Icon".into(), text(icon)),
         ("Paired".into(), OwnedVariant::from(paired)),
@@ -70,8 +54,6 @@ fn device(address: &str, name: Option<&str>, icon: &str, paired: bool, connected
     HashMap::from([(DEVICE.to_owned(), properties)])
 }
 
-/// What BlueZ has on a desktop with headphones on, a phone paired and new
-/// earbuds and a nameless beacon nearby.
 fn objects() -> BTreeMap<String, Interfaces> {
     let adapter: Properties = HashMap::from([
         ("Address".into(), text("D8:3A:DD:00:11:22")),
@@ -80,7 +62,6 @@ fn objects() -> BTreeMap<String, Interfaces> {
     ]);
     let mut headphones = device(HEADPHONES, Some("WH-1000XM5"), "audio-headphones", true, true);
     headphones.insert(BATTERY.into(), HashMap::from([("Percentage".into(), OwnedVariant::from(80u8))]));
-    // Heard by a scan, and offering audio over classic Bluetooth and LE.
     let mut buds = device(BUDS, Some("Pixel Buds Pro"), "audio-headphones", false, false);
     let properties = buds.get_mut(DEVICE).unwrap();
     properties.insert("RSSI".into(), OwnedVariant::from(-60i16));
@@ -130,7 +111,6 @@ impl Fixture {
         }
     }
 
-    /// Sets the Bluetooth radio switch.
     fn switch(&self, soft: bool, hard: bool) {
         let dir = self.rfkill().class.join("rfkill0");
         std::fs::create_dir_all(&dir).unwrap();
@@ -147,7 +127,6 @@ impl Fixture {
         self.start_with(CONNECT_LIMIT)
     }
 
-    /// Started with connects stopped after `connect_limit`.
     fn start_with(&self, connect_limit: Duration) -> Arc<Bluetooth> {
         let sources = Sources {
             bus: Bus::Address(self.bus.address.clone()),
@@ -158,7 +137,6 @@ impl Fixture {
         Bluetooth::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
-    /// The next event that `check` accepts, skipping the ones before it.
     fn until(&self, what: &str, check: impl Fn(&Value) -> bool) -> Value {
         let deadline = Instant::now() + WAIT;
         loop {
@@ -172,7 +150,6 @@ impl Fixture {
     }
 }
 
-/// `address`'s entry in `event`.
 fn find<'a>(event: &'a Value, address: &str) -> Option<&'a Value> {
     event["devices"].as_array().unwrap().iter().find(|device| device["address"] == address)
 }
@@ -265,7 +242,6 @@ fn turning_down_the_code_leaves_the_device_unpaired() {
     };
     let event = fixture.until("the question", |event| !event["pairing"].is_null());
     bluetooth.answer(event["pairing"]["id"].as_u64().unwrap(), PairingAnswer::Reject).unwrap();
-    // Nothing to explain: the user said no.
     assert_eq!(connecting.join().unwrap(), Ok(()));
     let event = fixture.until("the earbuds back", |event| status(event, BUDS).as_deref() == Some("nearby"));
     assert_eq!(find(&event, BUDS).unwrap().get("error"), None);
@@ -357,7 +333,6 @@ fn scanning_tries_again_when_the_adapter_isnt_ready() {
     assert_eq!(starts, 2, "refused once, then asked again");
 }
 
-/// Scanning pauses while a device connects, and goes on after.
 #[test]
 fn scanning_pauses_while_a_device_connects() {
     let fixture = Fixture::new("scan-connect");
@@ -383,7 +358,6 @@ fn turning_on_lifts_the_software_block() {
     bluez.change(ADAPTER_PATH, ADAPTER, "Powered", OwnedVariant::from(false));
     let bluetooth = fixture.start();
     fixture.until("the radio off", |event| event["radio"] == "off");
-    // The kernel lifts the block once it's asked, a moment later.
     let rfkill = fixture.rfkill();
     let kernel = std::thread::spawn(move || {
         wait_until(WAIT, "the unblock event", || std::fs::read(&rfkill.device).is_ok_and(|event| !event.is_empty()));
@@ -429,8 +403,6 @@ fn new_devices_show_only_while_a_scan_hears_them() {
     let bluez = fixture.bluez();
     let _bluetooth = fixture.start();
     fixture.until("the earbuds", |event| status(event, BUDS).as_deref() == Some("nearby"));
-    // Out of range or the scan ended: BlueZ takes `RSSI` back but keeps
-    // the device a while.
     bluez.invalidate(&device_path(BUDS), DEVICE, "RSSI");
     let event = fixture.until("the earbuds gone", |event| find(event, BUDS).is_none());
     assert_eq!(status(&event, PHONE).as_deref(), Some("paired"), "paired ones stay");
@@ -457,12 +429,9 @@ fn an_aborted_le_connect_connects_over_classic_bluetooth() {
     let calls: Vec<String> = bluez.calls().into_iter().filter(|call| call.contains("Connect")).collect();
     assert_eq!(calls, [format!("Connect {path}"), format!("ConnectProfile {A2DP_SINK} {path}")]);
 
-    // A device with no classic profile keeps BlueZ's failure.
     assert_eq!(bluetooth.connect(PHONE).unwrap_err(), "Couldn't connect");
 }
 
-/// Starts connecting `address` on a thread: the fake holds it until it's
-/// cancelled.
 fn held_connect(
     fixture: &Fixture,
     bluez: &FakeBlueZ,
@@ -492,9 +461,6 @@ fn a_connect_under_way_can_be_stopped() {
     assert_eq!(find(&event, PHONE).unwrap().get("error"), None);
 }
 
-/// A device that never answers (off, or a headset switched to its dongle)
-/// doesn't keep the row connecting: the connect stops at its limit and
-/// says why.
 #[test]
 fn a_connect_that_runs_too_long_stops_and_says_so() {
     let fixture = Fixture::new("connect-limit");
@@ -527,8 +493,6 @@ fn turning_off_stops_a_connect_first() {
     assert_eq!(calls, [format!("Disconnect {}", device_path(PHONE)), "Powered false".to_owned()]);
 }
 
-/// Stopped between pairing and connecting, when no call is under way to
-/// cancel: it doesn't go on to connect.
 #[test]
 fn a_stop_between_steps_holds() {
     let fixture = Fixture::new("stop-between");
@@ -548,8 +512,6 @@ fn a_stop_between_steps_holds() {
     assert!(!bluez.calls().iter().any(|call| call.starts_with("Connect")), "{:?}", bluez.calls());
 }
 
-/// Starts connecting the new earbuds on a thread and accepts the pairing
-/// question.
 fn connect_buds(fixture: &Fixture, bluetooth: &Arc<Bluetooth>) -> std::thread::JoinHandle<Result<(), String>> {
     fixture.until("the devices", |event| event["radio"] == "on");
     let connecting = {
@@ -601,8 +563,6 @@ fn a_device_without_music_isnt_asked_for_it() {
     assert_eq!(connects(&bluez), [format!("Connect {}", device_path(PHONE))]);
 }
 
-/// A connect that ends within its limit is left alone: the limit's wait
-/// ends with it.
 #[test]
 fn a_connect_within_its_limit_is_left_alone() {
     let fixture = Fixture::new("connect-in-time");
@@ -616,8 +576,6 @@ fn a_connect_within_its_limit_is_left_alone() {
     fixture.until("the phone connected", |event| status(event, PHONE).as_deref() == Some("connected"));
 }
 
-/// A pairing question nobody answers ends at the answer timeout (an
-/// answered one ends with its answer: `connect_buds`).
 #[test]
 fn an_unanswered_question_ends_at_the_answer_timeout() {
     let fixture = Fixture::new("unanswered");

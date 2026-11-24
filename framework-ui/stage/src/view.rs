@@ -1,18 +1,3 @@
-//! One screen's stage: the window, what is on it, and how that follows the
-//! features and the open panels. `draw.rs` renders it.
-//!
-//! What is on it comes from the slots: a [`PillItem`] per `bar.*` slot, in
-//! three rows, and a [`PanelItem`] per `stage.panels` slot and per pill
-//! with a panel. Each is built once, when its feature becomes ready, and
-//! kept while it stays. The view observes the shared [`Panels`] and turns
-//! what it says into targets (a panel's morph heads for open or closed),
-//! the window's keyboard and layer, and the click catcher; rendering only
-//! reads where things are right now.
-//!
-//! A panel placed off the strip (`Placement`) is kept here like any other,
-//! and drawn by the window beside this one (`crate::panel_window`), which
-//! this view opens while it has such a panel and tells what to hold.
-
 use crate::aside::Aside;
 use crate::frames::FrameLog;
 use crate::geometry::{Align, stage_height};
@@ -39,58 +24,39 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Instant;
 
-/// The bar's rows, with the host each is filled from and the way its
-/// pills' panels keep to them.
 pub(crate) const ROWS: [(&str, Align); 3] =
     [(HOST_BAR_LEFT, Align::Left), (HOST_BAR_CENTER, Align::Center), (HOST_BAR_RIGHT, Align::Right)];
 
-/// The center row's place in [`ROWS`].
 pub(crate) const CENTER_ROW: usize = 1;
 
-/// Where a pill was laid out, shared with the element that finds out.
 pub(crate) type PillBox = Rc<Cell<Option<Bounds<Pixels>>>>;
 
-/// A pill on the stage.
 pub(crate) struct PillItem {
     pub view: SharedString,
     pub content: AnyView,
     pub opens_on_click: bool,
-    /// Whether its view has something to show (`Pill::shown_while`).
     pub present: Option<Shown>,
-    /// What `present` said when the stage last looked
-    /// (`StageView::follow_shown`).
     pub seen_present: bool,
-    /// Where it was laid out in the last frame, in the window.
     pub bounds: PillBox,
-    /// 1 shown, 0 hidden under an open panel.
     pub shown: Eased,
     pub panel: Option<PanelItem>,
 }
 
 impl PillItem {
-    /// Whether it is drawn at all: not while its view has nothing to show.
     pub fn is_present(&self) -> bool {
         self.present.as_ref().is_none_or(Shown::get)
     }
 }
 
-/// A panel on the stage, a pill's own or one from `stage.panels`.
 #[derive(Clone)]
 pub(crate) struct PanelItem {
     pub spec: Panel,
-    /// The view id of the pill it grows out of.
     pub from: Option<SharedString>,
-    /// 0 closed (its pill), 1 open.
     pub morph: Eased,
     pub reveal: Reveal,
     pub width: Eased,
     pub height: Eased,
-    /// Its left edge once open, when a feature placed it ([`crate::Stage::place`]).
     pub left: Option<Pixels>,
-    /// Off the strip: whether the panels' window has it on screen. The
-    /// pill it grows out of is on the strip, and two windows never draw in
-    /// the same frame, so the pill stays until the panel is drawn over it,
-    /// and the panel stays, closed, until the pill is drawn again.
     pub cover: Rc<Cell<bool>>,
 }
 
@@ -110,12 +76,10 @@ impl PanelItem {
         }
     }
 
-    /// Whether the strip draws it; the panels' window draws the others.
     pub fn on_strip(&self) -> bool {
         self.spec.placement.on_strip()
     }
 
-    /// Returns whether that turned it round.
     fn set_open(&mut self, open: bool, now: Instant) -> bool {
         let target = if open { 1.0 } else { 0.0 };
         let turned = self.morph.target() != target;
@@ -124,7 +88,6 @@ impl PanelItem {
         turned
     }
 
-    /// Returns whether it heads for another size now.
     fn set_size(&mut self, size: Size<Pixels>, now: Instant) -> bool {
         let (width, height) = (f32::from(size.width), f32::from(size.height));
         let changed = self.width.target() != width || self.height.target() != height;
@@ -133,8 +96,6 @@ impl PanelItem {
         changed
     }
 
-    /// Whether it is closed and at rest: nothing of it is drawn. One that
-    /// opens in place ([`Panel::in_place`]) is never drawn.
     pub fn closed(&self, now: Instant) -> bool {
         self.spec.in_place || (self.morph.target() == 0.0 && self.morph.settled(now))
     }
@@ -147,24 +108,17 @@ impl PanelItem {
                 && self.height.settled(now))
     }
 
-    /// How far down the screen it reaches once open: at the size it is
-    /// heading for, or the one it still has while it eases to a smaller.
     fn reach(&self, now: Instant) -> Pixels {
         self.spec.top + px(self.height.target().max(self.height.value(now)))
     }
 }
 
-/// A panel placed off the strip as the panels' window draws it: where it
-/// is heading since the stage last followed the shared state, and the
-/// pill it grows out of (its box, whether it is there, the way its row
-/// keeps).
 pub(crate) struct OffStrip {
     pub panel: PanelItem,
     pub pill: Option<(PillBox, Option<Shown>, Align)>,
 }
 
 impl OffStrip {
-    /// Where its pill is, like `StageView::pill_box`.
     pub fn pill_box(&self) -> Option<(Bounds<Pixels>, Align)> {
         let (bounds, present, align) = self.pill.as_ref()?;
         let there = present.as_ref().is_none_or(Shown::get);
@@ -172,14 +126,8 @@ impl OffStrip {
     }
 }
 
-/// The panels placed off the strip, which the stage's view writes and the
-/// panels' window reads. Not the view itself: GPUI counts a view read
-/// while a window draws as that window's, and hands the view's callbacks
-/// that window from then on (`App::current_window_by_entity`), so the
-/// stage would resize the panels' window in place of its own.
 pub(crate) type OffStripPanels = Rc<RefCell<Vec<OffStrip>>>;
 
-/// What the window was last told to be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct Held {
     keyboard: bool,
@@ -190,62 +138,33 @@ pub(crate) struct StageView {
     pub screen: Screen,
     pub panels: Entity<Panels>,
     slots: Entity<Slots>,
-    /// The pills of the left, center and right row.
     pub rows: [Kept<PillItem>; 3],
-    /// The panels that are no pill's own.
     pub standalone: Kept<PanelItem>,
-    /// The glass drawn in the frame under way, and what the compositor was
-    /// last told of it (`draw.rs`).
     pub shapes: Rc<RefCell<Vec<Shape>>>,
     pub sent: Rc<RefCell<Sent>>,
-    /// Whether every screen takes clicks everywhere right now.
     pub catching: bool,
-    /// Gets the keyboard for a panel that names no field of its own, so Esc
-    /// arrives.
     pub focus: FocusHandle,
     pub frames: Option<FrameLog>,
-    /// How far left of the center row's right edge the point it keeps at
-    /// the screen's middle is (`middle.rs`), when a view marks one.
     pub middle_from_right: Option<Pixels>,
-    /// Whether the center row's content is drawn in the frame under way,
-    /// so a mark is to be expected from it.
     pub center_drawn: bool,
-    /// The window's height, shared with the click catcher below it.
     height: Rc<Cell<Pixels>>,
     held: Held,
-    /// The window beside this one for the panels placed off the strip,
-    /// opened just before this one and kept as long as it; what it was
-    /// last told to hold; and how
-    /// wide it is on screen (nothing while none of its panels is out),
-    /// which it says here for this window and the click catcher to leave
-    /// it its clicks.
     pub panel_window: Option<WindowHandle<PanelWindow>>,
     panel_window_due: bool,
     beside_held: Hold,
     pub beside: Rc<Cell<Pixels>>,
-    /// The panels that window draws, as of the last `follow_panels`.
     off_strip: OffStripPanels,
     catcher: Option<AnyWindowHandle>,
     bar_room: Option<AnyWindowHandle>,
-    /// The bar stepping aside for a fullscreen window, and the wake-up for
-    /// what it has due next.
     pub aside: Aside,
     aside_wake: Option<Task<()>>,
-    /// Whether the bar's room was last told to keep its room.
     room_kept: bool,
-    /// Whether the window keeps the compositor from going idle, as it was
-    /// last told.
     awake: bool,
     _observers: Vec<Subscription>,
 }
 
-/// The glass, whether clicks were caught everywhere, whether the strip
-/// along the top edge took the pointer and how wide the panels' window
-/// beside was, as the compositor was last told. `None` before the first
-/// frame.
 pub(crate) type Sent = Option<(Vec<Shape>, bool, bool, Pixels)>;
 
-/// What every screen's stage is opened with.
 pub(crate) struct Shared {
     pub panels: Entity<Panels>,
     pub slots: Entity<Slots>,
@@ -253,16 +172,14 @@ pub(crate) struct Shared {
     pub log_frames: bool,
 }
 
-/// Opens the stage on `screen`.
 pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<WindowHandle<StageView>> {
     let Shared { panels, slots, screens, log_frames } = shared;
     let log_frames = *log_frames;
     let height = stage_height([]);
     let mut shell = ShellWindow::new(screen.id, size(screen.size.width, height));
     shell.namespace = STAGE_NAMESPACE;
-    // The panels' window first: a compositor stacks the windows of one
-    // layer by when they opened, and the strip stays over its panels (the
-    // bar over the wallpaper carousel).
+    // niri stacks the surfaces of one layer by when they opened, so the panels' window opens first:
+    // https://linear.app/imperaluna/issue/IMP-427
     let (off_strip, beside) = (OffStripPanels::default(), Rc::new(Cell::new(px(0.0))));
     let shared_beside =
         panel_window::Shared { stage: WeakEntity::new_invalid(), panels: off_strip.clone(), beside: beside.clone() };
@@ -276,8 +193,6 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 cx.observe_in(&panels, window, |stage: &mut StageView, _, window, cx| stage.follow_panels(window, cx)),
                 cx.observe_in(&screens, window, StageView::follow_screen),
                 Shown::observe(cx, StageView::follow_shown),
-                // A stage the compositor closed (its screen went and came
-                // back) takes the windows beside it along.
                 cx.on_release(|stage: &mut StageView, cx| stage.leave(cx)),
             ];
             let frames = log_frames.then(|| FrameLog::new(screen.name.to_string(), screen.refresh, now));
@@ -310,7 +225,6 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
                 _observers: observers,
             };
             stage.sync_items(window, cx);
-            // A screen that came while keep awake is on.
             if stage.panels.read(cx).awake {
                 stage.awake = true;
                 window.set_idle_inhibit(true);
@@ -322,7 +236,6 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
         Ok(window) => {
             if let (Some(beside), Ok(stage)) = (panel_window, window.update(cx, |_, _, cx| cx.weak_entity())) {
                 let _ = beside.update(cx, |beside, _, _| beside.set_stage(stage));
-                // What it drew before it had a stage to tell.
                 let _ = window.update(cx, |stage, _, cx| stage.panel_window_changed(cx));
             }
             Some(window)
@@ -338,7 +251,6 @@ pub(crate) fn open(screen: &Screen, shared: &Shared, cx: &mut App) -> Option<Win
 }
 
 impl StageView {
-    /// Every panel on this stage.
     pub fn panel_items(&self) -> impl Iterator<Item = &PanelItem> {
         let of_pills = self.rows.iter().flat_map(|row| row.iter()).filter_map(|pill| pill.panel.as_ref());
         of_pills.chain(self.standalone.iter())
@@ -349,7 +261,6 @@ impl StageView {
         of_pills.chain(self.standalone.iter_mut())
     }
 
-    /// Where the pill with view id `view` is, and the way its row keeps.
     pub fn pill_box(&self, view: &SharedString) -> Option<(Bounds<Pixels>, Align)> {
         self.rows.iter().zip(ROWS).find_map(|(row, (_, align))| {
             let pill = row.iter().find(|pill| pill.view == *view && pill.is_present())?;
@@ -357,9 +268,6 @@ impl StageView {
         })
     }
 
-    /// Follows the slots: builds the pills and panels that are new, drops
-    /// those whose feature left, and tells the shared state which panels
-    /// this screen has.
     fn sync_items(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let now = Instant::now();
         let screen = self.screen.clone();
@@ -394,16 +302,11 @@ impl StageView {
         });
         self.keep_panel_window(cx);
         self.follow_panels(window, cx);
-        // A stage that lost the panel it was sized for gets shorter again.
         self.fit(window, cx, true);
         self.keep_bar_room(cx);
         cx.notify();
     }
 
-    /// A pill's view shows or hides it ([`Shown::set`]), on any screen. The
-    /// view isn't drawn while hidden, so its own redraw doesn't reach this
-    /// window: this one redraws when one of its pills comes or goes, and
-    /// at rest draws nothing for any other flag.
     fn follow_shown(&mut self, cx: &mut Context<Self>) {
         let mut changed = false;
         for pill in self.rows.iter_mut().flat_map(|row| row.iter_mut()) {
@@ -416,9 +319,6 @@ impl StageView {
         }
     }
 
-    /// Follows the shared state: each panel heads for open or closed and
-    /// for its size, the window takes or gives back the keyboard and its
-    /// layer, and the click catcher comes or goes.
     fn follow_panels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let now = Instant::now();
         let id = self.screen.id;
@@ -427,14 +327,11 @@ impl StageView {
             self.awake = panels.awake;
             window.set_idle_inhibit(self.awake);
         }
-        // Raised while a panel is open, and until the last one has closed
-        // all the way (`rest_once_closed`); and while the bar steps aside
-        // for a fullscreen window, so touching the top edge brings the pills
-        // back over it. Hyprland gives a Top layer under a focused
-        // fullscreen window no pixels and no pointer (IMP-182).
         let has_bar = self.rows.iter().any(|row| !row.is_empty());
         let fullscreen = has_bar && panels.fullscreen(&self.screen.name);
         let any_open = panels.open.any_open(id);
+        // Hyprland gives a Top layer under a focused fullscreen window no pixels and no pointer:
+        // https://linear.app/imperaluna/issue/IMP-182
         let overlay = any_open || self.held.overlay || fullscreen;
         let held = Held { keyboard: panels.open.needs_keyboard(id, true), overlay };
         let catching = panels.open.catches_clicks();
@@ -446,8 +343,6 @@ impl StageView {
                 (panels.open.is_open(name, id), panels.size(name, id), panels.place(name, id))
             })
             .collect();
-        // The field that gets the keyboard, in this window and in the one
-        // beside it, and whether a panel drawn there heads elsewhere now.
         let (mut focus, mut beside_focus, mut beside_moved) = (None, None, false);
         for (panel, (open, size, left)) in self.panel_items_mut().zip(targets) {
             let opened = open && panel.morph.target() == 0.0;
@@ -466,18 +361,11 @@ impl StageView {
             let keyboard = if held.keyboard { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
             window.set_keyboard_interactivity(keyboard);
         }
-        // Each new reason to be over a fullscreen window says so again, even
-        // to a window already told (IMP-470). Hyprland 0.57 drops a change of
-        // layer committed before the surface's first frame (`onCommit` returns
-        // while unmapped:
-        // https://github.com/hyprwm/Hyprland/blob/v0.57.2/src/desktop/view/LayerSurface.cpp#L315-L326),
-        // so a stage that opens beside a fullscreen window stayed on the top
-        // layer, its panels unseen under that window. Once Hyprland keeps
-        // such a change, only `!self.held.overlay` is needed here.
+        // Hyprland 0.57 drops a layer change committed before a surface's first frame; once it keeps one, drop `again`:
+        // https://github.com/hyprwm/Hyprland/blob/v0.57.2/src/desktop/view/LayerSurface.cpp#L315-L326
         let again = self.aside.new_reason_over_fullscreen(any_open, fullscreen);
         if held.overlay && (!self.held.overlay || again) {
-            // Over a fullscreen window while a panel is open: compositors
-            // draw a focused fullscreen window over the top layer.
+            // Compositors draw a focused fullscreen window over the Top layer: https://wayland.app/protocols/wlr-layer-shell-unstable-v1
             window.set_layer(Layer::Overlay);
         }
         self.held = held;
@@ -501,9 +389,6 @@ impl StageView {
         cx.notify();
     }
 
-    /// Once no panel is drawn any more: back under fullscreen windows (a
-    /// panel that is closing is still over the window it opened over), and
-    /// as short as the bar again.
     pub fn rest_once_closed(&mut self, window: &mut Window, cx: &mut App, now: Instant) {
         let drawn =
             self.panels.read(cx).open.any_open(self.screen.id) || self.panel_items().any(|panel| !panel.closed(now));
@@ -517,17 +402,12 @@ impl StageView {
         self.fit(window, cx, true);
     }
 
-    /// Opens the click catcher once nothing on this stage moves any more.
-    /// A new window sets up its own drawing, which holds every window's
-    /// frames up for a moment: at once, that moment would be the start of
-    /// the panel's morph. Until then a click below the stage still reaches
-    /// the window there.
+    // Opening a window holds every window's frames up while its renderer starts, so never at a morph's start:
+    // https://linear.app/imperaluna/issue/IMP-427
     fn catch_once_settled(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         cx.spawn_in(window, async move |stage, cx| {
             let mut waiting = true;
             while waiting {
-                // Long enough for a panel on any screen to open: the other
-                // screens' stages stand still meanwhile.
                 cx.background_executor().timer(DURATION_PANEL + DURATION_FADE).await;
                 waiting = stage.update(cx, |stage, cx| stage.catch_if_settled(cx)).unwrap_or(false);
             }
@@ -535,7 +415,6 @@ impl StageView {
         .detach();
     }
 
-    /// Returns whether to look again later.
     fn catch_if_settled(&mut self, cx: &mut Context<Self>) -> bool {
         if !self.catching || self.catcher.is_some() {
             return false;
@@ -547,8 +426,6 @@ impl StageView {
         false
     }
 
-    /// Writes the panels placed off the strip where the panels' window
-    /// reads them (`OffStripPanels`).
     fn publish_off_strip(&self) {
         let pill_of = |panel: &PanelItem| {
             let view = panel.from.as_ref()?;
@@ -566,12 +443,8 @@ impl StageView {
         self.panel_items().any(|panel| !panel.on_strip())
     }
 
-    /// Opens the window for the panels placed off the strip when this
-    /// screen has such a panel and the one opened with the stage is gone
-    /// (it didn't open). It is kept: a new window holds every window's
-    /// frames up for a moment, which must never be the start of a panel's
-    /// morph. It opens once this update is over: a window draws its first
-    /// frame as it opens, and tells this view when it changes size.
+    // Opening a window holds every window's frames up while its renderer starts, so never at a morph's start:
+    // https://linear.app/imperaluna/issue/IMP-427
     fn keep_panel_window(&mut self, cx: &mut Context<Self>) {
         if self.wants_panel_window() && self.panel_window.is_none() && !self.panel_window_due {
             self.panel_window_due = true;
@@ -589,9 +462,6 @@ impl StageView {
         }
     }
 
-    /// Takes the window opened for the panels off the strip, and tells it
-    /// what is open already. Returns whether it is kept: not when the
-    /// panels it was for left meanwhile, or the screen changed again.
     fn panel_window_opened(
         &mut self,
         opened: Option<WindowHandle<PanelWindow>>,
@@ -600,7 +470,6 @@ impl StageView {
     ) -> bool {
         self.panel_window_due = false;
         if screen.size != self.screen.size {
-            // Opened for the screen as it was: one for what it is now.
             self.keep_panel_window(cx);
             return false;
         }
@@ -625,9 +494,6 @@ impl StageView {
         }
     }
 
-    /// Tells the panels' window what to hold, which field gets the keyboard
-    /// (`focus`, for a panel that opened there), and to draw again when
-    /// one of its panels heads elsewhere (`moved`).
     fn tell_panel_window(&mut self, hold: Hold, focus: Option<Option<FocusHandle>>, moved: bool, cx: &mut App) {
         let Some(panels) = self.panel_window else {
             return;
@@ -640,9 +506,6 @@ impl StageView {
         let _ = panels.update(cx, |panels, window, cx| panels.follow(told, window, cx));
     }
 
-    /// The panels' window changed its size, or drew a panel for the first
-    /// time: the click regions here and the click catcher's leave it its
-    /// own, and a pill it drew over steps aside.
     pub fn panel_window_changed(&mut self, cx: &mut Context<Self>) {
         if let Some(catcher) = self.catcher {
             let _ = catcher.update(cx, |_, window, _| window.refresh());
@@ -650,14 +513,6 @@ impl StageView {
         cx.notify();
     }
 
-    /// Makes the window as tall as the tallest panel drawn on it reaches
-    /// (one placed off the strip is drawn in the window beside, and never
-    /// makes this one taller),
-    /// and as short as the bar with none: a compositor's work behind the
-    /// stage grows with the surface. It grows at once, before the panel
-    /// does; it shrinks only when `may_shrink`, once nothing is drawn or
-    /// the panels changed, so one panel taking over from another costs no
-    /// resize in between.
     fn fit(&mut self, window: &mut Window, cx: &mut App, may_shrink: bool) {
         let now = Instant::now();
         let drawn = self.panel_items().filter(|panel| panel.on_strip() && !panel.closed(now));
@@ -669,13 +524,10 @@ impl StageView {
         self.height.set(wanted);
         window.resize(size(self.screen.size.width, wanted));
         if let Some(catcher) = self.catcher {
-            // Its region ends where the stage begins.
             let _ = catcher.update(cx, |_, window, _| window.refresh());
         }
     }
 
-    /// Hands on what stepping aside changed: the bar's room, and a wake-up
-    /// for what is due next.
     pub fn follow_aside(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let now = Instant::now();
         self.aside.advance(now);
@@ -699,7 +551,6 @@ impl StageView {
         });
     }
 
-    /// Keeps the bar's room while any of its rows has a pill.
     fn keep_bar_room(&mut self, cx: &mut App) {
         let has_bar = self.rows.iter().any(|row| !row.is_empty());
         if has_bar && self.bar_room.is_none() {
@@ -709,10 +560,8 @@ impl StageView {
         }
     }
 
-    /// The screen changed its size (a new mode): lay out by the new one.
     fn follow_screen(&mut self, screens: Entity<Screens>, window: &mut Window, cx: &mut Context<Self>) {
         let Some(screen) = screens.read(cx).get(self.screen.id).cloned() else {
-            // It left: the stage closes this window next.
             return;
         };
         if screen == self.screen {
@@ -720,9 +569,6 @@ impl StageView {
         }
         self.screen = screen;
         window.resize(size(self.screen.size.width, self.height.get()));
-        // The windows beside this one were opened at the old size. The
-        // panels' window stays (opened again it would land over this one)
-        // and lays its panels out by the new size.
         self.close_satellites(cx);
         let screen_size = self.screen.size;
         if let Some(beside) = self.panel_window {
@@ -739,14 +585,11 @@ impl StageView {
         cx.notify();
     }
 
-    /// Closes the windows beside this one: the screen left.
     pub fn leave(&mut self, cx: &mut App) {
         self.close_satellites(cx);
         self.close_panel_window(cx);
     }
 
-    /// Closes the click catcher and the bar's room, which are opened at
-    /// the screen's size.
     fn close_satellites(&mut self, cx: &mut App) {
         for window in [self.catcher.take(), self.bar_room.take()].into_iter().flatten() {
             satellites::close(window, cx);

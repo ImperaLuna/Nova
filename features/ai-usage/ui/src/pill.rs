@@ -1,9 +1,3 @@
-//! The pill: the shown tool's logo and its session percent (or its only
-//! window's), in the theme's primary color from 80%. While novad is still
-//! reading a tool a spinning arc sits beside the logo; a tool with no
-//! numbers has a dashed ring there and a dim logo. Hidden until novad's
-//! first event, as today's pill waits for it.
-
 use crate::logo::logo;
 use crate::panel::NAME;
 use crate::usage::{Summary, shown, summarize};
@@ -38,13 +32,11 @@ impl UsagePill {
         Self { screen: screen.clone(), usage, shown: Shown::new(false), _followed: followed }
     }
 
-    /// Whether the pill is shown, for the stage.
     pub fn shown(&self) -> Shown {
         self.shown.clone()
     }
 
     fn summary(&self, cx: &gpui::App) -> Summary {
-        // The pill shows no times, so any zone will do.
         let usage = self.usage.read(cx).get();
         summarize(usage.and_then(shown), Timestamp::now(), &TimeZone::UTC)
     }
@@ -56,7 +48,6 @@ impl Render for UsagePill {
         let summary = self.summary(cx);
         let unavailable = summary.state == UsageState::Unavailable;
         let loading = summary.state == UsageState::Loading;
-        // Turning only while it can be seen: the open panel lies over it.
         if loading && self.shown.get() && !Stage::is_open(NAME, self.screen.id, cx) {
             window.request_animation_frame();
         }

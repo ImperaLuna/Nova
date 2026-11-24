@@ -1,22 +1,3 @@
-//! Claude's sign-in from the Claude desktop app, for when Claude Code runs
-//! only inside it: the app signs Claude Code in itself, and Claude Code's
-//! own credentials file then has no token (`claude_api` reads that first).
-//!
-//! The app is Electron, so it keeps its OAuth tokens the way Chromium keeps
-//! secrets on Linux: in `config.json` under `oauth:tokenCacheV2` (and the
-//! older `oauth:tokenCache`), base64 of a `v11` prefix and AES-128-CBC with a
-//! key derived from a password in the Secret Service keyring (item
-//! `application = Claude`), or `v10` and Chromium's fixed password when the
-//! app had no keyring. Inside is a map from `acct:<account>|<client>:<org>:
-//! <API origin>:<scopes>` to `{token, expiresAt, subscriptionType, ...}`; a
-//! token for Anthropic's API with the `user:profile` scope can read the
-//! usage endpoint. The format isn't documented, so anything unexpected is
-//! "signed out", never an error with the file's contents in it.
-//!
-//! As with Claude Code's file (see `endpoint`), the token is never
-//! refreshed and goes only into the usage request's header. The keyring's
-//! password, the key and the decrypted cache live only for one read.
-
 use super::claude_api::{self, Token};
 use super::display_plan;
 use super::endpoint::{self, Problem};
@@ -31,37 +12,28 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use zbus::wire::{OwnedObjectPath, OwnedVariant, Variant};
 
-/// The app's folder under `$XDG_CONFIG_HOME`.
 const APP_DIR: &str = "Claude";
 const CONFIG_FILE: &str = "config.json";
-/// The token caches in `config.json`, newest format first.
 const TOKEN_CACHES: [&str; 2] = ["oauth:tokenCacheV2", "oauth:tokenCache"];
-/// The scope the usage endpoint needs.
 const PROFILE_SCOPE: &str = "user:profile";
 
-/// Chromium's OS crypt on Linux (`os_crypt_linux.cc`).
 const KEYRING_PREFIX: &[u8] = b"v11";
 const NO_KEYRING_PREFIX: &[u8] = b"v10";
-/// The password Chromium uses with `v10`, when there's no keyring.
 const NO_KEYRING_PASSWORD: &[u8] = b"peanuts";
 const KEY_SALT: &[u8] = b"saltysalt";
 const KEY_ROUNDS: u32 = 1;
 const KEY_BYTES: usize = 16;
 const IV: [u8; 16] = [b' '; 16];
 
-/// The keyring item Electron's `safeStorage` keeps its password in.
 const KEYRING_APPLICATION: &str = "Claude";
 const SECRETS_SERVICE: &str = "org.freedesktop.secrets";
 const SECRETS_PATH: &str = "/org/freedesktop/secrets";
 const SECRETS_INTERFACE: &str = "org.freedesktop.Secret.Service";
-/// Asks for the secret as it is; the bus is the user's own.
 const PLAIN_ALGORITHM: &str = "plain";
-/// How long the keyring may take to answer a call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
-/// Where the app's sign-in is: its config file, and the bus its keyring is on.
 #[derive(Clone)]
 pub struct Desktop {
     pub config: PathBuf,
@@ -69,21 +41,14 @@ pub struct Desktop {
 }
 
 impl Desktop {
-    /// The app's config under `$XDG_CONFIG_HOME` (else `~/.config`), with
-    /// the session's keyring.
     pub fn default_location() -> Option<Self> {
         Some(Self::at(config_in(&nova_paths::config_home()?)))
     }
 
-    /// The app's config at `config`, with the session's keyring.
     pub fn at(config: PathBuf) -> Self {
         Self { config, bus: Bus::Session }
     }
 
-    /// A token that can read the usage endpoint at `now`. `stopped` is
-    /// checked before the keyring is asked. A cache that can't be opened
-    /// (a locked keyring) doesn't hide a token in another; its problem
-    /// shows only when no cache has one.
     pub fn read_token(&self, now: Timestamp, stopped: &dyn Fn() -> bool) -> Result<Token, Problem> {
         let config = endpoint::read_sign_in(&self.config)?;
         let caches: Vec<&str> = TOKEN_CACHES.iter().filter_map(|name| config.get(*name)?.as_str()).collect();
@@ -111,8 +76,6 @@ impl Desktop {
         best.map(|(_, token)| token).ok_or(problem)
     }
 
-    /// `sealed` decrypted, `None` when it isn't in a format this knows or
-    /// doesn't decrypt. The keyring is asked once, the first time it's needed.
     fn open(
         &self,
         sealed: &[u8],
@@ -133,14 +96,11 @@ impl Desktop {
     }
 }
 
-/// Chromium's OS crypt: AES-128-CBC with a PBKDF2-SHA1 key from `password`.
 fn decrypt(password: &[u8], ciphertext: &[u8]) -> Option<Vec<u8>> {
     let key: [u8; KEY_BYTES] = pbkdf2::pbkdf2_hmac_array::<sha1::Sha1, KEY_BYTES>(password, KEY_SALT, KEY_ROUNDS);
     Aes128CbcDec::new(&key.into(), &IV.into()).decrypt_padded_vec::<Pkcs7>(ciphertext).ok()
 }
 
-/// Each unexpired token in a decrypted cache that's for Anthropic's API and
-/// can read profile data, with when it expires (Unix milliseconds).
 fn usable_tokens(entries: &Value, now: Timestamp) -> Vec<(i64, Token)> {
     let api = format!(":{}:", claude_api::API_ORIGIN);
     let Some(entries) = entries.as_object() else { return vec![] };
@@ -159,10 +119,6 @@ fn usable_tokens(entries: &Value, now: Timestamp) -> Vec<(i64, Token)> {
         .collect()
 }
 
-/// The `safeStorage` password from the Secret Service on `bus`. No item
-/// means the app never stored one (signed out); a locked one isn't
-/// unlocked, since that would prompt the user. `stopped` is checked before
-/// each call.
 fn keyring_password(bus: &Bus, stopped: &dyn Fn() -> bool) -> Result<Vec<u8>, Problem> {
     let failed = |e: zbus::Error| Problem::Failed(format!("can't ask the keyring: {e}"));
     let unless_stopped = || if stopped() { Err(Problem::Stopped) } else { Ok(()) };
@@ -183,7 +139,6 @@ fn keyring_password(bus: &Bus, stopped: &dyn Fn() -> bool) -> Result<Vec<u8>, Pr
                 Problem::Failed("the keyring is locked".into())
             });
         };
-        // The session ends with the connection, when this returns.
         unless_stopped()?;
         let (name, path, interface, method) = service("OpenSession");
         let request = (PLAIN_ALGORITHM, Variant::from(""));
@@ -200,7 +155,6 @@ fn keyring_password(bus: &Bus, stopped: &dyn Fn() -> bool) -> Result<Vec<u8>, Pr
     })
 }
 
-/// `plain` sealed the way the app seals it, with `prefix` and `password`.
 #[cfg(any(test, feature = "test-support"))]
 pub fn seal(prefix: &[u8], password: &[u8], plain: &Value) -> String {
     use aes::cipher::BlockModeEncrypt;
@@ -210,8 +164,6 @@ pub fn seal(prefix: &[u8], password: &[u8], plain: &Value) -> String {
     base64::engine::general_purpose::STANDARD.encode([prefix, &ciphertext].concat())
 }
 
-/// The app's config under `config_home` with `cache` sealed as it is
-/// without a keyring, so reading it never asks one.
 #[cfg(any(test, feature = "test-support"))]
 #[expect(clippy::unwrap_used, reason = "a test helper fails the test that calls it, loudly")]
 pub fn write_unsealed_config(config_home: &Path, cache: &Value) {
@@ -222,13 +174,11 @@ pub fn write_unsealed_config(config_home: &Path, cache: &Value) {
     std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
 }
 
-/// A cache entry's name in the app's shape, for a token with `scopes`.
 #[cfg(any(test, feature = "test-support"))]
 pub fn entry_name(scopes: &str) -> String {
     format!("acct:63504df3|9d1c250a:dde9988e:{}:{scopes}", claude_api::API_ORIGIN)
 }
 
-/// Where the app's config is under `config_home`.
 pub fn config_in(config_home: &Path) -> PathBuf {
     config_home.join(APP_DIR).join(CONFIG_FILE)
 }
@@ -240,15 +190,12 @@ mod tests {
     use serde_json::json;
 
     const PASSWORD: &[u8] = b"keyring-password";
-    /// A `stopped` that never is.
     const RUNNING: fn() -> bool = || false;
 
     fn now() -> Timestamp {
         "2026-11-01T21:00:00Z".parse().unwrap()
     }
 
-    /// The app's cache with one usage-capable token (expiring in 2027), one
-    /// without the profile scope and one for another API.
     fn cache() -> Value {
         json!({
             entry_name("user:inference user:file_upload user:profile"): {
@@ -262,7 +209,6 @@ mod tests {
         })
     }
 
-    /// A Secret Service holding the app's password, unlocked or not.
     struct FakeKeyring {
         locked: bool,
     }
@@ -295,7 +241,6 @@ mod tests {
         }
     }
 
-    /// The app's config holding `config`, and a keyring on its own bus.
     struct Fixture {
         _dir: nova_test_support::TempDir,
         _bus: TestBus,
@@ -330,7 +275,6 @@ mod tests {
     #[test]
     fn reads_a_cache_sealed_without_a_keyring() {
         let config = json!({TOKEN_CACHES[1]: seal(NO_KEYRING_PREFIX, NO_KEYRING_PASSWORD, &cache())});
-        // No keyring on this bus: a `v10` cache never asks it.
         let fixture = fixture("v10", config, false);
         let desktop = Desktop { bus: Bus::Address("unix:path=/nonexistent".into()), ..fixture.desktop.clone() };
         assert_eq!(desktop.read_token(now(), &RUNNING).unwrap().access(), "profile-token");
@@ -384,7 +328,6 @@ mod tests {
     #[test]
     fn a_stopped_read_never_asks_the_keyring() {
         let config = json!({TOKEN_CACHES[0]: seal(KEYRING_PREFIX, PASSWORD, &cache())});
-        // No keyring here: asking it would fail, not stop.
         let fixture = fixture("stopped", config, false);
         let desktop = Desktop { bus: Bus::Address("unix:path=/nonexistent".into()), ..fixture.desktop.clone() };
         assert_eq!(desktop.read_token(now(), &|| true).err(), Some(Problem::Stopped));

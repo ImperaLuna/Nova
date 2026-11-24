@@ -1,7 +1,3 @@
-//! The media players against a real bus: a private `dbus-daemon` per test,
-//! with fake players that serve the two MPRIS interfaces the way players
-//! do, and say when something changed with `PropertiesChanged`.
-
 use super::*;
 use nova_hub::{ClientQueue, Outgoing};
 use nova_session_bus::TestBus;
@@ -13,16 +9,10 @@ use std::sync::mpsc::Receiver;
 use zbus::interface;
 use zbus::wire::{ObjectPath, OwnedVariant, Variant};
 
-/// The port, for players whose process says nothing: the fake players run
-/// in the test's own process, which no copy of `/proc` has.
 fn no_names(_: &Path, _: Option<u32>) -> Vec<String> {
     Vec::new()
 }
 
-/// The port, with what the tray's lookup finds for Zen started from a
-/// terminal (`.zen-beta-wrapped`, in kitty's unit): novad's
-/// `media_finds_the_process_names_the_tray_does` checks it does. The fake
-/// players run in this process.
 fn zen_from_a_terminal(_: &Path, pid: Option<u32>) -> Vec<String> {
     match pid == Some(std::process::id()) {
         true => vec!["zen-beta".into(), "kitty".into()],
@@ -30,8 +20,6 @@ fn zen_from_a_terminal(_: &Path, pid: Option<u32>) -> Vec<String> {
     }
 }
 
-/// How long a test waits for something the bus should do at once. Longer
-/// than a read may take (two calls, each up to its timeout).
 const WAIT: Duration = Duration::from_secs(4 * CALL_TIMEOUT.as_secs());
 const SPOTIFY: &str = "org.mpris.MediaPlayer2.spotify";
 const FIREFOX: &str = "org.mpris.MediaPlayer2.firefox.instance_1_42";
@@ -67,12 +55,10 @@ impl Fixture {
         Sources { bus, covers: self.dir.join("media"), proc: self.dir.join("proc"), process_names: no_names }
     }
 
-    /// The next media event.
     fn next(&self) -> Value {
         nova_hub::next_named(&self.ui, "media", WAIT)
     }
 
-    /// Media events until one `done` accepts, which it returns.
     fn until(&self, done: impl Fn(&Value) -> bool) -> Value {
         loop {
             let event = self.next();
@@ -82,13 +68,11 @@ impl Fixture {
         }
     }
 
-    /// Puts up a player as `name`, playing `track`.
     fn play(&self, name: &str, track: Track) -> FakePlayer {
         FakePlayer::start(self.bus.connect(), name, track)
     }
 }
 
-/// What a fake player plays and can do.
 #[derive(Clone)]
 struct Track {
     status: &'static str,
@@ -118,7 +102,6 @@ impl Track {
     }
 }
 
-/// What the fake player was asked to do, in order.
 type Calls = Arc<Mutex<Vec<String>>>;
 
 struct FakePlayer {
@@ -140,7 +123,6 @@ impl FakePlayer {
         Self { connection, track, calls }
     }
 
-    /// Changes the track, and says so as players do.
     fn change(&self, change: impl FnOnce(&mut Track)) {
         change(&mut lock(&self.track));
         let changed: HashMap<String, OwnedVariant> = HashMap::new();
@@ -266,7 +248,6 @@ impl Controls {
     }
 }
 
-/// The player `id` in a media event.
 fn player<'a>(event: &'a Value, id: &str) -> &'a Value {
     event["players"].as_array().unwrap().iter().find(|player| player["id"] == id).unwrap_or(&Value::Null)
 }
@@ -311,17 +292,14 @@ fn the_latest_to_play_shows_unless_the_user_picks_another() {
 
     media.show(SPOTIFY).unwrap();
     fixture.until(|event| event["shown"] == SPOTIFY);
-    // Changes to the shown players don't undo the pick...
     spotify.change(|track| track.title = "Battlecry".into());
     let event = fixture.until(|event| player(event, SPOTIFY)["title"] == "Battlecry");
     assert_eq!(event["shown"], SPOTIFY);
-    // ...but another player starting to play does.
     firefox.change(|track| track.status = "Paused");
     fixture.until(|event| player(event, FIREFOX)["status"] == "paused");
     firefox.change(|track| track.status = "Playing");
     fixture.until(|event| event["shown"] == FIREFOX);
 
-    // With the playing one gone, the paused one shows; with none, nothing.
     spotify.change(|track| track.status = "Paused");
     fixture.until(|event| player(event, SPOTIFY)["status"] == "paused");
     drop(firefox);
@@ -345,7 +323,6 @@ fn a_pick_ends_with_its_player() {
     fixture.until(|event| event["shown"] == FIREFOX);
     drop(firefox);
     fixture.until(|event| event["shown"] == SPOTIFY);
-    // Back under the same name, it's a new player: the playing one stays.
     let _firefox = fixture.play(FIREFOX, paused());
     let event = fixture.until(|event| player(event, FIREFOX)["status"] == "paused");
     assert_eq!(event["shown"], SPOTIFY);
@@ -353,8 +330,6 @@ fn a_pick_ends_with_its_player() {
 
 #[test]
 fn a_paused_pick_that_moves_on_ends() {
-    // A browser keeps one player for all its tabs: closing the picked tab
-    // leaves it paused on another tab's media, or on none.
     let fixture = Fixture::new("pick-moves-on");
     let media = fixture.media();
     let _spotify = fixture.play(SPOTIFY, Track::playing("Feather"));
@@ -364,7 +339,6 @@ fn a_paused_pick_that_moves_on_ends() {
     fixture.until(|event| player(event, FIREFOX)["status"] == "paused");
     media.show(FIREFOX).unwrap();
     fixture.until(|event| event["shown"] == FIREFOX);
-    // Its position moving isn't moving on.
     firefox.change(|track| track.position_us = 9_000_000);
     let event = fixture.until(|event| player(event, FIREFOX)["position_us"] == 9_000_000);
     assert_eq!(event["shown"], FIREFOX);
@@ -374,7 +348,6 @@ fn a_paused_pick_that_moves_on_ends() {
 
 #[test]
 fn a_short_clip_is_left_out_until_its_track_is_longer() {
-    // A chat app's notification sound: a 6 second clip, as Ferdium plays.
     const CHAT: &str = "org.mpris.MediaPlayer2.chromium.instance_7";
     let fixture = Fixture::new("short-clip");
     let media = fixture.media();
@@ -383,33 +356,27 @@ fn a_short_clip_is_left_out_until_its_track_is_longer() {
     media.show(SPOTIFY).unwrap();
     let clip = Track { length_us: 6_000_000, position_us: 0, artists: Vec::new(), ..Track::playing("WhatsApp") };
     let chat = fixture.play(CHAT, Track { desktop_entry: "ferdium", ..clip });
-    // Read, and refused: no command reaches it.
     wait_until(WAIT, "the clip is read", || {
         media.control(CHAT, MediaAction::PlayPause).is_err_and(|e| e.contains("short clip"))
     });
     assert!(media.show(CHAT).is_err());
     assert!(chat.calls().is_empty());
-    // Not listed, and its start ends no pick: nothing new to publish.
     let now = media.shared.event(&lock(&media.shared.state));
     assert_eq!(now.players.iter().map(|player| player.id.as_str()).collect::<Vec<_>>(), [SPOTIFY]);
     assert_eq!(now.shown.as_deref(), Some(SPOTIFY));
     assert_eq!(lock(&media.shared.state).picked.as_deref(), Some(SPOTIFY));
 
-    // A longer track (a voice note): listed again, and it can be shown.
     chat.change(|track| track.length_us = 40_000_000);
     let event = fixture.until(|event| !player(event, CHAT).is_null());
     assert_eq!(event["shown"], SPOTIFY, "the pick holds");
     media.show(CHAT).unwrap();
     fixture.until(|event| event["shown"] == CHAT);
-    // Back to a clip: it can't keep the pill, even picked.
     chat.change(|track| track.length_us = 3_000_000);
     fixture.until(|event| player(event, CHAT).is_null() && event["shown"] == SPOTIFY);
 }
 
 #[test]
 fn a_player_is_found_by_its_process_when_its_desktop_entry_is_wrong() {
-    // Zen's player says it's `zen`; its app is zen-beta.desktop, and its
-    // process (`.zen-beta-wrapped`) and windows are `zen-beta`.
     let fixture = Fixture::new("process");
     let share = fixture.dir.join("share");
     std::fs::create_dir_all(share.join("applications")).unwrap();
@@ -436,7 +403,6 @@ fn a_player_is_found_by_its_process_when_its_desktop_entry_is_wrong() {
 
 #[test]
 fn playerctld_is_not_a_player_of_its_own() {
-    // It stands in for the player that played last.
     assert!(super::is_player(SPOTIFY) && super::is_player(FIREFOX));
     assert!(!super::is_player("org.mpris.MediaPlayer2.playerctld"));
     assert!(!super::is_player("org.freedesktop.Notifications"));
@@ -502,7 +468,6 @@ fn covers_are_checked_files() {
     let event = fixture.until(|event| event["shown"] == SPOTIFY);
     assert_eq!(player(&event, SPOTIFY)["cover"], json!(cover.display().to_string()));
 
-    // A path that climbs out of where it says, and a folder, are refused.
     let sneaky = format!("file://{}/../{}", fixture.dir.join("media").display(), "cover.png");
     spotify.change(|track| {
         track.art_url = Some(sneaky);

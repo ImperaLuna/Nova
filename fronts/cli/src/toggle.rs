@@ -1,11 +1,3 @@
-//! `nova toggle <panel>`, `nova lock`, `nova volume <key>`,
-//! `nova screenshot <mode>` and `nova record`: ask novad to open or close a
-//! panel on the focused output, to lock the screen, to pass a volume key to
-//! the UI, to take a screenshot, or to start or stop recording, for
-//! compositor keybinds. They print nothing
-//! when it worked, so a keybind stays quiet; novad's reason goes to stderr
-//! when it didn't.
-
 use crate::client::Client;
 use clap::builder::{PossibleValuesParser, TypedValueParser};
 use nova_bar_api::Panel;
@@ -15,12 +7,10 @@ use std::path::Path;
 
 #[derive(clap::Args)]
 pub struct ToggleArgs {
-    /// The panel to open or close.
     #[arg(value_parser = panel_names())]
     panel: Panel,
 }
 
-/// Accepts exactly the panels `nova-bar-api` lists, and lists them in help.
 fn panel_names() -> impl TypedValueParser<Value = Panel> {
     PossibleValuesParser::new(Panel::ALL.map(Panel::name)).try_map(|name| name.parse::<Panel>())
 }
@@ -43,11 +33,8 @@ pub struct VolumeArgs {
 
 #[derive(clap::Subcommand)]
 enum VolumeArg {
-    /// One step louder, up to 100%.
     Up,
-    /// One step quieter.
     Down,
-    /// Mute, or unmute when muted.
     Mute,
 }
 
@@ -69,9 +56,7 @@ pub struct ScreenshotArgs {
 
 #[derive(clap::Subcommand)]
 enum ScreenshotArg {
-    /// Freeze the screens and drag out a region; again closes the picker.
     Region,
-    /// The whole focused screen, at once.
     Screen,
 }
 

@@ -1,17 +1,3 @@
-//! The card a saved screenshot or recording lands in, in the bottom right
-//! corner of the screen that had focus: the shot (or the recording's length),
-//! that it was saved, where it went, and Open, Folder and Delete. A recording
-//! that didn't start, or ended without a frame, shows here too: why, with Try
-//! again and Open log, for longer. A line along the bottom drains over its time
-//! and the card leaves when it runs out; the pointer on the card holds it. It
-//! slides in from the edge, and out before it goes.
-//!
-//! Its own window on each screen, on the overlay layer like the volume
-//! capsule, so it shows over fullscreen windows too: one pixel big while
-//! no card is on its screen, else as big as the card plus its shadow,
-//! with clicks and blur only on the card. It takes no keyboard and no
-//! space, and asks for frames only while the card slides.
-
 use crate::capture::{Button, Capture, Card, Saved};
 use crate::pick::{clock, contain, folder_label, size_label};
 use crate::tokens::{
@@ -34,10 +20,7 @@ use nova_stage::{FrameLog, Screen, Stage};
 use std::sync::Arc;
 use std::time::Instant;
 
-/// The card's layer surfaces, for the compositor's rules (niri blurs
-/// `^nova-`).
 const NAMESPACE: &str = "nova-screenshot";
-/// A window with no card: as small as the compositor takes.
 const RESTING: Pixels = px(1.0);
 
 const FILE_BUTTONS: [(Button, Glyph, &str); 3] = [
@@ -49,7 +32,6 @@ const FAILED_BUTTONS: [(Button, Glyph, &str); 2] =
     [(Button::Retry, Glyph::REBOOT, "Try again"), (Button::Log, Glyph::DOCUMENT, "Open log")];
 const DELETE: Button = Button::File(ScreenshotAction::Delete);
 
-/// How tall the title line and the line under it are.
 fn title_height() -> Pixels {
     (FONT_SIZE * LINE_HEIGHT).max(ICON_SIZE).ceil()
 }
@@ -58,14 +40,10 @@ fn detail_height() -> Pixels {
     (FONT_SIZE_SMALL * LINE_HEIGHT).ceil()
 }
 
-/// Between the card's edge and what is on it.
 fn inset() -> Pixels {
     PAD + GAP / 2.0
 }
 
-/// The card's height: the shot, the two lines and the buttons; or, for a
-/// recording that failed, the title, the reason's `lines` and the
-/// buttons.
 fn card_height(failed: bool, lines: usize) -> Pixels {
     let content = if failed {
         title_height() + LABEL_NUDGE + detail_height() * lines as f32 + CARD_GAP + CARD_BUTTON_HEIGHT
@@ -75,15 +53,10 @@ fn card_height(failed: bool, lines: usize) -> Pixels {
     content + inset() * 2.0
 }
 
-/// The window, with a card `height` tall at rest in it: its shadow's room
-/// on the left and top, the card's gap from the screen's edges on the
-/// right and bottom.
 fn window_size(height: Pixels) -> gpui::Size<Pixels> {
     size(SHADOW_ROOM + CARD_WIDTH + CARD_GAP, SHADOW_ROOM + height + CARD_GAP)
 }
 
-/// The lines novad's reason takes on the card, at most
-/// [`FAILED_CARD_LINES`].
 fn reason_lines(reason: &str, window: &Window) -> usize {
     let run = TextRun {
         len: reason.len(),
@@ -108,11 +81,8 @@ fn reason_lines(reason: &str, window: &Window) -> usize {
 pub struct CardWindow {
     screen: Screen,
     capture: WeakEntity<Capture>,
-    /// The window's size now: card sized, or none while it rests.
     sized: Option<gpui::Size<Pixels>>,
-    /// The button under the pointer.
     hovered: Option<Button>,
-    /// The card's place as the compositor last got it.
     sent: Option<Bounds<Pixels>>,
     frames: Option<FrameLog>,
     _followed: Option<Subscription>,
@@ -150,7 +120,6 @@ impl CardWindow {
         }
     }
 
-    /// Sizes the window for a card `height` tall, or rests it.
     fn show(&mut self, height: Option<Pixels>, window: &mut Window) {
         let sized = height.map(window_size);
         if sized == self.sized {
@@ -171,8 +140,6 @@ impl CardWindow {
         }
     }
 
-    /// Hands the card's place to the compositor when it moved: it blurs
-    /// behind it, and clicks land on it alone.
     fn regions(&mut self, card: Bounds<Pixels>, window: &Window) {
         if self.sent != Some(card) {
             let shapes = [Shape::new(card, RADIUS_PANEL)];
@@ -223,13 +190,10 @@ impl Render for CardWindow {
     }
 }
 
-/// How the card is drawn this frame: slid in to `slide`, at `at`, with
-/// the button under the pointer lit.
 struct Look<'a> {
     card: &'a Card,
     slide: f32,
     at: Bounds<Pixels>,
-    /// The lines a failed recording's reason takes.
     lines: usize,
     hovered: Option<Button>,
     now: Instant,
@@ -277,12 +241,8 @@ fn draw(look: &Look, this: WeakEntity<CardWindow>, capture: WeakEntity<Capture>,
         .into_any_element()
 }
 
-/// The shot, fitted whole; or for a recording, a video icon over its
-/// length.
 fn thumb(card: &Card, cx: &App) -> AnyElement {
     let theme = Theme::of(cx);
-    // Sized here, in the middle of its room: GPUI lays a picture out by its
-    // own shape and would crop it to the room's.
     let room = size(CARD_WIDTH - inset() * 2.0, THUMB_HEIGHT);
     let thumb = div()
         .flex_none()
@@ -309,8 +269,6 @@ fn thumb(card: &Card, cx: &App) -> AnyElement {
     .into_any_element()
 }
 
-/// What happened (saved, copied unless the clipboard failed, didn't
-/// start or recorded nothing), and where it went with its size or length, or why it didn't.
 fn labels(saved: &Saved, lines: usize, cx: &App) -> impl IntoElement {
     let theme = Theme::of(cx);
     let (glyph, ink, title) = match saved {
@@ -345,8 +303,6 @@ fn labels(saved: &Saved, lines: usize, cx: &App) -> impl IntoElement {
     div().flex().flex_col().child(title).child(detail)
 }
 
-/// The card's buttons, each as wide; Delete turns the error color under
-/// the pointer.
 fn draw_buttons(
     buttons: &[(Button, Glyph, &'static str)],
     hovered: Option<Button>,

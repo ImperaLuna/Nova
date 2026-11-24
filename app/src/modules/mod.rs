@@ -1,15 +1,3 @@
-//! novad's modules: every feature's daemon side behind the framework's
-//! [`Module`](nova_modules::Module) trait (`nova-modules`, which runs them
-//! by the settings), listed once in the registry below. The kept ones (a
-//! recording to stop, the lock screen, the region picker, the wallpaper)
-//! hold state across their feature turning off and on, so they run for
-//! novad's whole life ([`Kept`]).
-//!
-//! The [`Context`] is what modules share: the hub, the logger, the
-//! compositor, and the app index, which follows the apps while any module
-//! that names them runs
-//! ([`Module::NEEDS_APPS`](nova_modules::Module::NEEDS_APPS)).
-
 use crate::config::Config;
 use crate::{
     ai_usage, bluetooth, features, launcher, media, network, notifications, nova_files, peripherals, recording,
@@ -25,31 +13,23 @@ use nova_log::Logger;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// What modules find their sources from, on this machine.
 pub struct Env<'a> {
     pub args: &'a crate::Args,
-    /// novad's runtime folder, its socket's.
     pub runtime_dir: &'a Path,
     pub path_var: &'a str,
     pub icons: &'a Arc<Icons>,
     pub home: Option<PathBuf>,
 }
 
-/// What modules share.
 pub struct Context {
     pub hub: Arc<Hub>,
     pub logger: Arc<Logger>,
-    /// Where programs are looked for.
     pub path_var: String,
-    /// Where app icons are found.
     pub icons: Arc<Icons>,
-    /// Following the compositor, when it's one novad knows.
     pub compositor: Option<Arc<Compositor>>,
-    /// The installed apps, known while a module that names them runs.
     pub apps: Arc<AppIndex>,
 }
 
-/// novad, as the app its modules run in.
 pub struct Novad;
 
 impl nova_modules::App for Novad {
@@ -111,7 +91,6 @@ nova_modules::modules! {
 mod tests {
     use super::*;
 
-    /// Each module is a feature whose daemon side names it.
     #[test]
     fn every_module_is_a_daemon_feature() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");

@@ -1,30 +1,18 @@
-//! The region picker's, the card's and the recording's sums, without
-//! GPUI's windows.
-//! Every rectangle is in a window's logical pixels unless it says frame
-//! pixels.
-
 use gpui::{Bounds, Pixels, Point, Size, bounds, point, px, size};
 use nova_recording_api::LayoutRect;
 use nova_screenshot_api::PixelRect;
 use std::time::{Duration, Instant};
 
-/// The rectangle between where a drag started and where it is now.
 pub fn region(from: Point<Pixels>, to: Point<Pixels>) -> Bounds<Pixels> {
     bounds(point(from.x.min(to.x), from.y.min(to.y)), size((to.x - from.x).abs(), (to.y - from.y).abs()))
 }
 
-/// Whether a drag's region is too small either way to be one (a click).
 pub fn is_click(region: Bounds<Pixels>, min_drag: Pixels) -> bool {
     region.size.width < min_drag || region.size.height < min_drag
 }
 
-/// A region as the frame's pixels (`save_capture`'s rect): the frame is the
-/// screen at its own scale, `scale` its width over the window's. Rounded
-/// outward, so every pixel the outline touches is in, and kept on the
-/// frame.
 pub fn to_pixels(region: Bounds<Pixels>, scale: f32, frame: Size<u32>) -> PixelRect {
     let edge = |value: Pixels, round: fn(f32) -> f32, most: u32| -> u32 {
-        // In the frame's range first, so the cast neither wraps nor saturates.
         round(f32::from(value) * scale).clamp(0.0, most as f32) as u32
     };
     let left = edge(region.origin.x, f32::floor, frame.width);
@@ -34,10 +22,6 @@ pub fn to_pixels(region: Bounds<Pixels>, scale: f32, frame: Size<u32>) -> PixelR
     PixelRect { x: left, y: top, width: right.saturating_sub(left), height: bottom.saturating_sub(top) }
 }
 
-/// A region in a screen's logical pixels as a rectangle of the
-/// compositor's layout (`start_recording`'s region): moved by the screen's
-/// place in it, and rounded inward to an even size, which video encoders
-/// need.
 pub fn to_layout(region: Bounds<Pixels>, origin: Point<Pixels>) -> LayoutRect {
     let (x, y) = (f32::from(region.origin.x), f32::from(region.origin.y));
     let (left, top) = (x.ceil(), y.ceil());
@@ -51,17 +35,12 @@ pub fn to_layout(region: Bounds<Pixels>, origin: Point<Pixels>) -> LayoutRect {
     }
 }
 
-/// A recording's length as its pill and card say it: "0:07", "12:34",
-/// "1:02:03".
 pub fn clock(ms: u64) -> String {
     let total = ms / 1000;
     let (hours, minutes, seconds) = (total / 3600, total / 60 % 60, total % 60);
     if hours > 0 { format!("{hours}:{minutes:02}:{seconds:02}") } else { format!("{minutes}:{seconds:02}") }
 }
 
-/// The marks around a recorded region's corners, just outside it (`gap`
-/// away) so they aren't in the recording: two bars a corner, each `length`
-/// along and `width` thick, meeting on the corner.
 pub fn marks(region: Bounds<Pixels>, gap: Pixels, length: Pixels, width: Pixels) -> [Bounds<Pixels>; 8] {
     let outer = region.dilate(gap);
     let (left, top) = (outer.origin.x, outer.origin.y);
@@ -81,8 +60,6 @@ pub fn marks(region: Bounds<Pixels>, gap: Pixels, length: Pixels, width: Pixels)
     ]
 }
 
-/// The size a picture of `picture` pixels is drawn at to fit in `room`
-/// whole, keeping its shape (the card's shot).
 pub fn contain(picture: Size<u32>, room: Size<Pixels>) -> Size<Pixels> {
     if picture.width == 0 || picture.height == 0 {
         return size(px(0.0), px(0.0));
@@ -91,21 +68,16 @@ pub fn contain(picture: Size<u32>, room: Size<Pixels>) -> Size<Pixels> {
     size(px(picture.width as f32 * scale), px(picture.height as f32 * scale))
 }
 
-/// "960 × 560", for the size badge and the card.
 pub fn size_label(width: u32, height: u32) -> String {
     format!("{width} × {height}")
 }
 
-/// The folder a saved shot is in, as the card says it: its last two parts
-/// (`Pictures/Screenshots`).
 pub fn folder_label(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
     let end = parts.len().saturating_sub(1);
     parts[end.saturating_sub(2)..end].join("/")
 }
 
-/// Where the size badge sits: its right edge on the region's, just under
-/// it, or just inside its bottom when that is off the screen.
 pub fn under_region(region: Bounds<Pixels>, item: Size<Pixels>, screen: Size<Pixels>, gap: Pixels) -> Point<Pixels> {
     let x = (region.origin.x + region.size.width - item.width).max(px(0.0));
     let bottom = region.origin.y + region.size.height;
@@ -114,8 +86,6 @@ pub fn under_region(region: Bounds<Pixels>, item: Size<Pixels>, screen: Size<Pix
     point(x, y)
 }
 
-/// The four rectangles of `screen` around `clear`, the veil's pieces (the
-/// whole screen in the first when `clear` is empty).
 pub fn around(clear: Bounds<Pixels>, screen: Size<Pixels>) -> [Bounds<Pixels>; 4] {
     let zero = px(0.0);
     let (top, bottom) = (clear.origin.y, clear.origin.y + clear.size.height);
@@ -131,19 +101,14 @@ pub fn around(clear: Bounds<Pixels>, screen: Size<Pixels>) -> [Bounds<Pixels>; 4
     ]
 }
 
-/// A card's time: it drains over `duration`, and holds while the pointer is on
-/// the card.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Countdown {
     duration: Duration,
-    /// Time counted before the current run, and when that run started
-    /// (none while held).
     spent: Duration,
     since: Option<Instant>,
 }
 
 impl Countdown {
-    /// A full one, running from `now`.
     pub fn start(duration: Duration, now: Instant) -> Self {
         Self { duration, spent: Duration::ZERO, since: Some(now) }
     }
@@ -159,12 +124,10 @@ impl Countdown {
         }
     }
 
-    /// The pointer holds it.
     pub fn held(&self) -> bool {
         self.since.is_none()
     }
 
-    /// The share of its time left, 1 to 0.
     pub fn remaining(&self, now: Instant) -> f32 {
         if self.duration.is_zero() {
             return 0.0;
@@ -174,7 +137,6 @@ impl Countdown {
         1.0 - spent.as_secs_f32() / self.duration.as_secs_f32()
     }
 
-    /// It is running (not held, not out).
     pub fn running(&self, now: Instant) -> bool {
         self.since.is_some() && self.remaining(now) > 0.0
     }
@@ -275,10 +237,8 @@ mod tests {
     fn the_marks_sit_outside_the_region_s_corners() {
         let region = rect(100.0, 100.0, 200.0, 100.0);
         let marks = marks(region, px(4.0), px(18.0), px(3.0));
-        // The top left corner's bar runs right from just outside the corner.
         assert_eq!(marks[0], rect(93.0, 93.0, 21.0, 3.0));
         assert_eq!(marks[1], rect(93.0, 93.0, 3.0, 21.0));
-        // The bottom right corner's: ending on it.
         assert_eq!(marks[6], rect(286.0, 204.0, 21.0, 3.0));
         assert_eq!(marks[7], rect(304.0, 186.0, 3.0, 21.0));
         assert!(marks.iter().all(|mark| !mark.intersects(&region)));

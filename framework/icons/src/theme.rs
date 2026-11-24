@@ -1,29 +1,16 @@
-//! Icon themes: which one the user picked, and the folders a theme (with
-//! the themes it inherits, and hicolor last) keeps its icons in, the ones
-//! closest to the size looked for first, as the Icon Theme Specification
-//! orders them.
-
 use super::ini::Ini;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// The theme every other one falls back to, which apps install into.
 pub const HICOLOR: &str = "hicolor";
-/// GTK's theme when none is set, which GTK apps then show: the user's
-/// theme when they picked none, if it's installed.
 const GTK_DEFAULT: &str = "Adwaita";
-/// Quickshell's own choice of theme, which wins like it does there.
 pub const QUICKSHELL_VAR: &str = "QS_ICON_THEME";
 const PLATFORM_THEME_VAR: &str = "QT_QPA_PLATFORMTHEME";
 const INDEX_FILE: &str = "index.theme";
 const THEME_GROUP: &str = "Icon Theme";
-/// Themes followed through `Inherits`, so a loop of them ends.
 const MAX_THEMES: usize = 16;
-/// The spec's default `Threshold`.
 const DEFAULT_THRESHOLD: u32 = 2;
 
-/// Where a desktop's settings keep the icon theme's name: a file below the
-/// config folder, its group and key.
 struct Setting {
     file: &'static str,
     group: &'static str,
@@ -36,10 +23,6 @@ const KDE: Setting = Setting { file: "kdeglobals", group: "Icons", key: "Theme" 
 const GTK4: Setting = Setting { file: "gtk-4.0/settings.ini", group: "Settings", key: "gtk-icon-theme-name" };
 const GTK3: Setting = Setting { file: "gtk-3.0/settings.ini", group: "Settings", key: "gtk-icon-theme-name" };
 
-/// The icon theme the user picked: `QS_ICON_THEME`, else the settings of
-/// the Qt platform theme in use (qt6ct, KDE, else GTK's), else the other
-/// desktops' settings, else GTK's default (Adwaita), else hicolor. Only an
-/// installed theme counts.
 pub fn current_name(var: impl Fn(&str) -> Option<String>, config_home: Option<&Path>, base_dirs: &[PathBuf]) -> String {
     let installed = |name: &str| base_dirs.iter().any(|base| base.join(name).join(INDEX_FILE).is_file());
     if let Some(name) = var(QUICKSHELL_VAR).filter(|name| is_name(name) && installed(name)) {
@@ -62,28 +45,18 @@ pub fn current_name(var: impl Fn(&str) -> Option<String>, config_home: Option<&P
         .unwrap_or_else(|| HICOLOR.to_string())
 }
 
-/// A theme or icon name: a single path component, not hidden.
 pub fn is_name(name: &str) -> bool {
     !name.is_empty() && !name.starts_with('.') && !name.contains(['/', '\0'])
 }
 
-/// A folder icons may be in.
 #[derive(Debug, PartialEq)]
 pub struct IconDir {
     pub path: PathBuf,
-    /// Whether a shortened name may match here (`dialog-information` for
-    /// `dialog-information-symbolic`): not for app or file type icons, as
-    /// in Qt, so `google-chrome` never shows some `google` icon.
     pub generic: bool,
 }
 
-/// `Context`s whose icons only match their exact name.
 const EXACT_CONTEXTS: [&str; 2] = ["Applications", "MimeTypes"];
 
-/// The folders `theme`'s icons may be in, best first for icons `size`
-/// pixels square: its own, then each theme it inherits (depth first), then
-/// hicolor's; within a theme, the folders whose size matches, then the
-/// closest, each in every base folder that has it.
 pub fn icon_dirs(theme: &str, base_dirs: &[PathBuf], size: u32) -> Vec<IconDir> {
     let mut dirs = Vec::new();
     for name in chain(theme, base_dirs) {
@@ -92,11 +65,9 @@ pub fn icon_dirs(theme: &str, base_dirs: &[PathBuf], size: u32) -> Vec<IconDir> 
             .list(THEME_GROUP, "Directories")
             .into_iter()
             .chain(index.list(THEME_GROUP, "ScaledDirectories"))
-            // Inside the theme's folder only.
             .filter(|subdir| Path::new(subdir).is_relative() && !subdir.split('/').any(|part| part == ".."))
             .map(|subdir| (SubDir::read(&index, subdir).distance(size), subdir))
             .collect();
-        // Stable, so equally close folders keep the theme's order.
         subdirs.sort_by_key(|(distance, _)| *distance);
         let mut seen = BTreeSet::new();
         for (_, subdir) in subdirs {
@@ -116,8 +87,6 @@ pub fn icon_dirs(theme: &str, base_dirs: &[PathBuf], size: u32) -> Vec<IconDir> 
     dirs
 }
 
-/// `theme` and the themes it inherits, depth first, each once, and hicolor
-/// last.
 fn chain(theme: &str, base_dirs: &[PathBuf]) -> Vec<String> {
     let mut chain: Vec<String> = Vec::new();
     let mut next = vec![theme.to_string()];
@@ -134,7 +103,6 @@ fn chain(theme: &str, base_dirs: &[PathBuf]) -> Vec<String> {
     chain
 }
 
-/// `theme`'s description: the first base folder's that has one.
 fn index(theme: &str, base_dirs: &[PathBuf]) -> Option<Ini> {
     base_dirs.iter().find_map(|base| Ini::read(&base.join(theme).join(INDEX_FILE)))
 }
@@ -146,8 +114,6 @@ enum Kind {
     Threshold,
 }
 
-/// One of a theme's folders, as its `index.theme` describes it, in pixels
-/// (its size times its scale).
 #[derive(Debug, PartialEq)]
 struct SubDir {
     kind: Kind,
@@ -176,8 +142,6 @@ impl SubDir {
         }
     }
 
-    /// How far its icons are from `size` (the spec's
-    /// DirectorySizeDistance); 0 when they match.
     fn distance(&self, size: u32) -> u32 {
         let (low, high) = match self.kind {
             Kind::Fixed => (self.size, self.size),
@@ -211,7 +175,6 @@ mod tests {
         assert_eq!(SubDir::read(&index, "48x48/apps").distance(48), 0);
         assert_eq!(SubDir::read(&index, "scalable/apps").distance(128), 0);
         assert_eq!(SubDir::read(&index, "scalable/apps").distance(512), 256);
-        // Threshold, 2 either side by default.
         assert_eq!(SubDir::read(&index, "32x32/apps").distance(34), 0);
         assert_eq!(SubDir::read(&index, "32x32/apps").distance(40), 6);
         assert_eq!(SubDir::read(&index, "64x64@2/apps").distance(128), 0);
@@ -239,7 +202,6 @@ mod tests {
             "[Icon Theme]\nDirectories=48x48/apps,scalable/apps\n[48x48/apps]\nSize=48\nType=Fixed\n[scalable/apps]\nSize=128\nType=Scalable\nMinSize=1\nMaxSize=512\n",
             &["48x48/apps", "scalable/apps"],
         );
-        // The user's hicolor icons, without an index of their own.
         std::fs::create_dir_all(user.join("hicolor/scalable/apps")).unwrap();
 
         let dirs = icon_dirs("Papirus-Dark", &[user.clone(), system.clone()], 128);
@@ -278,7 +240,6 @@ mod tests {
         assert_eq!(name(&[]), "Papirus-Dark");
         assert_eq!(name(&[(PLATFORM_THEME_VAR, "kde")]), "breeze");
         assert_eq!(name(&[(QUICKSHELL_VAR, "breeze")]), "breeze");
-        // Not installed: the settings decide.
         assert_eq!(name(&[(QUICKSHELL_VAR, "Adwaita")]), "Papirus-Dark");
         std::fs::write(config.join("gtk-3.0/settings.ini"), "[Settings]\ngtk-icon-theme-name=Gone\n").unwrap();
         assert_eq!(name(&[]), "breeze");

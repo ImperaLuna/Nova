@@ -1,13 +1,7 @@
-//! Compositor IPC servers replaying recorded niri and Hyprland sessions.
-
 use super::*;
 
-/// A compositor's sockets in a test's folder, serving what the real one sent
-/// in `framework/compositor/recorded/<name>`: its whole event stream at once and, for
-/// Hyprland, its answers at the end of the recording. Every request is kept.
 pub(super) struct FakeCompositor {
     requests: Arc<Mutex<Vec<String>>>,
-    /// The windows the fake niri lists, as JSON (the recording's at first).
     windows: Arc<Mutex<Vec<Value>>>,
 }
 
@@ -17,8 +11,6 @@ impl FakeCompositor {
         std::fs::read_to_string(dir.join(file)).unwrap()
     }
 
-    /// Answers each connection's one request with `respond`, then keeps the
-    /// connection open until the client closes it, as an event stream is.
     pub(super) fn answer(&self, socket: &Path, respond: impl Fn(&str) -> String + Send + Sync + 'static) {
         let listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
         let (requests, respond) = (Arc::clone(&self.requests), Arc::new(respond));
@@ -27,7 +19,6 @@ impl FakeCompositor {
                 let (requests, respond) = (Arc::clone(&requests), Arc::clone(&respond));
                 std::thread::spawn(move || {
                     let mut stream = stream.unwrap();
-                    // niri's requests end with a newline; Hyprland's clients stop writing.
                     let mut request = String::new();
                     BufReader::new(&stream).read_line(&mut request).unwrap();
                     let request = request.trim().to_owned();
@@ -40,8 +31,6 @@ impl FakeCompositor {
         });
     }
 
-    /// Sends `events` to each client that connects, without waiting for a
-    /// request, and keeps the connection open.
     pub(super) fn stream(socket: &Path, events: String) {
         let listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
         std::thread::spawn(move || {
@@ -64,7 +53,6 @@ impl FakeCompositor {
         let outputs = format!("{}\n", json!({"Ok": {"Outputs": serde_json::from_str::<Value>(&outputs).unwrap()}}));
         let socket = dir.join("niri.sock");
         fake.answer(&socket, move |request| match request {
-            // The recording starts with niri's answer to this.
             r#""EventStream""# => events.clone(),
             r#""Windows""# => format!("{}\n", json!({"Ok": {"Windows": *lock(&windows)}})),
             r#""Outputs""# => outputs.clone(),
@@ -74,8 +62,6 @@ impl FakeCompositor {
         (fake, backend)
     }
 
-    /// Hyprland on a `hyprland.conf`, as the recording's was: it knows no
-    /// Lua dispatchers.
     pub(super) fn hyprland(dir: &Path) -> (Self, Box<dyn nova_compositor::Backend>) {
         Self::hyprland_on(
             dir,
@@ -85,12 +71,6 @@ impl FakeCompositor {
         )
     }
 
-    /// Hyprland on a `hyprland.lua` (all of 0.57), answering as the real one
-    /// in `recorded/hyprland-0.57/dispatch.json` did: `dispatched` is what it
-    /// said to a dispatcher it ran, `built` what building one said
-    /// (`scripts/record-hyprland-dispatch.py`): a dispatcher is `userdata`.
-    /// One that built runs and gets the answer `hl.dsp.no_op()` got; one that
-    /// didn't gets its error.
     pub(super) fn hyprland_lua(dir: &Path) -> (Self, Box<dyn nova_compositor::Backend>) {
         let recorded: Value = serde_json::from_str(&Self::recorded("hyprland-0.57", "dispatch.json")).unwrap();
         Self::hyprland_on(dir, move |dispatcher| {
@@ -108,7 +88,6 @@ impl FakeCompositor {
         })
     }
 
-    /// The recorded Hyprland, answering each dispatcher with `dispatched`.
     fn hyprland_on(
         dir: &Path,
         dispatched: impl Fn(&str) -> String + Send + Sync + 'static,
@@ -137,15 +116,12 @@ impl FakeCompositor {
         (fake, backend)
     }
 
-    /// Has the fake niri list a window of `app_id`, with id `id`, on the
-    /// recording's workspace 2, as an app that shows one does.
     pub(super) fn open_window(&self, id: u64, app_id: &str) {
         let window = json!({"id": id, "title": app_id, "app_id": app_id, "pid": 2000, "workspace_id": 2,
             "is_focused": false, "is_floating": false, "is_urgent": false});
         lock(&self.windows).push(window);
     }
 
-    /// The requests that weren't queries or the event stream.
     pub(super) fn actions(&self) -> Vec<String> {
         let queries = [r#""EventStream""#, r#""Windows""#, r#""Outputs""#, nova_compositor::HYPRLAND_LUA_PROBE];
         lock(&self.requests)
@@ -155,16 +131,11 @@ impl FakeCompositor {
             .collect()
     }
 
-    /// How many requests were exactly `request`.
     pub(super) fn sent(&self, request: &str) -> usize {
         lock(&self.requests).iter().filter(|r| *r == request).count()
     }
 }
 
-/// novad follows `fake` until its desktop has what the recording ends with:
-/// the second layout, no focused window, and a workspace named `web`
-/// (niri) or Hyprland's special workspace `magic`, which the window on `web`
-/// moved to.
 pub(super) fn follow_to_the_end(novad: &TestDaemon) -> (Client, Value) {
     let mut client = novad.connect();
     client.request(1, "subscribe", Some(json!({"topics": ["compositor"]})));

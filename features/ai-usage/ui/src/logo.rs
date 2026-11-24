@@ -1,11 +1,3 @@
-//! The tools' own marks, filled in one color: the brands' 24x24 glyphs from
-//! LobeHub's icon set (@lobehub/icons-static-svg, MIT), Anthropic's for
-//! Claude and Codex's own.
-//!
-//! The look kit's icons are line drawings; these are solid shapes with
-//! holes (even-odd), so each is a small SVG picture of its own, made in the
-//! color asked for. GPUI keeps the drawn picture per document.
-
 use gpui::{Hsla, Image, ImageFormat, IntoElement, Pixels, Rgba, Styled, img};
 use nova_ai_usage_api::AiProvider;
 use std::cell::RefCell;
@@ -22,7 +14,6 @@ fn path(provider: AiProvider) -> &'static str {
     }
 }
 
-/// The SVG document of `provider`'s mark in `color`.
 fn document(provider: AiProvider, color: Hsla) -> String {
     let Rgba { r, g, b, a } = color.into();
     let channel = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -36,12 +27,9 @@ fn document(provider: AiProvider, color: Hsla) -> String {
 }
 
 thread_local! {
-    /// Each mark made so far, by tool and color: a spinning pill draws its
-    /// logo every frame.
     static MADE: RefCell<HashMap<(&'static str, u32), Arc<Image>>> = RefCell::new(HashMap::new());
 }
 
-/// `provider`'s mark, `size` square, in `color`.
 pub fn logo(provider: AiProvider, size: Pixels, color: Hsla) -> impl IntoElement {
     let key = (path(provider), u32::from(Rgba::from(color)));
     let picture = MADE.with_borrow_mut(|made| {

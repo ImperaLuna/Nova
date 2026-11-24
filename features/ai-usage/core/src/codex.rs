@@ -1,9 +1,3 @@
-//! Codex's limits, from the session logs Codex writes itself
-//! (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`). After each turn Codex
-//! logs a `token_count` event holding the account's rate limits, so the
-//! newest one is the current state. Nothing here talks to the network or
-//! reads Codex's credentials.
-
 use super::{display_plan, round_percent};
 use jiff::Timestamp;
 use nova_ai_usage_api::{UsageLimit, UsageWindow};
@@ -12,25 +6,18 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-/// How much of a log's end is searched for its newest limits. A turn's
-/// `token_count` is among its last lines.
 const TAIL_BYTES: u64 = 512 * 1024;
-/// Newest logs tried at startup before giving up on finding limits.
 const LOGS_TRIED: usize = 20;
-/// Windows up to a day long are the session limit, longer ones weekly.
 const SESSION_WINDOW_MAX_MINUTES: i64 = 24 * 60;
-/// The id of the account's own limits; other ids are a model's.
 pub const MAIN_LIMIT_ID: &str = "codex";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodexUsage {
     pub plan: Option<String>,
     pub limits: Vec<UsageLimit>,
-    /// When Codex logged them; a newer entry replaces an older one.
     pub logged_at: Timestamp,
 }
 
-/// `$CODEX_HOME`, else `~/.codex`.
 pub fn default_home() -> Option<PathBuf> {
     nova_paths::path_var("CODEX_HOME").or_else(|| nova_paths::home().map(|home| home.join(".codex")))
 }
@@ -39,15 +26,9 @@ pub fn sessions_dir(home: &Path) -> PathBuf {
     home.join("sessions")
 }
 
-/// The newest limits in any session log. The most recently written log
-/// needn't hold them: with two sessions open, one can log other lines after
-/// the other logged newer limits. So logs are read newest first until one
-/// was last written before the newest limits found so far.
 pub fn newest(sessions: &Path) -> Option<CodexUsage> {
     let mut logs = Vec::new();
     collect_logs(sessions, &mut logs);
-    // Newest first. File times are coarse, so ties are common; Codex's file
-    // names start with the session's time, so the later name is newer.
     logs.sort_by(|a, b| b.cmp(a));
     let mut best: Option<CodexUsage> = None;
     for (modified, path) in logs.into_iter().take(LOGS_TRIED) {
@@ -84,7 +65,6 @@ pub fn is_log(path: &Path) -> bool {
     path.extension().is_some_and(|extension| extension == "jsonl")
 }
 
-/// The newest limits in one log, from the end of the file.
 pub fn read_log(path: &Path) -> Option<CodexUsage> {
     let mut file = std::fs::File::open(path).ok()?;
     let length = file.metadata().ok()?.len();
@@ -93,13 +73,9 @@ pub fn read_log(path: &Path) -> Option<CodexUsage> {
     let mut tail = Vec::new();
     file.take(TAIL_BYTES).read_to_end(&mut tail).ok()?;
     let text = String::from_utf8_lossy(&tail);
-    // A tail that starts mid-file starts mid-line; parsing skips that line.
     text.lines().rev().filter(|line| line.contains("\"rate_limits\"")).find_map(parse_line)
 }
 
-/// One log line, when it's a `token_count` event with Codex's own limits.
-/// Reads both the current shape (`window_minutes`, `resets_at` in Unix
-/// seconds) and the older one (`resets_in_seconds` from the line's time).
 pub fn parse_line(line: &str) -> Option<CodexUsage> {
     let entry: Value = serde_json::from_str(line).ok()?;
     let payload = entry.get("payload")?;
@@ -107,7 +83,6 @@ pub fn parse_line(line: &str) -> Option<CodexUsage> {
         return None;
     }
     let limits = payload.get("rate_limits")?.as_object()?;
-    // Models with limits of their own log them under another id.
     if limits.get("limit_id").and_then(Value::as_str).is_some_and(|id| id != MAIN_LIMIT_ID) {
         return None;
     }
@@ -138,17 +113,13 @@ pub fn parse_line(line: &str) -> Option<CodexUsage> {
     Some(CodexUsage { plan, limits: windows, logged_at })
 }
 
-/// One of Codex's limit windows, as its logs and its usage endpoint give it.
 pub struct Window {
-    /// What it is when its length isn't given: the first is the session.
     pub fallback: UsageWindow,
     pub minutes: Option<i64>,
     pub used: f64,
     pub resets_at: Option<Timestamp>,
 }
 
-/// Codex's windows as limits, session first. Which window is which goes by
-/// its length: plans differ in which they have and in what order.
 pub fn usage_limits(windows: impl IntoIterator<Item = Window>) -> Vec<UsageLimit> {
     let mut limits: Vec<UsageLimit> = Vec::new();
     for window in windows {
@@ -173,10 +144,8 @@ pub fn usage_limits(windows: impl IntoIterator<Item = Window>) -> Vec<UsageLimit
 mod tests {
     use super::*;
 
-    /// Shapes recorded from Codex logs, with the times swapped for fixed ones.
     const PLUS: &str = r#"{"timestamp":"2026-10-23T06:40:12.345Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":12000,"cached_input_tokens":9000,"output_tokens":800,"reasoning_output_tokens":300,"total_tokens":12800},"model_context_window":272000},"rate_limits":{"primary":{"used_percent":12.0,"window_minutes":300,"resets_at":1792746000},"secondary":{"used_percent":84.4,"window_minutes":10080,"resets_at":1793095200},"plan_type":"plus"}}}"#;
     const PRO_WEEKLY_ONLY: &str = r#"{"timestamp":"2026-10-23T06:40:12.345Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":{"used_percent":30.5,"window_minutes":10080,"resets_at":1793095200},"secondary":null,"plan_type":"pro"}}}"#;
-    /// codex-cli 0.163: Plus with only a weekly window, and more keys.
     const PLUS_WEEKLY_ONLY: &str = r#"{"timestamp":"2026-10-23T16:58:25.483Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":"codex","limit_name":null,"primary":{"used_percent":8.0,"window_minutes":10080,"resets_at":1793298916},"secondary":null,"credits":{"has_credits":false,"unlimited":false,"balance":"0"},"individual_limit":null,"spend_control_reached":null,"plan_type":"plus","rate_limit_reached_type":null}}}"#;
     const OLD_SHAPE: &str = r#"{"timestamp":"2026-10-23T06:00:00Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":{"used_percent":5.0,"window_minutes":299,"resets_in_seconds":600},"secondary":{"used_percent":40.0,"window_minutes":10079,"resets_in_seconds":3600}}}}"#;
 
@@ -215,8 +184,6 @@ mod tests {
         );
     }
 
-    /// A model with limits of its own logs them under its id; they aren't
-    /// the account's.
     #[test]
     fn a_models_own_limits_are_skipped() {
         let model = PLUS_WEEKLY_ONLY.replace(r#""limit_id":"codex""#, r#""limit_id":"codex_other_model""#);
@@ -231,9 +198,6 @@ mod tests {
         assert_eq!(usage.limits[1].resets_at.as_deref(), Some("2026-10-23T07:00:00Z"));
     }
 
-    /// File times advance only every few milliseconds, so logs written close
-    /// together often share one; then the name, which starts with Codex's
-    /// timestamp, decides. Several pairs, since the directory order varies.
     #[test]
     fn logs_with_the_same_time_go_by_name() {
         let root = nova_test_support::TempDir::new("codex-same-time");
@@ -251,8 +215,6 @@ mod tests {
         }
     }
 
-    /// Session A logged limits, then session B newer ones, then A wrote
-    /// another line: A is the newest file, B has the newest limits.
     #[test]
     fn the_newest_limits_win_over_the_newest_file() {
         let dir = nova_test_support::TempDir::new("codex-two-sessions");

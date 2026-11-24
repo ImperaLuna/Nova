@@ -1,10 +1,3 @@
-//! A pop-up's card: who it's from, the app, the summary and body (a low battery
-//! alert's battery and percent instead), progress, and the app's buttons (the
-//! first in the accent). A thin line along the bottom drains over its time; the
-//! pointer on it holds it, and shows ✕. Critical ones have a rim in the error
-//! color. It grows out of the quick settings button over its top right corner,
-//! folds back into it, or slides aside.
-
 use crate::logic::ago;
 use crate::pieces::{battery_amount, meter, who};
 use crate::popups::{Act, Reach};
@@ -26,25 +19,18 @@ use nova_look::{Glass, Glyph, RoundButton, Theme};
 use nova_notifications_api::{Notification, Urgency};
 use std::time::Instant;
 
-/// A share of a whole, as progress counts it.
 const PERCENT: f32 = 100.0;
 
-/// One card as this frame draws it.
 pub struct Look<'a> {
     pub entry: &'a Entry,
-    /// 0 gone to 1 in place.
     pub presence: f32,
-    /// Its height once in place, and the top of its slot.
     pub height: Pixels,
     pub slot_top: Pixels,
     pub now: Instant,
-    /// Seconds since the epoch, for how long ago it came.
     pub wall: i64,
 }
 
 impl Look<'_> {
-    /// Where its glass is: folded toward the button and raised, or slid
-    /// aside, by how present it is; and its corners' radius.
     pub fn bounds(&self) -> (Bounds<Pixels>, Pixels) {
         let presence = self.presence;
         let away = self.entry.leaving == Some(Leaving::Away);
@@ -60,8 +46,6 @@ impl Look<'_> {
     }
 }
 
-/// The card, its content laid out at full size inside the glass, and
-/// `measure` (which records the content's height) laid over it.
 pub fn card(look: &Look<'_>, reach: &Reach, measure: impl IntoElement, cx: &App) -> AnyElement {
     let (bounds, radius) = look.bounds();
     let theme = Theme::of(cx);
@@ -97,7 +81,6 @@ pub fn card(look: &Look<'_>, reach: &Reach, measure: impl IntoElement, cx: &App)
         .into_any_element()
 }
 
-/// What the card shows, at its full size.
 fn content(look: &Look<'_>, reach: &Reach, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let entry = look.entry;
@@ -134,7 +117,6 @@ fn content(look: &Look<'_>, reach: &Reach, cx: &App) -> Div {
         .children(timer)
 }
 
-/// The app and how long ago, the summary, the body, progress and buttons.
 fn lines(entry: &Entry, wall: i64, reach: &Reach, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let notification = &entry.notification;
@@ -199,8 +181,6 @@ fn lines(entry: &Entry, wall: i64, reach: &Reach, cx: &App) -> Div {
         .children(actions(notification, entry.key, reach, cx))
 }
 
-/// Its buttons, the first in the accent; those that don't fit on a line
-/// wrap to the next.
 fn actions(notification: &Notification, key: u64, reach: &Reach, cx: &App) -> Option<Div> {
     if notification.actions.is_empty() {
         return None;

@@ -1,22 +1,11 @@
-//! The machine and its user, for the quick settings header (feature
-//! `quick-settings`): the host name, when it booted, the distribution from
-//! os-release (its logo found in the icon theme), and what to call the
-//! user. All of it comes from files, the user database and the config, read
-//! when a client subscribes and again when the config's name changes.
-
 use nova_host_info::{Host, OperatingSystem};
 use nova_icons::Icons;
 
-/// os-release's two homes: the first is the admin's, the second the
-/// distribution's fallback (os-release(5)).
 const OS_RELEASE: [&str; 2] = ["/etc/os-release", "/usr/lib/os-release"];
 const HOSTNAME: &str = "/proc/sys/kernel/hostname";
-/// os-release's `ID` when it has none (os-release(5)).
 const DEFAULT_OS_ID: &str = "linux";
 const DEFAULT_OS_NAME: &str = "Linux";
 
-/// What the header shows now. `name` is what to call the user when the
-/// config says (`[quick-settings] name`), else their login name.
 pub fn read(name: Option<&str>, icons: &Icons) -> Host {
     let os_release = OS_RELEASE.iter().find_map(|path| std::fs::read_to_string(path).ok()).unwrap_or_default();
     let mut os = operating_system(&os_release);
@@ -29,8 +18,6 @@ pub fn read(name: Option<&str>, icons: &Icons) -> Host {
     }
 }
 
-/// `key`'s value in an os-release file's text, unquoted; an empty one is
-/// none. `nova doctor` and `nova setup` read the distro with it too.
 pub fn os_release_field(os_release: &str, key: &str) -> Option<String> {
     os_release.lines().find_map(|line| {
         let value = line.trim_start().strip_prefix(key)?.strip_prefix('=')?;
@@ -38,7 +25,6 @@ pub fn os_release_field(os_release: &str, key: &str) -> Option<String> {
     })
 }
 
-/// The distribution an os-release file describes, its logo by name.
 fn operating_system(os_release: &str) -> OperatingSystem {
     let field = |key: &str| os_release_field(os_release, key);
     OperatingSystem {
@@ -49,8 +35,6 @@ fn operating_system(os_release: &str) -> OperatingSystem {
     }
 }
 
-/// An os-release value without its shell quoting: single or double quotes,
-/// and backslash escapes inside double quotes.
 fn unquote(value: &str) -> String {
     if let Some(inner) = value.strip_prefix('\'').and_then(|value| value.strip_suffix('\'')) {
         return inner.to_string();
@@ -69,28 +53,21 @@ fn unquote(value: &str) -> String {
     out
 }
 
-/// The user's login name, else `$USER`.
 fn user_name() -> String {
     login_name().or_else(|| std::env::var("USER").ok()).unwrap_or_default()
 }
 
-/// This process's user's login name, from the user database (which may be
-/// LDAP or systemd-userdb, not just /etc/passwd).
 fn login_name() -> Option<String> {
     user_name_of(current_uid())
 }
 
-/// The user this process runs as.
 fn current_uid() -> libc::uid_t {
     // SAFETY: getuid can't fail.
     unsafe { libc::getuid() }
 }
 
-/// Big enough for any real user or group entry; the lookups say ERANGE
-/// otherwise.
 const ENTRY_BUFFER_BYTES: usize = 16 * 1024;
 
-/// User `uid`'s login name, from the user database.
 fn user_name_of(uid: libc::uid_t) -> Option<String> {
     // SAFETY: getpwuid_r writes only within `entry` and `buffer` (the sizes
     // passed), and sets `found` to `entry` or null.
@@ -100,8 +77,6 @@ fn user_name_of(uid: libc::uid_t) -> Option<String> {
     )
 }
 
-/// A name from a reentrant user or group database lookup: `lookup` fills
-/// an entry, its strings in a buffer, and `name` picks the name from it.
 fn database_name<Entry>(
     lookup: impl FnOnce(*mut Entry, *mut libc::c_char, usize, *mut *mut Entry) -> libc::c_int,
     name: impl FnOnce(&Entry) -> *mut libc::c_char,

@@ -1,30 +1,3 @@
-//! `nova setup`: installs what Nova needs on Arch, Fedora and Debian (and
-//! distros built on them), then sets it up for this user. NixOS uses the
-//! flake instead.
-//!
-//! Setup first makes a [`Plan`] from facts about the machine, prints it, and
-//! runs it after a yes. Making the plan changes nothing, so `--dry-run` and
-//! the tests see exactly what would run. Running it again is safe: files
-//! that are the user's (config.toml, features.toml) are only written when
-//! missing, and everything else is replaced or skipped when it's already
-//! right.
-//!
-//! The steps:
-//! - Packages: each feature that's on lists its distro's packages in
-//!   `features/<id>/feature.toml`, by GPU where that matters. A feature whose
-//!   `check.binaries` are all there already is skipped.
-//! - config.toml and features.toml, commented, when missing.
-//! - The systemd user unit, from `packaging/systemd/nova.service.in`, and
-//!   its drop-in that starts login apps after it (`app-.service.d`).
-//! - niri's blur behind Nova's glass and a rule hiding xembedsniproxy's
-//!   window (`packaging/compositor/niri.kdl`),
-//!   included from the user's niri config; Hyprland's rules (the lock
-//!   screen's restore, `packaging/compositor/hyprland.lua` required from a
-//!   Lua config, or `hyprland.conf` sourced from an old one).
-//!
-//! It doesn't install `nova-ui`, the UI: only Nova's Nix flake ships it so
-//! far, so setup fails at the end when it isn't on `PATH`.
-
 use crate::host::{Distro, Host};
 use nova_features::{Gpu, Manifest, Selection};
 use novad::checks;
@@ -35,20 +8,14 @@ use std::process::Command;
 
 const UNIT_TEMPLATE: &str = include_str!("../../../../packaging/systemd/nova.service.in");
 const UNIT_NOVA_PLACEHOLDER: &str = "@nova@";
-/// Orders login apps after novad (IMP-107), as `<units>/app-.service.d/nova.conf`.
 const APP_DROP_IN: &str = include_str!("../../../../packaging/systemd/app-.service.d/nova.conf");
 const APP_DROP_IN_PATH: &str = "app-.service.d/nova.conf";
 const NIRI_RULES: &str = include_str!("../../../../packaging/compositor/niri.kdl");
-/// Where the niri rules go, in Nova's config folder.
 const NIRI_RULES_FILE: &str = "niri.kdl";
 const HYPRLAND_RULES: &str = include_str!("../../../../packaging/compositor/hyprland.conf");
 const HYPRLAND_LUA_RULES: &str = include_str!("../../../../packaging/compositor/hyprland.lua");
-/// Where the Hyprland rules go, in Nova's config folder, and the name of
-/// Hyprland's own config file in its folder, in each of its two formats.
 const HYPRLAND_RULES_FILE: &str = "hyprland.conf";
 const HYPRLAND_LUA_RULES_FILE: &str = "hyprland.lua";
-/// AUR helpers, in the order setup prefers them. They install repo packages
-/// too, and ask for sudo themselves.
 const AUR_HELPERS: &[&str] = &["paru", "yay"];
 const FLAKE_HINT: &str = "On NixOS, Nova comes from its flake: add `github:ImperaLuna/Nova` to your flake inputs \
      and set `programs.nova.enable = true;` in its home-manager or NixOS module. Turn features on with \
@@ -57,28 +24,18 @@ const FLAKE_HINT: &str = "On NixOS, Nova comes from its flake: add `github:Imper
 
 #[derive(clap::Args)]
 pub struct SetupArgs {
-    /// Print the plan and change nothing.
     #[arg(long)]
     dry_run: bool,
-    /// Don't ask before running the plan, and answer yes for the package manager.
     #[arg(long, short)]
     yes: bool,
 }
 
-/// Where setup writes, for this user.
 #[derive(Debug, Clone)]
 pub struct Paths {
-    /// Nova's config folder (`~/.config/nova`).
     pub config_dir: PathBuf,
-    /// systemd's user units (`~/.config/systemd/user`).
     pub units_dir: PathBuf,
-    /// niri's config file (`~/.config/niri/config.kdl`), when there is one.
     pub niri_config: Option<PathBuf>,
-    /// Hyprland's config file, when there is one: `~/.config/hypr/hyprland.lua`
-    /// (the only one Hyprland 0.57 reads, and the one 0.56 prefers), else
-    /// `hyprland.conf`.
     pub hyprland_config: Option<PathBuf>,
-    /// The running nova binary, which the unit starts.
     pub nova: PathBuf,
 }
 
@@ -101,15 +58,12 @@ impl Paths {
     }
 }
 
-/// What setup looks at.
 pub struct Facts {
     pub host: Host,
     pub manifests: Vec<Manifest>,
     pub selection: Selection,
-    /// Where binaries are looked for.
     pub path_var: String,
     pub paths: Paths,
-    /// Answer yes for the package manager.
     pub yes: bool,
 }
 
@@ -135,13 +89,9 @@ impl Facts {
 
 #[derive(Debug, PartialEq)]
 pub enum Step {
-    /// Runs a command; setup stops when it fails.
     Run { why: String, argv: Vec<String> },
-    /// Writes a file only when it doesn't exist yet.
     Create { path: PathBuf, contents: String },
-    /// Writes a file that's Nova's, replacing what's there.
     Replace { path: PathBuf, contents: String },
-    /// Adds a line to the end of the user's file, unless it already has it.
     AppendLine { path: PathBuf, line: String },
 }
 
@@ -158,12 +108,10 @@ impl fmt::Display for Step {
 
 #[derive(Debug, PartialEq)]
 pub enum Plan {
-    /// NixOS: nothing to do here.
     UseTheFlake,
     Steps(Vec<Step>),
 }
 
-/// The plan for `facts`. Fails on a distro setup can't install packages on.
 pub fn plan(facts: &Facts) -> Result<Plan, String> {
     if facts.host.distro == Distro::NixOs {
         return Ok(Plan::UseTheFlake);
@@ -206,8 +154,6 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
     Ok(Plan::Steps(steps))
 }
 
-/// Nova's Hyprland rules in `config_dir`, in the format of `hyprland_config`,
-/// and the line that loads them from it.
 fn hyprland_steps(hyprland_config: &Path, config_dir: &Path) -> [Step; 2] {
     let lua = hyprland_config.extension().is_some_and(|extension| extension == "lua");
     let (file, contents) = match lua {
@@ -216,9 +162,7 @@ fn hyprland_steps(hyprland_config: &Path, config_dir: &Path) -> [Step; 2] {
     };
     let rules = config_dir.join(file);
     let line = match lua {
-        // Hyprland's `require` takes a file by its absolute path.
         true => format!("require({})", quoted(&rules)),
-        // Hyprland takes the rest of the line as the path, unquoted.
         false => format!("source = {}", rules.display()),
     };
     [
@@ -227,7 +171,6 @@ fn hyprland_steps(hyprland_config: &Path, config_dir: &Path) -> [Step; 2] {
     ]
 }
 
-/// Installs the packages of every feature that's on and isn't complete yet.
 fn package_steps(facts: &Facts, distro: &str) -> Vec<Step> {
     let gpu = gpu_for_packages(&facts.host);
     let needed: Vec<&Manifest> = facts
@@ -265,9 +208,6 @@ fn package_steps(facts: &Facts, distro: &str) -> Vec<Step> {
     vec![Step::Run { why, argv: [install, packages].concat() }]
 }
 
-/// The GPU whose variant a feature installs: NVIDIA's when its own driver
-/// runs (NVENC needs it; under nouveau NVIDIA's packages wouldn't work),
-/// else the first other GPU.
 fn gpu_for_packages(host: &Host) -> Option<Gpu> {
     if host.nvidia_driver && host.gpus.contains(&Gpu::Nvidia) {
         return Some(Gpu::Nvidia);
@@ -275,17 +215,14 @@ fn gpu_for_packages(host: &Host) -> Option<Gpu> {
     host.gpus.iter().copied().find(|gpu| *gpu != Gpu::Nvidia)
 }
 
-/// `path` as a double-quoted string, with `\\` and `"` escaped: how KDL,
-/// Lua and systemd's command lines spell a string.
 fn quoted(path: &Path) -> String {
     let escaped = path.display().to_string().replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{escaped}\"")
 }
 
-/// `path` as one word of a unit's command line: quoted, so a path with
-/// spaces stays one word, with `%` doubled so systemd doesn't read it as a
-/// specifier.
 fn unit_quoted(path: &Path) -> String {
+    // systemd reads `%` in a command line as a specifier:
+    // https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html#Specifiers
     quoted(path).replace('%', "%%")
 }
 
@@ -297,8 +234,6 @@ fn flag(on: bool, flag: &str) -> Vec<String> {
     if on { vec![flag.to_owned()] } else { vec![] }
 }
 
-/// A config.toml that sets nothing, so novad's defaults apply, and shows
-/// what can be set.
 fn default_config() -> String {
     format!(
         "# Nova's settings. novad applies a change as soon as you save.\n\
@@ -318,7 +253,6 @@ fn default_config() -> String {
     )
 }
 
-/// A features.toml that keeps every feature's default, listing them.
 fn default_selection(manifests: &[Manifest]) -> String {
     let listed = |default: bool| {
         manifests
@@ -352,7 +286,6 @@ fn default_selection(manifests: &[Manifest]) -> String {
     )
 }
 
-/// `nova setup`.
 pub fn run(args: &SetupArgs) -> Result<(), String> {
     let facts = Facts::gather(args.yes)?;
     let steps = match plan(&facts)? {
@@ -387,8 +320,6 @@ const NOT_INSTALLED: &str = "this nova runs from a source checkout (no share/nov
      and the service it would install couldn't find Nova's features, themes and UI. \
      Install Nova first (install.sh or a package), then run that nova's setup.";
 
-/// Whether Nova's resources were found next to the binary, which is where
-/// the installed service looks for them; a checkout's are relative paths.
 fn installed() -> bool {
     nova_paths::installed_or_checkout("features").is_absolute()
 }
@@ -404,16 +335,10 @@ fn confirmed() -> Result<bool, String> {
     Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
 }
 
-/// Runs one step. `path_var` is where its command is looked for.
 pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
     match step {
         Step::Run { argv, .. } => {
             let (program, args) = argv.split_first().ok_or("empty command")?;
-            // No timeout, unlike Nova's other waits: these run in the user's
-            // terminal (sudo's password, the package manager's questions, AUR
-            // builds that take long), and killing a package manager midway
-            // can leave its database locked. Ctrl-C stops them.
-            // The PATH binaries were found on, which may have more than ours.
             let status = Command::new(program)
                 .args(args)
                 .env("PATH", path_var)
@@ -444,8 +369,6 @@ pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Writes `path` by renaming a finished temp file over it, so a failed or
-/// cut-off write leaves the old file whole.
 fn write(path: &Path, contents: &str) -> Result<(), String> {
     create_parent(path)?;
     let name = path.file_name().ok_or_else(|| format!("{} isn't a file", path.display()))?;
@@ -464,7 +387,6 @@ fn create_parent(path: &Path) -> Result<(), String> {
     }
 }
 
-/// After the steps: what's left to do.
 fn finish(path_var: &str) -> Result<(), String> {
     if nova_paths::find_program(checks::GPUI_UI, path_var).is_none() {
         return Err(format!(
@@ -496,8 +418,6 @@ mod tests {
         }
     }
 
-    /// Facts for `distro` and `gpus`, with recording turned on so GPUs
-    /// matter, an empty PATH (nothing installed) and no niri config.
     fn facts(distro: Distro, gpus: Vec<Gpu>, nvidia_driver: bool) -> Facts {
         Facts {
             host: Host { distro, gpus, nvidia_driver },
@@ -553,7 +473,6 @@ mod tests {
         assert_eq!(gpu_for_packages(&hybrid), Some(Gpu::Intel));
     }
 
-    /// A temporary home with what the default features check for on its PATH.
     struct Home(nova_test_support::TempDir);
 
     impl Home {
@@ -576,11 +495,9 @@ mod tests {
     #[test]
     fn installed_features_are_skipped_and_the_aur_helper_is_used() {
         let home = Home::new("installed");
-        // Everything the default features check for is there: no install.
         let facts = Facts { path_var: home.path_var(), ..facts(Distro::Arch, vec![Gpu::Amd], false) };
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         assert!(!steps.iter().any(|step| matches!(step, Step::Run { why, .. } if why.starts_with("install"))));
-        // Without paru's own check, the AUR helper installs what's missing.
         std::fs::remove_file(home.0.join("usr/bin/wf-recorder")).unwrap();
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         let Step::Run { why, argv } = &steps[0] else { panic!("{:?}", steps[0]) };
@@ -612,8 +529,6 @@ mod tests {
         );
     }
 
-    /// The file steps on a real home: twice, to show a second run changes
-    /// nothing, keeps the user's files and doesn't add the include again.
     #[test]
     fn running_the_file_steps_twice_is_safe() {
         let home = Home::new("files");
@@ -684,8 +599,6 @@ mod tests {
         assert_eq!(unit_quoted(Path::new("/home/me/my apps/50%/nova")), r#""/home/me/my apps/50%%/nova""#);
     }
 
-    /// A helper found on setup's PATH (say `~/.local/bin`, missing from the
-    /// shell's) runs from there too.
     #[test]
     fn commands_run_with_the_path_they_were_found_on() {
         let home = Home::new("run");

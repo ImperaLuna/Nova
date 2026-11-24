@@ -1,8 +1,3 @@
-//! A small button on a card that asks something: quiet, or filled with the
-//! accent for the answer that goes ahead, dimmed while it can't be pressed. A
-//! pairing question's answers, a failure's Try again, a Wi-Fi password's
-//! Connect.
-
 use crate::Theme;
 use crate::tokens::{
     CONFIRM_BUTTON_HEIGHT, DIM_OPACITY, FONT_SIZE_SMALL, PAD, RADIUS_SEGMENT, WEIGHT_BODY, WEIGHT_TITLE,
@@ -16,7 +11,6 @@ use std::rc::Rc;
 
 type Clicked = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
-/// A card's button (see the module).
 #[derive(IntoElement)]
 pub struct PromptButton {
     id: ElementId,
@@ -31,13 +25,11 @@ impl PromptButton {
         Self { id: id.into(), label: label.into(), accent: false, enabled: true, on_click: None }
     }
 
-    /// Filled with the accent: the answer that goes ahead.
     pub fn accent(mut self, accent: bool) -> Self {
         self.accent = accent;
         self
     }
 
-    /// `false` dims it and takes no clicks.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self

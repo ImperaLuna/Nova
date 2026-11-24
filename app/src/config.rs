@@ -1,38 +1,7 @@
-//! The user's `config.toml`.
-//!
-//! ```toml
-//! # ~/.config/nova/config.toml
-//! [theme]
-//! name = "carbonfox"
-//! mode = "dark"
-//!
-//! [ai-usage]
-//! claude-usage-endpoint = true
-//! codex-usage-endpoint = true
-//!
-//! [screenshot]
-//! folder = "~/Pictures/Screenshots"
-//!
-//! [recording]
-//! folder = "~/Videos/Recordings"
-//!
-//! [quick-settings]
-//! name = "Luna"
-//!
-//! [wallpaper]
-//! path = "~/Pictures/Wallpapers/dusk.jpg"
-//! folder = "~/Pictures/Wallpapers"
-//! [wallpaper.outputs]
-//! DP-2 = "2861349227"  # a Wallpaper Engine Workshop item
-//! ```
-
-use nova_theme::ThemeChoice;
-// `[ai-usage]`, `[recording]`, `[screenshot]` and `[wallpaper]` are their
-// features' (`nova-ai-usage`, `nova-recording`, `nova-screenshot`,
-// `nova-wallpaper`).
 use nova_ai_usage::AiUsageConfig;
 use nova_recording::RecordingConfig;
 use nova_screenshot::ScreenshotConfig;
+use nova_theme::ThemeChoice;
 use nova_wallpaper::WallpaperConfig;
 use serde::Deserialize;
 use std::path::Path;
@@ -52,9 +21,6 @@ pub struct Config {
     pub quick_settings: QuickSettingsConfig,
     #[serde(default)]
     pub wallpaper: WallpaperConfig,
-    /// `[files]` set the look of the file manager Nova used to have; Nova
-    /// Files is its own app now. Ignored, so a config that still has it
-    /// loads.
     #[serde(default, rename = "files")]
     _files: Option<serde::de::IgnoredAny>,
 }
@@ -62,13 +28,10 @@ pub struct Config {
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct QuickSettingsConfig {
-    /// What the greeting calls the user, instead of their login name; ""
-    /// for no name.
     #[serde(default)]
     pub name: Option<String>,
 }
 
-/// The settings in `path`; a missing file means all defaults.
 pub fn read(path: &Path) -> Result<Config, String> {
     nova_settings::read_toml(path)
 }
@@ -118,6 +81,14 @@ mod tests {
     fn an_old_files_section_still_loads() {
         let config = toml::from_str::<Config>("[files]\nframe = 40\nlist = 100\n[screenshot]\nfolder = \"~/Shots\"");
         assert_eq!(config.unwrap().screenshot.folder.as_deref(), Some("~/Shots"));
+    }
+
+    #[test]
+    fn the_example_config_sets_every_section() {
+        let config: Config = toml::from_str(include_str!("../../packaging/config.example.toml")).unwrap();
+        assert_eq!(config.quick_settings.name.as_deref(), Some("Luna"));
+        assert_ne!(config.wallpaper, WallpaperConfig::default());
+        assert!(config.screenshot.folder().is_ok() && config.recording.folder().is_ok());
     }
 
     #[test]

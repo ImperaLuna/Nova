@@ -1,9 +1,3 @@
-//! What type of file something is, from its name, by the freedesktop.org
-//! shared MIME database's patterns (`mime/globs2` in each XDG data folder,
-//! which `update-mime-database` writes). The launcher's Files mode types
-//! what it finds this way, for the icon, without opening a file.
-//! [`Mime`] keeps it up to date as packages bring new types (`follow.rs`).
-
 mod follow;
 mod globs;
 
@@ -15,29 +9,20 @@ use std::io::Read;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 
-/// A folder.
 pub const DIRECTORY: &str = "inode/directory";
-/// A file of nothing.
 pub const EMPTY: &str = "application/x-zerosize";
-/// Any bytes, which every type that isn't `inode/*` is a kind of.
 pub const BINARY: &str = "application/octet-stream";
-/// What a database file may weigh at most; the real ones are well under.
 const MAX_DB_FILE: u64 = 16 * 1024 * 1024;
 
-/// The database, read from every data folder.
 #[derive(Debug, Default)]
 pub struct MimeDb {
     globs: Globs,
 }
 
 impl MimeDb {
-    /// Reads `mime/` in each of `data_dirs` (the most important first) and
-    /// the problems met, for the log. With none there it knows only folders
-    /// and the like, and binary.
     pub fn load(data_dirs: &[PathBuf]) -> (Self, Vec<String>) {
         let mut db = Self::default();
         let mut problems = Vec::new();
-        // The least important first, so a later folder's say wins.
         for dir in data_dirs.iter().rev().map(|dir| dir.join("mime")) {
             if let Some(text) = read_text(&dir.join("globs2"), &mut problems) {
                 db.globs.add(&text);
@@ -46,9 +31,6 @@ impl MimeDb {
         (db, problems)
     }
 
-    /// The type of the file `name` whose metadata is `metadata`, from its
-    /// name alone: never opens the file. A name several types claim gets
-    /// the first; one no type claims is binary.
     pub fn type_by_name<'a>(&'a self, name: &str, metadata: &Metadata) -> &'a str {
         if let Some(special) = special_type(metadata) {
             return special;
@@ -56,8 +38,6 @@ impl MimeDb {
         self.type_of_name(name, metadata.len())
     }
 
-    /// The type of a file `name` of `size` bytes, from its name alone: a
-    /// file that isn't on disk, like one in an archive.
     pub fn type_of_name<'a>(&'a self, name: &str, size: u64) -> &'a str {
         if size == 0 {
             return EMPTY;
@@ -66,7 +46,6 @@ impl MimeDb {
     }
 }
 
-/// The `inode/*` type of what isn't a plain file.
 fn special_type(metadata: &Metadata) -> Option<&'static str> {
     let kind = metadata.file_type();
     if kind.is_dir() {
@@ -114,7 +93,6 @@ pub mod tests {
     use super::*;
     use nova_test_support::TempDir;
 
-    /// A data folder with a small MIME database.
     pub fn data_dir(name: &str) -> TempDir {
         let dir = TempDir::new(name);
         let mime = dir.join("mime");

@@ -1,10 +1,3 @@
-//! A stand-in for Nova Files' `Search1` on a test bus, for the tests of
-//! the client and of the launcher's Files mode through it. It answers the
-//! way Nova Files does: stages as signals sent to the caller only, and it
-//! notes what it was asked to open or show. It serves the user's file
-//! manager (`org.freedesktop.FileManager1`) on the same bus too, noting the
-//! URIs it was asked to show.
-
 use super::NovaFiles;
 use super::client::{APP_ID, Client, PATH};
 use nova_base::lock;
@@ -21,7 +14,6 @@ use zbus::object_server::SignalEmitter;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// What the stand-in was asked.
 #[derive(Default)]
 pub struct Asked {
     pub searches: Vec<(u64, String, u32)>,
@@ -29,26 +21,19 @@ pub struct Asked {
     pub cancelled: Vec<u64>,
     pub opened: Vec<String>,
     pub shown: Vec<String>,
-    /// The file manager's `ShowFolders` and `ShowItems` URIs.
     pub folders_elsewhere: Vec<String>,
     pub items_elsewhere: Vec<String>,
 }
 
-/// The stand-in, serving while it lives.
 pub struct StandIn {
     pub asked: Arc<Mutex<Asked>>,
-    /// Lets the stage of each `late` search go, one per send, as an index
-    /// opening would.
     pub release_late: Sender<()>,
-    /// The id of each `late` search, once it's asked.
     pub late_asked: Mutex<Receiver<u64>>,
     _connection: zbus::Connection,
     _file_manager: zbus::Connection,
 }
 
 impl StandIn {
-    /// Serves as Nova Files on the bus at `address`; what it finds is under
-    /// `root`.
     pub fn serve(address: &str, root: &str) -> Self {
         let asked = Arc::default();
         let (release_late, late) = mpsc::channel();
@@ -71,19 +56,14 @@ impl StandIn {
     }
 }
 
-/// A client of the bus at `address`.
 pub fn client(address: &str) -> Client {
     Client::connect(&nova_session_bus::Bus::Address(address.to_string()), TIMEOUT).unwrap()
 }
 
-/// The feature's module on the bus at `address`, with Home at `home`, in a
-/// mode with Nova Files' own windows unless `launcher_mode`; it keeps its
-/// log under `dir`.
 pub fn nova_files(address: &str, dir: &Path, home: Option<PathBuf>, launcher_mode: bool) -> NovaFiles {
     NovaFiles { client: Ok(client(address)), mime: mime(dir), home, own_windows: !launcher_mode }
 }
 
-/// An empty MIME database, logging under `dir`.
 pub fn mime(dir: &Path) -> Arc<Mime> {
     let logger = Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::default()).unwrap();
     Mime::follow(Vec::new(), Arc::new(logger))
@@ -98,10 +78,6 @@ struct Search1 {
 
 #[zbus::interface(name = "io.github.ImperaLuna.NovaFiles.Search1")]
 impl Search1 {
-    /// `kit` finds two stages, `slow` one that's never done, `late` one
-    /// that comes after Search answered, once `release_late` lets it (as
-    /// the first search after Nova Files starts waits for its index),
-    /// `broken` fails, and anything else finds nothing.
     #[expect(
         clippy::too_many_arguments,
         reason = "Search's three arguments, plus the header and emitter zbus hands in"
@@ -128,7 +104,6 @@ impl Search1 {
                 let _ = self.asked_late.send(id);
                 let (late, emitter, hits) = (Arc::clone(&self.late), to_caller.to_owned(), vec![hit("late.txt")]);
                 std::thread::spawn(move || {
-                    // A stand-in dropped before it's let go sends nothing.
                     if lock(&late).recv().is_ok() {
                         let _ = zbus::block_on(Self::found(&emitter, id, hits, true));
                     }
@@ -139,9 +114,6 @@ impl Search1 {
         }
     }
 
-    /// A typed path ending in `kit`, case aside, completes to the folder `kitchen.txt`
-    /// and the file `kitcen notes.md`, `~nobody/…` isn't a path it takes,
-    /// and anything else completes to nothing.
     fn complete(&self, typed: String, limit: u32) -> zbus::fdo::Result<Vec<(String, bool)>> {
         lock(&self.asked).completions.push((typed.clone(), limit));
         if typed.starts_with("~nobody") {

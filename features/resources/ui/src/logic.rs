@@ -1,15 +1,8 @@
-//! What the Resources card, page and graph work out, with no GPUI drawing
-//! in it: the rings' readings,
-//! the apps a search finds, and the numbers on an app's row.
-
 use nova_look::bytes::short_bytes;
 use nova_resources_api::{AppUsage, Resources};
 
-/// What a reading novad doesn't have shows.
 pub const DASH: &str = "—";
 
-/// One ring on the card: its name, how full it is (0 to 1) and the text in
-/// it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ring {
     pub label: &'static str,
@@ -17,18 +10,14 @@ pub struct Ring {
     pub reading: String,
 }
 
-/// "23%".
 pub fn percent(value: f32) -> String {
     format!("{}%", value.round())
 }
 
-/// `used` as a share of `total`, 0 to 1.
 pub fn share(used: u64, total: u64) -> f32 {
     if total == 0 { 0.0 } else { (used as f64 / total as f64).clamp(0.0, 1.0) as f32 }
 }
 
-/// CPU, memory, GPU and the CPU's temperature, a dash for what novad
-/// doesn't have.
 pub fn rings(now: Option<&Resources>) -> [Ring; 4] {
     let dash = || DASH.to_owned();
     let ring = |label, value: Option<f32>, reading: Option<String>| Ring {
@@ -52,18 +41,15 @@ pub fn rings(now: Option<&Resources>) -> [Ring; 4] {
     ]
 }
 
-/// The apps whose name has `query`, any case; all of them for none.
 pub fn matching<'a>(apps: &'a [AppUsage], query: &str) -> Vec<&'a AppUsage> {
     let query = query.trim().to_lowercase();
     apps.iter().filter(|app| query.is_empty() || app.name.to_lowercase().contains(&query)).collect()
 }
 
-/// "×3" beside an app that runs more than one process.
 pub fn processes(count: u32) -> Option<String> {
     (count > 1).then(|| format!("×{count}"))
 }
 
-/// An app's CPU share with one decimal: "6.1%".
 pub fn cpu(share: f32) -> String {
     format!("{share:.1}%")
 }

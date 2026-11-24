@@ -1,13 +1,3 @@
-//! The stage as the rest of the program sees it: [`Stage::start`] opens a
-//! stage on every screen and keeps doing so as screens come and go, and
-//! the other calls open and close panels by name.
-//!
-//! The state every screen shares is one entity, [`Panels`]: which panels
-//! are open and what each screen has. A screen's stage
-//! (`crate::view::StageView`) observes it and draws what it says, so
-//! opening a panel from anywhere (a click, `nova toggle`, another feature)
-//! is one change here.
-
 use crate::kept::Kept;
 use crate::registry;
 use crate::rules::{OpenPanels, PanelRules};
@@ -21,34 +11,20 @@ use nova_daemon_info::Slot;
 use std::any::Any;
 use std::collections::HashMap;
 
-/// How the stage is started.
 #[derive(Debug, Default)]
 pub struct StageOptions {
-    /// Slots no feature's manifest lists, filled whatever novad says.
     pub extra_slots: Vec<Slot>,
-    /// Log each motion's frames and the frames drawn at rest
-    /// (`crate::frames`).
     pub log_frames: bool,
 }
 
-/// What every screen's stage shares.
 #[derive(Default)]
 pub(crate) struct Panels {
     pub open: OpenPanels,
-    /// The panels each screen has, by the rules they open under.
     known: HashMap<DisplayId, Vec<PanelRules>>,
-    /// The size a feature last asked a panel to be ([`Stage::resize`]).
     sizes: HashMap<(DisplayId, SharedString), Size<Pixels>>,
-    /// Where a feature last put a panel's left edge ([`Stage::place`]).
     places: HashMap<(DisplayId, SharedString), Pixels>,
-    /// The outputs whose shown workspace has a fullscreen window
-    /// ([`Stage::set_fullscreen`]).
     fullscreen: Vec<SharedString>,
-    /// The page a panel with pages shows, other than its first
-    /// ([`Stage::show_page`]).
     pages: HashMap<(DisplayId, SharedString), SharedString>,
-    /// Whether every screen's stage keeps the compositor from going idle
-    /// ([`Stage::keep_awake`]).
     pub awake: bool,
 }
 
@@ -61,8 +37,6 @@ impl Panels {
         found.cloned()
     }
 
-    /// `screen`'s stage has these panels now. One that left closes.
-    /// Returns whether anything open, or the panels there, changed.
     pub fn know(&mut self, screen: DisplayId, panels: Vec<PanelRules>) -> bool {
         let closed = self.open.retain(|on, open| on != screen || panels.iter().any(|panel| panel.name == open.name));
         self.sizes.retain(|(on, name), _| *on != screen || panels.iter().any(|panel| panel.name == *name));
@@ -77,7 +51,6 @@ impl Panels {
         self.known.get(&screen).is_some_and(|panels| panels.iter().any(|panel| panel.name.as_ref() == name))
     }
 
-    /// Forgets the screens not in `here`, with what was open on them.
     fn keep_screens(&mut self, here: &[DisplayId]) -> bool {
         self.known.retain(|screen, _| here.contains(screen));
         self.sizes.retain(|(screen, _), _| here.contains(screen));
@@ -94,7 +67,6 @@ impl Panels {
         self.places.get(&(screen, name.clone())).copied()
     }
 
-    /// Whether the output called `output` shows a fullscreen window.
     pub fn fullscreen(&self, output: &str) -> bool {
         self.fullscreen.iter().any(|each| each.as_ref() == output)
     }
@@ -106,20 +78,15 @@ struct StageState {
     screens: Entity<Screens>,
     log_frames: bool,
     windows: Vec<(DisplayId, WindowHandle<StageView>)>,
-    /// What keeps each `shell.overlays` view alive.
     overlays: Kept<Box<dyn Any>>,
     _observers: Vec<Subscription>,
 }
 
 impl Global for StageState {}
 
-/// The stage. All of it is reached through these calls.
 pub struct Stage;
 
 impl Stage {
-    /// Opens a stage on every screen, and from then on follows the screens
-    /// and the features. Every feature's ui registers its views before
-    /// this.
     pub fn start(options: StageOptions, cx: &mut App) {
         let screens = Screens::follow(cx);
         let slots = Slots::follow(options.extra_slots, cx);
@@ -139,8 +106,6 @@ impl Stage {
         sync_overlays(cx);
     }
 
-    /// Opens the panel called `name` on `screen`, or closes it if it is
-    /// open there.
     pub fn toggle(name: &str, screen: DisplayId, cx: &mut App) {
         change(cx, |panels| panels.rules(name, screen).is_some_and(|panel| panels.open.toggle(panel, screen)));
     }
@@ -153,8 +118,6 @@ impl Stage {
         change(cx, |panels| panels.open.close(name, screen));
     }
 
-    /// `nova toggle <name>`: on the screen novad names as the focused
-    /// output, or the first when it doesn't know.
     pub fn toggle_on_output(name: &str, output: Option<&str>, cx: &mut App) {
         let screen = Self::screens(cx).and_then(|screens| screens.read(cx).for_output(output).map(|screen| screen.id));
         match screen {
@@ -163,21 +126,14 @@ impl Stage {
         }
     }
 
-    /// Esc, or a click outside: closes every panel that closes on it.
     pub fn dismiss(cx: &mut App) {
         change(cx, |panels| panels.open.dismiss());
     }
 
-    /// Whether `screen`'s stage has the panel called `name`: its feature
-    /// is ready and its ui registered it. A button that opens a panel shows
-    /// only then (the central pill's search button and the launcher).
     pub fn has_panel(name: &str, screen: DisplayId, cx: &App) -> bool {
         cx.try_global::<StageState>().is_some_and(|state| state.panels.read(cx).has(name, screen))
     }
 
-    /// Calls `changed` whenever a panel opens or closes, or the panels a
-    /// screen has change, for as long as the subscription is kept. `None`
-    /// before the stage started.
     pub fn observe_panels<V: 'static>(
         cx: &mut Context<V>,
         mut changed: impl FnMut(&mut V, &mut Context<V>) + 'static,
@@ -190,8 +146,6 @@ impl Stage {
         cx.try_global::<StageState>().is_some_and(|state| state.panels.read(cx).open.is_open(name, screen))
     }
 
-    /// Gives the panel called `name` on `screen` a new open size: the one
-    /// way a panel changes size, open or not. An open one eases to it.
     pub fn resize(name: &str, screen: DisplayId, size: Size<Pixels>, cx: &mut App) {
         change(cx, |panels| {
             panels
@@ -200,12 +154,6 @@ impl Stage {
         });
     }
 
-    /// Shows the page `page` in the panel called `name` on `screen`, or its
-    /// first page with `None`: for a panel with pages (quick settings),
-    /// whose parts turn them (a slider's arrow opens its page, a page's
-    /// back button returns). The stage only keeps it, open or not; the
-    /// panel's view draws it, and goes back to the first page itself once
-    /// it has closed.
     pub fn show_page(name: &str, screen: DisplayId, page: Option<&str>, cx: &mut App) {
         change(cx, |panels| {
             let key = (screen, SharedString::from(name.to_owned()));
@@ -217,18 +165,11 @@ impl Stage {
         });
     }
 
-    /// The page the panel called `name` shows on `screen`; `None` is its
-    /// first. Read it again when [`Stage::observe_panels`] or
-    /// [`Stage::observe_open`] calls back.
     pub fn page(name: &str, screen: DisplayId, cx: &App) -> Option<SharedString> {
         let state = cx.try_global::<StageState>()?;
         state.panels.read(cx).pages.get(&(screen, SharedString::from(name.to_owned()))).cloned()
     }
 
-    /// Puts the left edge of the panel called `name` on `screen` at `left`
-    /// across the screen once open, for a panel that grows out of no pill
-    /// (a tray app's menu under its icon): it rises into place there rather
-    /// than in the middle, still inside the bar's margins.
     pub fn place(name: &str, screen: DisplayId, left: Pixels, cx: &mut App) {
         change(cx, |panels| {
             panels
@@ -237,9 +178,6 @@ impl Stage {
         });
     }
 
-    /// The outputs whose shown workspace has a window over the whole
-    /// screen, by the names novad gives them: the bar steps aside there
-    /// (`crate::aside`). Every other output's bar comes back.
     pub fn set_fullscreen(outputs: Vec<SharedString>, cx: &mut App) {
         change(cx, |panels| {
             let changed = panels.fullscreen != outputs;
@@ -248,9 +186,6 @@ impl Stage {
         });
     }
 
-    /// While `awake`, every screen's stage keeps the compositor from going
-    /// idle (dimming, locking or sleeping the screen), as long as it is
-    /// shown: keep awake's tile. Where the compositor can't, it goes idle.
     pub fn keep_awake(awake: bool, cx: &mut App) {
         change(cx, |panels| {
             let changed = panels.awake != awake;
@@ -259,43 +194,28 @@ impl Stage {
         });
     }
 
-    /// Whether the stages keep the compositor from going idle.
     pub fn is_kept_awake(cx: &App) -> bool {
         cx.try_global::<StageState>().is_some_and(|state| state.panels.read(cx).awake)
     }
 
-    /// Calls `changed` each time a panel opens or closes, on any screen
-    /// (and when one is resized or turns a page, or a bar steps aside): for what follows a
-    /// panel it doesn't draw, like pop-ups that wait while quick settings
-    /// shows their list. It asks [`Stage::is_open`] what is open now.
-    /// `None` before [`Stage::start`].
     pub fn observe_open(cx: &mut App, mut changed: impl FnMut(&mut App) + 'static) -> Option<Subscription> {
         let panels = cx.try_global::<StageState>().map(|state| state.panels.clone())?;
         Some(cx.observe(&panels, move |_, cx| changed(cx)))
     }
 
-    /// Whether `nova-ui --frames` asked for each window's frames to be
-    /// logged: a feature with windows of its own logs them with
-    /// [`crate::FrameLog`] too.
     pub fn logs_frames(cx: &App) -> bool {
         cx.try_global::<StageState>().is_some_and(|state| state.log_frames)
     }
 
-    /// The screens, for what has windows of its own to follow. `None`
-    /// before [`Stage::start`].
     pub fn screens(cx: &App) -> Option<Entity<Screens>> {
         cx.try_global::<StageState>().map(|state| state.screens.clone())
     }
 
-    /// The slots, for a feature that draws a host itself to observe (with
-    /// [`crate::Parts`]). `None` before [`Stage::start`].
     pub fn slots(cx: &App) -> Option<Entity<Slots>> {
         cx.try_global::<StageState>().map(|state| state.slots.clone())
     }
 }
 
-/// Changes what the screens share, and has them redraw when `change` says
-/// something did.
 fn change(cx: &mut App, change: impl FnOnce(&mut Panels) -> bool) {
     let Some(panels) = cx.try_global::<StageState>().map(|state| state.panels.clone()) else {
         eprintln!("WARN nova-ui: the stage was asked for a panel before it started");
@@ -308,8 +228,6 @@ fn change(cx: &mut App, change: impl FnOnce(&mut Panels) -> bool) {
     });
 }
 
-/// Opens a stage on each screen that has none, and closes the stage of
-/// each screen that left, with what was open on it.
 fn sync_windows(cx: &mut App) {
     let Some(state) = cx.try_global::<StageState>() else {
         return;
@@ -325,12 +243,9 @@ fn sync_windows(cx: &mut App) {
     let mut windows = std::mem::take(&mut cx.global_mut::<StageState>().windows);
     windows.retain(|(screen, window)| {
         if here.iter().any(|kept| kept.id == *screen) {
-            // The compositor may have closed it, for a screen that went
-            // and came back between two looks: that one gets a new stage.
             return window.update(cx, |_, _, _| ()).is_ok();
         }
         eprintln!("INFO nova-ui: a screen left, closing its stage");
-        // Its window may be gone already, with the output.
         let _ = window.update(cx, |stage, window, cx| {
             stage.leave(cx);
             window.remove_window();
@@ -355,7 +270,6 @@ fn sync_windows(cx: &mut App) {
     });
 }
 
-/// Builds what the `shell.overlays` slots name and drops what left.
 fn sync_overlays(cx: &mut App) {
     let Some(state) = cx.try_global::<StageState>() else {
         return;

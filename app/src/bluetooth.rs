@@ -1,8 +1,3 @@
-//! Runs the Bluetooth feature (`nova-bluetooth`, in `features/bluetooth`)
-//! in novad: its module and the answers to its commands. Wiring only: it
-//! adapts the feature's core to novad's `Module` trait and `Daemon`, and
-//! all of the feature's work and state stay in the core.
-
 use crate::Daemon;
 use nova_bluetooth_api::Command;
 use nova_carrier::Outcome;
@@ -12,7 +7,6 @@ use std::sync::Arc;
 
 use nova_bluetooth::{FEATURE_ID, Sources};
 
-/// The feature's core, as novad's module.
 pub struct Bluetooth(Arc<nova_bluetooth::Bluetooth>);
 
 impl std::ops::Deref for Bluetooth {
@@ -23,8 +17,6 @@ impl std::ops::Deref for Bluetooth {
     }
 }
 
-/// The answer to one of the feature's commands from `caller`, the route
-/// `requests::router` gives them.
 pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
     let bluetooth = daemon.module::<Bluetooth>();
     let outcome = match command {
@@ -54,8 +46,6 @@ pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
     Answer::Now(outcome)
 }
 
-/// Runs `work` with Bluetooth on its own thread: BlueZ, the device and
-/// the user's answer to pairing take their time.
 fn later(
     bluetooth: Result<Arc<Bluetooth>, String>,
     work: impl FnOnce(&Bluetooth) -> Result<(), String> + Send + 'static,
@@ -66,7 +56,6 @@ fn later(
     }
 }
 
-/// No options.
 impl nova_modules::Module for Bluetooth {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;

@@ -1,17 +1,3 @@
-//! `nova-ui`: the program that draws Nova's UI with GPUI. novad runs it,
-//! hands it the socket (`NOVA_SOCKET`) and restarts it when it exits
-//! (`app/src/supervisor.rs`).
-//!
-//! It starts GPUI with the look kit's icons as its assets, connects to
-//! novad, lets every ported feature's ui register its views
-//! ([`register_features`]) and starts the stage, which shows them on every
-//! screen. Wiring only: it also hands the stage what novad sends that is no
-//! feature's ui to follow, the theme's colors and `nova toggle`.
-//!
-//! By hand, `--demo` puts test pills and panels on the stage ([`demo`]) and
-//! `--replay` runs against recordings where the real novad can't
-//! ([`replay`]).
-
 mod args;
 mod demo;
 mod memory;
@@ -29,8 +15,6 @@ use nova_ui_client::fake::FakeDaemon;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-/// GPUI's errors, as nova-ui's own lines; its warnings and below are
-/// routine.
 struct GpuiErrors;
 
 impl log::Log for GpuiErrors {
@@ -49,7 +33,6 @@ impl log::Log for GpuiErrors {
 
 fn main() -> ExitCode {
     memory::give_back_large_blocks();
-    // Only when none is set yet, which nothing else in nova-ui does.
     if log::set_logger(&GpuiErrors).is_ok() {
         log::set_max_level(log::LevelFilter::Error);
     }
@@ -60,8 +43,6 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    // novad logs each line the UI prints, and reads the level from a line
-    // that opens with one (`nova_log`'s `ui_line`).
     eprintln!("INFO nova-ui {} started", env!("CARGO_PKG_VERSION"));
     let (socket, _replayed) = match socket(&args) {
         Ok(found) => found,
@@ -70,19 +51,12 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // Only `--demo-toggles` quits on purpose: anything else that ends GPUI's
-    // event loop (a Wayland protocol error, the compositor gone) is a
-    // crash, which novad's supervisor logs and restarts with a backoff.
     let quits_by_itself = args.demo_toggles.is_some();
     application().with_assets(IconAssets).run(move |cx: &mut App| {
-        // GPUI quits a Linux program when its last window closes, which
-        // every window does when the last screen goes (a monitor turned
-        // off). The lock screen must outlive that: the session lock is
-        // this process's, and a compositor that sees its locker die may
-        // not let the next one in.
+        // GPUI quits a Linux program when its last window closes, as every window does when the last screen goes:
+        // https://linear.app/imperaluna/issue/IMP-403
         cx.set_quit_mode(QuitMode::Explicit);
         Daemon::connect(socket, cx);
-        // Followed for as long as the program runs.
         for followed in follow_novad(cx) {
             followed.detach();
         }
@@ -101,9 +75,6 @@ fn main() -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// Each ported feature's ui registers its views with the stage here, one
-/// line per feature, sorted by feature id:
-/// `nova_<id>_ui::register(cx);`
 fn register_features(cx: &mut App) {
     nova_ai_usage_ui::register(cx);
     nova_bar_ui::register(cx);
@@ -128,11 +99,6 @@ fn register_features(cx: &mut App) {
     nova_workspaces_ui::register(cx);
 }
 
-/// What novad sends that no feature's ui follows: the theme's colors, which
-/// repaint every window; `nova toggle`, which opens a panel on the focused
-/// output (the stage names no feature, so the bar's `Panel` list meets it
-/// here); and which outputs show a fullscreen window, where the bar steps
-/// aside.
 fn follow_novad(cx: &mut App) -> [Subscription; 3] {
     let theme = Daemon::on_event(nova_theme_info::TOPIC, cx, |nova_theme_info::Event::Theme(theme), cx| {
         Theme::set(Theme::from(&theme), cx);
@@ -147,8 +113,6 @@ fn follow_novad(cx: &mut App) -> [Subscription; 3] {
     [theme, toggle, fullscreen]
 }
 
-/// The outputs whose shown workspace has a window over the whole screen,
-/// when the compositor says (`Protocol.fullscreenShown`).
 fn fullscreen_outputs(desktop: &Desktop) -> Vec<SharedString> {
     if !desktop.capabilities.contains(&Capability::Fullscreen) {
         return Vec::new();
@@ -157,9 +121,6 @@ fn fullscreen_outputs(desktop: &Desktop) -> Vec<SharedString> {
     desktop.outputs.iter().filter(shows_fullscreen).map(|output| output.name.clone().into()).collect()
 }
 
-/// Where novad listens: the fake one's socket with `--replay` (it runs
-/// until the value beside the path is dropped), else the one novad handed
-/// over.
 fn socket(args: &Args) -> Result<(PathBuf, Option<FakeDaemon>), String> {
     if let Some((socket, novad)) = replay::start(&args.replay)? {
         return Ok((socket, Some(novad)));

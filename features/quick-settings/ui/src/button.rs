@@ -1,9 +1,3 @@
-//! Quick settings' button on the right pill (`quick-settings.button` in
-//! `right-pill.buttons`), and in the same place on the open drawer: opens and
-//! closes the drawer on its screen, picked while it is open. Its badge says how
-//! many notifications are unread, or shows a grey crossed-out bell during do
-//! not disturb; none while open.
-
 use crate::NAME;
 use crate::logic::{Badge, badge};
 use crate::tokens::{BADGE_ICON, BADGE_OFFSET, BADGE_PAD, BADGE_QUIET_OPACITY, BADGE_RING, BADGE_SIZE};
@@ -14,8 +8,6 @@ use nova_notifications_api::{Event, TOPIC};
 use nova_stage::{Screen, Stage};
 use nova_ui_client::Live;
 
-/// What the badge reads from notifications: how many are unread, and do
-/// not disturb.
 type Unread = (usize, bool);
 
 pub struct Button {
@@ -53,7 +45,6 @@ impl Render for Button {
     }
 }
 
-/// The badge on the button's top right corner, ringed in the background.
 fn badge_element(shown: &Badge, cx: &Context<Button>) -> AnyElement {
     let theme = Theme::of(cx);
     let fill = match shown {

@@ -1,6 +1,3 @@
-//! The service against a stand-in sound server ([`FakePulse`]) that
-//! answers from recordings of real ones.
-
 use super::*;
 use crate::fake_pulse::{FakePulse, recorded, recording};
 use crate::server::Listing;
@@ -8,9 +5,6 @@ use nova_sound_api::{Kind, VOLUME_MAX};
 use nova_volume_osd_api::VolumeKey;
 use pulseaudio::protocol::{ChannelVolume, SinkInputInfo, Volume};
 
-/// Writes what the sound server running now lists as a recording, to the
-/// file `NOVA_SOUND_RECORD` names:
-/// `NOVA_SOUND_RECORD=$PWD/name.pulse cargo test -p nova-sound record -- --ignored`
 #[test]
 #[ignore = "records the machine's own sound server"]
 fn record_the_running_server() {
@@ -27,15 +21,9 @@ use nova_test_support::{TempDir, wait_until};
 use serde_json::{Value, json};
 use std::sync::mpsc::Receiver;
 
-/// A PipeWire with two null devices (`Cloud-Speakers` at 40% and a muted
-/// virtual mic, both in use), `Tunes` playing two streams (one muted, one
-/// at half volume), `Chimes` playing one, and `Talk` recording from the
-/// mic. Its sources also hold the speakers' monitor.
 const NULL_DEVICES: &str = include_str!("recorded/pipewire-null-devices.pulse");
 
-/// How long a test waits for what should happen at once.
 const WAIT: Duration = Duration::from_secs(5);
-/// Long enough for something that shouldn't happen to have happened.
 const QUIET: Duration = Duration::from_millis(300);
 const EVENT: &str = "sound";
 
@@ -64,7 +52,6 @@ impl Fixture {
         self.dir.join("native")
     }
 
-    /// A server answering from the recording.
     fn server(&self) -> FakePulse {
         FakePulse::start(&self.socket(), recorded(NULL_DEVICES))
     }
@@ -74,13 +61,10 @@ impl Fixture {
         Sound::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
-    /// The next sound event.
     fn next(&self) -> Value {
         nova_hub::next_named(&self.ui, EVENT, WAIT)
     }
 
-    /// Sound events until one `done` accepts, which it returns: a command
-    /// that tells the server two things may come back as one event or two.
     fn until(&self, done: impl Fn(&Value) -> bool) -> Value {
         loop {
             let sound = self.next();
@@ -109,15 +93,12 @@ fn it_publishes_what_the_server_lists() {
     );
     let volume = sound["outputs"][0]["volume"].as_f64().unwrap();
     assert!((volume - 0.4).abs() < 0.001, "{volume}");
-    // The speakers' monitor isn't an input.
     let inputs = sound["inputs"].as_array().unwrap();
     assert_eq!(inputs.len(), 1, "{inputs:?}");
     assert_eq!(
         (&inputs[0]["id"], &inputs[0]["muted"], &inputs[0]["current"]),
         (&json!(60), &json!(true), &json!(true))
     );
-    // Tunes' two streams are one app: as loud as the louder, and not muted
-    // while one of them plays.
     assert_eq!(
         sound["apps"],
         json!([
@@ -136,10 +117,8 @@ fn a_change_is_published_whoever_made_it() {
     assert_eq!(fixture.next()["outputs"][0]["muted"], false);
     server.change(|listing| listing.sinks[0].muted = true);
     assert_eq!(fixture.next()["outputs"][0]["muted"], true);
-    // An app that stops playing leaves the list.
     server.change(|listing| listing.sink_inputs.retain(|stream| stream.index != 89));
     assert_eq!(fixture.next()["apps"].as_array().unwrap().len(), 1);
-    // The output going leaves none in use.
     server.change(|listing| listing.sinks.clear());
     assert_eq!(fixture.next()["outputs"], json!([]));
 }
@@ -150,14 +129,11 @@ fn an_app_playing_untouched_reads_as_full_volume() {
     let server = fixture.server();
     let _sound = fixture.sound();
     fixture.next();
-    // Chimes turned all the way down reads as that.
     fn chimes(listing: &mut Listing) -> &mut SinkInputInfo {
         listing.sink_inputs.iter_mut().find(|stream| stream.index == 89).unwrap()
     }
     server.change(|listing| chimes(listing).cvolume = ChannelVolume::muted(2));
     assert_eq!(fixture.next()["apps"][1]["volume"], 0.0);
-    // Without a volume of its own, like passed-through surround sound, it
-    // plays as it is whatever the number says.
     server.change(|listing| chimes(listing).has_volume = false);
     assert_eq!(fixture.next()["apps"][1]["volume"], 1.0);
 }
@@ -168,9 +144,6 @@ fn a_server_that_lists_nothing_is_tried_again_ever_later() {
     let server = fixture.server();
     server.refuse_listings();
     let _sound = fixture.sound();
-    // The second try comes a second after the first, the third two
-    // seconds later: three inside the time two fixed waits would take
-    // means the waits didn't grow.
     wait_until(WAIT, "it tries again", || server.listings() >= 2);
     nova_test_support::settle(FIRST_RETRY + FIRST_RETRY / 5);
     assert_eq!(server.listings(), 2);
@@ -219,7 +192,6 @@ fn a_server_that_restarts_reads_as_no_sound_until_it_is_back() {
     let gone = fixture.next();
     assert_eq!((&gone["available"], &gone["outputs"]), (&json!(false), &json!([])));
     assert_eq!(fixture.next()["available"], true);
-    // And follows it again.
     server.change(|listing| listing.sinks[0].muted = true);
     assert_eq!(fixture.next()["outputs"][0]["muted"], true);
 }
@@ -237,7 +209,6 @@ fn once_stopped_it_publishes_nothing_and_hangs_up() {
     });
     server.change(|listing| listing.sinks[0].muted = true);
     fixture.nothing_comes();
-    // Nor does it change anything any more.
     let mute = Command::SetSoundMuted { of: Kind::Output, id: 53, muted: true };
     assert!(sound.change(&mute).is_err());
 }
@@ -293,7 +264,6 @@ fn an_apps_volume_and_mute_reach_all_its_streams() {
     sound.change(&Command::SetSoundMuted { of: Kind::App, id: 66, muted: true }).unwrap();
     fixture.until(|sound| sound["apps"][0]["muted"] == true);
     assert!(tunes(&server).iter().all(|(_, muted)| *muted));
-    // The other app was left alone.
     let chimes = server.listing().sink_inputs.into_iter().find(|stream| stream.index == 89).unwrap();
     assert!((reading::level(&chimes.cvolume) - 1.0).abs() < 0.001 && !chimes.muted);
 }
@@ -304,7 +274,6 @@ fn another_output_becomes_the_one_in_use() {
     let server = fixture.server();
     let sound = fixture.sound();
     fixture.next();
-    // A second output appears, as when a headset is plugged in.
     server.change(|listing| {
         let mut headset = listing.sinks[0].clone();
         headset.index = 200;
@@ -329,7 +298,6 @@ fn what_cant_be_done_is_refused_with_the_reason() {
     let refused = |command: Command| sound.change(&command).unwrap_err();
     assert_eq!(refused(Command::SetSoundMuted { of: Kind::Output, id: 7, muted: true }), "there is no output 7");
     assert_eq!(refused(Command::SetSoundMuted { of: Kind::App, id: 7, muted: true }), "no app plays as 7");
-    // The speakers' monitor is a source, but not an input.
     let monitor = recorded(NULL_DEVICES).sources.into_iter().find(|source| source.monitor_of_sink_index.is_some());
     let monitor = monitor.unwrap().index;
     assert_eq!(refused(Command::UseSoundInput { id: monitor }), format!("there is no input {monitor}"));
@@ -337,8 +305,6 @@ fn what_cant_be_done_is_refused_with_the_reason() {
         let reason = refused(Command::SetSoundVolume { of: Kind::Output, id: 53, volume });
         assert!(reason.starts_with("a volume is 0 to 1"), "{reason}");
     }
-    // An output that went since the last listing: the server says no, and
-    // the next command still goes through.
     server.change_quietly(|listing| listing.sinks.clear());
     let reason = refused(Command::SetSoundMuted { of: Kind::Output, id: 53, muted: true });
     assert!(reason.starts_with("the sound server said"), "{reason}");
@@ -354,7 +320,6 @@ fn a_volume_keeps_the_balance_between_channels() {
     let moved = reading::at_level(&channels, 0.375);
     let norm = Volume::NORM.as_u32();
     assert_eq!(moved.channels(), [Volume::from_u32_clamped(norm / 4), Volume::from_u32_clamped(norm / 2)]);
-    // From silence there is no balance to keep.
     let moved = reading::at_level(&ChannelVolume::muted(2), 0.5);
     assert_eq!(moved.channels(), [Volume::from_u32_clamped(norm / 2); 2]);
 }
@@ -369,7 +334,6 @@ fn a_volume_key_steps_the_output_in_use_and_mutes_it() {
     fixture.until(|sound| close(&sound["outputs"][0]["volume"], 0.45));
     sound.press(VolumeKey::Mute).unwrap();
     fixture.until(|sound| sound["outputs"][0]["muted"] == true);
-    // A step leaves mute as it is.
     sound.press(VolumeKey::Down).unwrap();
     let stepped = fixture.until(|sound| close(&sound["outputs"][0]["volume"], 0.4));
     assert_eq!(stepped["outputs"][0]["muted"], true);
@@ -387,7 +351,6 @@ fn keys_pressed_faster_than_the_server_lists_each_take_a_step() {
         sound.press(VolumeKey::Up).unwrap();
     }
     fixture.until(|sound| close(&sound["outputs"][0]["volume"], 0.55));
-    // Mute and unmute at once leave it as it was.
     sound.press(VolumeKey::Mute).unwrap();
     sound.press(VolumeKey::Mute).unwrap();
     sound.press(VolumeKey::Up).unwrap();
@@ -419,7 +382,6 @@ fn a_volume_key_without_an_output_in_use_says_so() {
     assert_eq!(sound.press(VolumeKey::Up), Err("there is no output in use".into()));
 }
 
-/// The listing with a Bluetooth headset added, as BlueZ names its nodes.
 fn add_headset(listing: &mut Listing) {
     let mut output = listing.sinks[0].clone();
     output.index = 300;
@@ -448,7 +410,6 @@ fn a_bluetooth_headset_that_appears_becomes_the_one_in_use() {
         in_use(&server.listing())
             == ("bluez_output.AA_BB_CC_DD_EE_FF.1".to_owned(), "bluez_input.AA_BB_CC_DD_EE_FF.0".to_owned())
     });
-    // Choosing the speakers again sticks: the headset is no longer new.
     let speakers = std::ffi::CString::new(before.0.clone()).unwrap();
     server.change(|listing| listing.server.default_sink_name = Some(speakers));
     nova_test_support::settle(QUIET);

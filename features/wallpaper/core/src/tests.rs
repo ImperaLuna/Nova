@@ -8,21 +8,10 @@ const WORKSHOP_ID: &str = "2861349227";
 struct Fixture {
     dir: TempDir,
     logger: Arc<Logger>,
-    /// The fakes and the `sleep` they run: a build sandbox has no
-    /// /usr/bin, and a fake daemon that can't sleep exits at once.
     path: String,
 }
 
 impl Fixture {
-    /// Stand-ins for awww in `<dir>/bin`: the daemon writes its pid to
-    /// `<dir>/runs` each time it starts, then sleeps; the client writes
-    /// its arguments to `<dir>/awww` and succeeds, answering `query`
-    /// with `<dir>/query` (DP-1 and DP-2, 1x1 pixels).
-    /// linux-wallpaperengine's writes its pid and arguments to
-    /// `<dir>/engine`, copies `<dir>/frame.png` to its `--screenshot`
-    /// file, then sleeps. Two
-    /// images and a video in `<dir>`, and a downloaded Workshop item with
-    /// a preview in `<dir>/home`'s Steam library.
     fn new(name: &str) -> Self {
         let dir = TempDir::new(&format!("wallpaper-{name}"));
         std::fs::create_dir_all(dir.join("bin")).unwrap();
@@ -35,8 +24,6 @@ impl Fixture {
         nova_test_support::write_program(
             &dir.join("bin"),
             CLIENT,
-            // Fails while there's a file `fail`, as for an output awww
-            // hasn't bound yet.
             &format!(
                 "[ \"$1\" = img ] && [ -e '{}' ] && exit 1\necho \"$*\" >> '{}'\n\
                  [ \"$1\" = query ] && [ -e '{query}' ] && cat '{query}'\nexit 0",
@@ -89,12 +76,10 @@ impl Fixture {
         self.dir.join(name).display().to_string()
     }
 
-    /// `[wallpaper] path` set to the image `name`.
     fn config(&self, name: &str) -> WallpaperConfig {
         WallpaperConfig { path: Some(self.image(name)), ..WallpaperConfig::default() }
     }
 
-    /// The daemon's pids, once it started `count` times.
     fn runs(&self, count: usize) -> Vec<i32> {
         eventually(WAIT, &format!("{DAEMON} to start {count} times"), || {
             let runs: Vec<i32> = std::fs::read_to_string(self.dir.join("runs"))
@@ -106,7 +91,6 @@ impl Fixture {
         })
     }
 
-    /// The outputs and image of each `awww img`, once there are `count`.
     fn images(&self, count: usize) -> Vec<(String, String)> {
         eventually(WAIT, &format!("{count} images sent"), || {
             let sent = self.sent();
@@ -114,13 +98,9 @@ impl Fixture {
         })
     }
 
-    /// Waits until the last image sent to each output is `expected`'s.
-    /// An `awww img` that novad saw fail under load is sent again, so
-    /// the order of the images may vary.
     fn shows(&self, expected: &[(&str, &str)]) {
         wait_until(WAIT, &format!("outputs to show {expected:?}"), || {
             let sent = self.sent();
-            // Later images win.
             let last: BTreeMap<&str, &str> = sent
                 .iter()
                 .flat_map(|(outputs, image)| outputs.split(',').map(move |output| (output, image.as_str())))
@@ -134,8 +114,6 @@ impl Fixture {
         self.dir.join(workshop).join(WORKSHOP_ID).display().to_string()
     }
 
-    /// Each linux-wallpaperengine started: its pid, and the project it
-    /// showed on each output.
     fn engine_runs(&self) -> Vec<(i32, Vec<(String, String)>)> {
         std::fs::read_to_string(self.dir.join("engine"))
             .unwrap_or_default()
@@ -152,8 +130,6 @@ impl Fixture {
             .collect()
     }
 
-    /// Waits until linux-wallpaperengine started `count` times, the last
-    /// one runs and shows `expected`, and no other runs; its pid.
     fn engine_shows(&self, count: usize, expected: &[(&str, &str)]) -> i32 {
         let expected: Vec<(String, String)> =
             expected.iter().map(|(output, project)| ((*output).to_owned(), (*project).to_owned())).collect();
@@ -216,10 +192,8 @@ fn only_outputs_that_change_get_an_image() {
     assert_eq!(fixture.images(1), [("DP-1,DP-2".into(), dusk.clone())], "one fade for both");
     wallpaper.set(&tide, Some("DP-2")).unwrap();
     fixture.shows(&[("DP-1", &dusk), ("DP-2", &tide)]);
-    // Plugged in: the new output gets its image.
     wallpaper.outputs(outputs(&["DP-1", "DP-2", "HDMI-A-1"]));
     fixture.shows(&[("DP-1", &dusk), ("DP-2", &tide), ("HDMI-A-1", &dusk)]);
-    // Unplugged and back: it gets it again.
     let sent = fixture.sent().len();
     wallpaper.outputs(outputs(&["DP-1", "DP-2"]));
     wallpaper.outputs(outputs(&["DP-1", "DP-2", "HDMI-A-1"]));
@@ -241,17 +215,14 @@ fn the_choice_lasts_until_the_config_changes() {
     first.configure(true, false, &config);
     first.set(&fixture.image("tide.png"), None).unwrap();
     first.stop();
-    // Started again with the same config: the choice stays.
     let again = fixture.start();
     again.configure(true, false, &config);
     assert_eq!(again.current().unwrap().path, Some(fixture.image("tide.png")));
-    // The config changes: it wins, and the choice is gone.
     let edited = WallpaperConfig { outputs: [("DP-2".into(), fixture.image("tide.png"))].into(), ..config };
     again.configure(true, false, &edited);
     assert_eq!(again.current().unwrap().path, Some(fixture.image("dusk.png")));
     assert!(!fixture.dir.join("state").join(STATE_FILE).exists());
     again.stop();
-    // So it's gone after a restart too.
     let last = fixture.start();
     last.configure(true, false, &edited);
     assert_eq!(last.current().unwrap().path, Some(fixture.image("dusk.png")));
@@ -297,7 +268,6 @@ fn choosing_the_same_file_again_sends_it_again() {
     let tide = fixture.image("tide.png");
     wallpaper.set(&tide, Some("DP-2")).unwrap();
     fixture.images(1);
-    // A script rewrote the file and chose it again.
     wallpaper.set(&tide, Some("DP-2")).unwrap();
     assert_eq!(fixture.images(2)[1], ("DP-2".into(), tide.clone()));
     wallpaper.set(&tide, None).unwrap();
@@ -315,7 +285,6 @@ fn a_failed_image_is_sent_again() {
     fixture.runs(1);
     nova_test_support::settle(Duration::from_millis(300));
     std::fs::remove_file(fixture.dir.join("fail")).unwrap();
-    // Nothing else changes: it's sent again on its own.
     fixture.shows(&[("DP-1", &fixture.image("dusk.png"))]);
     assert_eq!(fixture.runs(1).len(), 1, "the daemon is fine");
     wallpaper.stop();
@@ -383,13 +352,11 @@ fn a_dynamic_wallpaper_runs_over_its_preview() {
     fixture.shows(&[("DP-1", &preview), ("DP-2", &preview)]);
     let first = fixture.engine_shows(1, &[("DP-1", &item), ("DP-2", &item)]);
     assert_eq!(wallpaper.current().unwrap().path.as_deref(), Some(WORKSHOP_ID));
-    // One output gets a still image: the engine keeps only the other.
     let tide = fixture.image("tide.png");
     wallpaper.set(&tide, Some("DP-2")).unwrap();
     fixture.shows(&[("DP-1", &preview), ("DP-2", &tide)]);
     let second = fixture.engine_shows(2, &[("DP-1", &item)]);
     assert_ne!(first, second);
-    // No dynamic wallpaper left: it ends, and isn't started again.
     wallpaper.set(&fixture.image("dusk.png"), None).unwrap();
     wait_until(WAIT, "the engine to end", || !alive(second));
     nova_test_support::settle(Restarts::FIRST + Duration::from_millis(200));
@@ -401,11 +368,8 @@ fn a_dynamic_wallpaper_runs_over_its_preview() {
 #[test]
 fn a_dynamic_wallpaper_starts_from_its_last_frame_next_time() {
     let fixture = Fixture::new("stills");
-    // With Steam's assets, nothing else makes the folder the frame goes to.
     std::fs::create_dir_all(fixture.dir.join("home/.local/share/Steam/steamapps/common/wallpaper_engine/assets"))
         .unwrap();
-    // DP-2 is scaled: 1x1 before, 2x2 in pixels. The engine draws both
-    // side by side.
     let query = |dp1: &str| {
         format!(
             "nova: DP-1: {dp1}, scale: 1, currently displaying: image: x\nnova: DP-2: 1x1, scale: 2, currently displaying: image: x\n"
@@ -426,24 +390,20 @@ fn a_dynamic_wallpaper_starts_from_its_last_frame_next_time() {
     let (item, preview) = (fixture.item(), format!("{}/preview.png", fixture.item()));
     let engine_folder = fixture.dir.join("state").join("wallpaper-engine");
     let still = |size| engine::still(Path::new(&item), size, &engine_folder);
-    // The first time, only the preview.
     let first = start();
     fixture.shows(&[("DP-1", &preview), ("DP-2", &preview)]);
     fixture.engine_shows(1, &[("DP-1", &item), ("DP-2", &item)]);
     wait_until(WAIT, "the frame to be kept", || still((3, 2)).is_some() && still((2, 2)).is_some());
     first.stop();
-    // Next time, each output starts from the frame, as big as it is.
     let sent = fixture.sent().len();
     let again = start();
     let (big, small) = (still((3, 2)).unwrap().display().to_string(), still((2, 2)).unwrap().display().to_string());
     fixture.shows(&[("DP-1", &big), ("DP-2", &small)]);
     assert!(fixture.sent()[sent..].iter().all(|(_, image)| *image != preview), "no preview first");
     again.stop();
-    // DP-1 got bigger: its still doesn't fit, so the preview it is.
     std::fs::write(fixture.dir.join("query"), query("6x4")).unwrap();
     let bigger = start();
     fixture.shows(&[("DP-1", &preview), ("DP-2", &small)]);
-    // A still image everywhere: the frames go.
     bigger.set(&fixture.image("dusk.png"), None).unwrap();
     wait_until(WAIT, "the unused stills to go", || !engine::has_stills(Path::new(&item), &engine_folder));
     bigger.stop();
@@ -452,7 +412,6 @@ fn a_dynamic_wallpaper_starts_from_its_last_frame_next_time() {
 #[test]
 fn a_video_on_two_outputs_gets_stills_too() {
     let fixture = Fixture::new("video-stills");
-    // DP-1 and DP-2 are 1x1 pixels: side by side, 2x1.
     let file = std::fs::File::create(fixture.dir.join("frame.png")).unwrap();
     let mut encoder = png::Encoder::new(file, 2, 1);
     encoder.set_color(png::ColorType::Rgb);
@@ -463,7 +422,6 @@ fn a_video_on_two_outputs_gets_stills_too() {
     first.configure(true, true, &config);
     let project = eventually(WAIT, "the engine to start", || fixture.engine_runs().first()?.1.first().cloned()).1;
     let engine_folder = fixture.dir.join("state").join("wallpaper-engine");
-    // No preview to show, but awww runs to say the outputs' sizes.
     wait_until(WAIT, "the frame to be kept", || engine::still(Path::new(&project), (1, 1), &engine_folder).is_some());
     assert!(fixture.sent().is_empty(), "nothing to show the first time");
     first.stop();
@@ -497,7 +455,6 @@ fn the_engine_starts_again_after_a_crash_and_after_awww_does() {
     unsafe { libc::kill(first, libc::SIGKILL) };
     let second = fixture.engine_shows(2, &[("DP-1", &item)]);
     assert_ne!(first, second);
-    // awww started again draws over it, so it starts again too.
     let daemon = fixture.runs(1)[0];
     // SAFETY: kill only sends a signal.
     unsafe { libc::kill(daemon, libc::SIGKILL) };
@@ -532,7 +489,6 @@ fn dynamic_wallpapers_need_their_feature() {
     let wallpaper = fixture.start();
     wallpaper.outputs(outputs(&["DP-1"]));
     wallpaper.configure(true, false, &WallpaperConfig { path: Some(WORKSHOP_ID.into()), ..Default::default() });
-    // The config's stays still: only its preview shows.
     fixture.shows(&[("DP-1", &format!("{}/preview.png", fixture.item()))]);
     let refused = wallpaper.set(&fixture.image("rain.webm"), None).unwrap_err();
     assert!(refused.contains(ENGINE_FEATURE_ID), "{refused}");
@@ -540,7 +496,6 @@ fn dynamic_wallpapers_need_their_feature() {
     assert!(missing.contains("isn't downloaded"), "{missing}");
     nova_test_support::settle(Duration::from_millis(300));
     assert!(fixture.engine_runs().is_empty());
-    // Only dynamic ones, with the still images off.
     wallpaper.configure(false, true, &WallpaperConfig::default());
     assert!(wallpaper.set(&fixture.image("dusk.png"), None).unwrap_err().contains("isn't ready"));
     wallpaper.set(WORKSHOP_ID, None).unwrap();
@@ -557,7 +512,6 @@ fn images_come_back_after_awww_was_ended() {
     wallpaper.configure(true, false, &dusk);
     let first = fixture.runs(1)[0];
     fixture.images(1);
-    // Turned off and on: the new daemon has no image until it's sent.
     wallpaper.configure(false, false, &dusk);
     wait_until(WAIT, "the daemon to end", || !alive(first));
     wallpaper.configure(true, false, &dusk);

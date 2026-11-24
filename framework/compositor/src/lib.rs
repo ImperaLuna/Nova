@@ -1,12 +1,3 @@
-//! The compositor: its outputs, workspaces, focused window and keyboard
-//! layout as one [`Desktop`] on the `compositor` topic, the same shape on
-//! every compositor, and the workspace actions the bar needs.
-//!
-//! Each compositor is a [`Backend`] that follows the compositor's own event
-//! stream (no polling) and says which [`Capability`]s it has; the UI hides
-//! what a compositor can't do instead of asking which compositor it is.
-//! novad picks the backend from the variables the compositor sets.
-
 mod hyprland;
 #[cfg(any(test, feature = "test-support"))]
 pub use hyprland::LUA_PROBE as HYPRLAND_LUA_PROBE;
@@ -25,53 +16,28 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const LOG_SOURCE: &str = "compositor";
-/// How long to wait before following the compositor again after a failure,
-/// doubling up to `MAX_RETRY` while it keeps failing.
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const MAX_RETRY: Duration = Duration::from_secs(60);
 
-/// One compositor's IPC.
 pub trait Backend: Send + Sync {
-    /// For people: `nova status` and the log.
     fn name(&self) -> &'static str;
 
-    /// What [`Backend::watch`] reports and which actions work.
     fn capabilities(&self) -> &'static [Capability];
 
-    /// Connects and calls `report` with the whole desktop, then again after
-    /// every change, until the compositor closes the connection (`Ok`) or it
-    /// fails.
     fn watch(&self, report: &mut dyn FnMut(Desktop)) -> Result<(), String>;
 
-    /// Shows `workspace`, one the last report listed. A special one shows on
-    /// the focused output, or hides when it shows there already.
     fn focus_workspace(&self, workspace: &Workspace) -> Result<(), String>;
 
-    /// Focuses `output`, one the last report listed, so a window that opens
-    /// next opens there. Never shows or hides a special workspace on it.
     fn focus_output(&self, output: &Output) -> Result<(), String>;
 
-    /// Quits the compositor, ending the session, without its own prompt.
     fn log_out(&self) -> Result<(), String>;
 
-    /// Focuses a window whose app id is one of `app_ids` (lower case) where
-    /// it is, switching workspace and output to it. A window on `here`, one
-    /// the last report listed, wins over one elsewhere. `false` when no
-    /// window has one of them.
     fn focus_window(&self, app_ids: &[String], here: &Workspace) -> Result<bool, String>;
 
-    /// The workspace of the window [`Backend::focus_window`] would focus
-    /// for `app_ids` and `here`, `None` when no window has one of them.
     fn window_workspace(&self, app_ids: &[String], here: &Workspace) -> Result<Option<WorkspaceId>, String>;
-    /// Whether a lock screen that starts while the session is locked, after
-    /// the one holding the lock stopped, may take the lock over. When it
-    /// may not, a lock screen that crashes leaves the session locked with
-    /// nothing to type the password into (`nova doctor` checks it).
     fn restores_session_lock(&self) -> Result<bool, String>;
 }
 
-/// The backend for the compositor this session runs, from its variables in
-/// `env`. `None` when it's none novad knows.
 pub fn detect(env: impl Fn(&str) -> Option<OsString>) -> Option<Box<dyn Backend>> {
     let set = |name: &str| env(name).filter(|value| !value.is_empty());
     if let Some(socket) = set(niri::SOCKET_VAR) {
@@ -82,15 +48,10 @@ pub fn detect(env: impl Fn(&str) -> Option<OsString>) -> Option<Box<dyn Backend>
     Some(Box::new(hyprland::Hyprland::new(hyprland::socket_dir(&runtime_dir, &instance))))
 }
 
-/// The compositor's state, kept current by a thread that follows its events.
 pub struct Compositor {
     backend: Box<dyn Backend>,
-    /// The last report, `None` until the first. Locked while it's published
-    /// and while a client subscribes, so a new subscriber never gets an
-    /// older desktop after a newer one.
     desktop: Mutex<Option<Desktop>>,
     hub: Arc<Hub>,
-    /// Told the outputs' names whenever they change ([`Compositor::on_outputs`]).
     output_listeners: Mutex<Vec<OutputListener>>,
 }
 
@@ -104,9 +65,6 @@ impl Compositor {
         let watcher = Arc::clone(&compositor);
         std::thread::spawn(move || {
             let name = watcher.backend.name();
-            // A failure (the compositor not up yet, a request that timed out)
-            // starts over from a fresh connection, waiting longer each time.
-            // The compositor closing the connection means it's gone.
             let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
             loop {
                 let mut reported = false;
@@ -130,20 +88,16 @@ impl Compositor {
         compositor
     }
 
-    /// What the compositor shows now, once it has said.
     pub fn desktop(&self) -> Option<Desktop> {
         lock(&self.desktop).clone()
     }
 
-    /// The name of the output with the keyboard focus, once known.
     pub fn focused_output(&self) -> Option<String> {
         let desktop = lock(&self.desktop);
         desktop.as_ref()?.outputs.iter().find(|output| output.focused).map(|output| output.name.clone())
     }
 
-    /// Calls `listener` with the outputs' names (sorted), now when they're
-    /// known and again whenever they change. It runs with the desktop locked,
-    /// so it must not call back into the compositor.
+    // The listener runs with the desktop locked, so it must not call back into the compositor: https://linear.app/imperaluna/issue/IMP-168
     pub fn on_outputs(&self, listener: impl Fn(Vec<String>) + Send + 'static) {
         let desktop = lock(&self.desktop);
         if let Some(desktop) = &*desktop {
@@ -152,7 +106,6 @@ impl Compositor {
         lock(&self.output_listeners).push(Box::new(listener));
     }
 
-    /// Subscribes `client` and sends it the current desktop, if known.
     pub fn subscribe(&self, client: ClientId) {
         let desktop = lock(&self.desktop);
         self.hub.subscribe(client, TOPIC);
@@ -180,17 +133,11 @@ impl Compositor {
         }
     }
 
-    /// Focuses a window of an app with one of `app_ids` (lower case) where it
-    /// is, preferring one on the workspace showing on `output` (the focused
-    /// one when `None`). `false` when none is open.
     pub fn focus_app(&self, app_ids: &[String], output: Option<&str>) -> Result<bool, String> {
         let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
         self.backend.focus_window(app_ids, shown_on(&desktop, output)?)
     }
 
-    /// The name of the workspace that holds the window [`Compositor::focus_app`]
-    /// would focus (with `output` `None`), `None` when no window of the app
-    /// is open.
     pub fn app_workspace(&self, app_ids: &[String]) -> Result<Option<String>, String> {
         let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
         let Some(id) = self.backend.window_workspace(app_ids, shown_on(&desktop, None)?)? else { return Ok(None) };
@@ -199,8 +146,6 @@ impl Compositor {
         Ok(workspace.map(|workspace| workspace.name.clone()))
     }
 
-    /// Focuses `output`, so a window that opens next opens there. Nothing
-    /// when it's focused already.
     pub fn focus_output(&self, output: &str) -> Result<(), String> {
         let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
         let output = desktop.outputs.iter().find(|candidate| candidate.name == output).ok_or("no such output")?;
@@ -210,7 +155,6 @@ impl Compositor {
         self.backend.focus_output(output)
     }
 
-    /// Whether the backend can do what `capability` names.
     pub fn can(&self, capability: Capability) -> bool {
         self.backend.capabilities().contains(&capability)
     }
@@ -227,7 +171,6 @@ impl Compositor {
         Err(format!("{} can't do that (no {capability:?} capability)", self.backend.name()))
     }
 
-    /// Publishes `desktop` when it differs from the last one.
     fn update(&self, mut desktop: Desktop) {
         desktop.outputs.sort_by(|a, b| a.name.cmp(&b.name));
         let mut current = lock(&self.desktop);
@@ -245,17 +188,14 @@ impl Compositor {
     }
 }
 
-/// The `compositor` event for `desktop`.
 pub fn event(desktop: &Desktop) -> Single<'_, Desktop> {
     Single::new(EVENT, TOPIC, desktop)
 }
 
-/// The names of `desktop`'s outputs, sorted.
 fn output_names(desktop: &Desktop) -> impl Iterator<Item = &String> {
     desktop.outputs.iter().map(|output| &output.name)
 }
 
-/// The workspace showing on `output` (the focused one when `None`).
 fn shown_on<'a>(desktop: &'a Desktop, output: Option<&str>) -> Result<&'a Workspace, String> {
     let output = match output {
         Some(name) => desktop.outputs.iter().find(|candidate| candidate.name == name),
@@ -265,8 +205,6 @@ fn shown_on<'a>(desktop: &'a Desktop, output: Option<&str>) -> Result<&'a Worksp
     Ok(output.workspaces.iter().find(|workspace| workspace.active).ok_or("no workspace shows there")?)
 }
 
-/// The workspace after or before the active one on `output`; `None` at
-/// either end. Special workspaces aren't steps.
 fn neighbour(desktop: &Desktop, output: &str, step: Step) -> Result<Option<Workspace>, String> {
     let workspaces: Vec<&Workspace> = desktop
         .outputs
@@ -285,7 +223,6 @@ fn neighbour(desktop: &Desktop, output: &str, step: Step) -> Result<Option<Works
     Ok(target.and_then(|index| workspaces.get(index)).map(|workspace| (*workspace).clone()))
 }
 
-/// The recorded compositor sessions the tests replay (see `src/tests.rs`).
 #[cfg(any(test, feature = "test-support"))]
 pub fn recorded_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("recorded")

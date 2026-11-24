@@ -1,19 +1,3 @@
-//! The carousel on one screen: what it holds, and what a key, a click, the
-//! wheel and novad's answers do to it. `draw.rs` renders it.
-//!
-//! Over the whole screen, which previews the picked image, a deck of the
-//! wallpaper folder's images in the middle, the picked one facing you and
-//! the others turned away either side. It picks for every screen at once,
-//! or (Tab, or a click in the screen picker under the deck) for one
-//! screen, each screen previewing its own pick. Left and Right (or the
-//! wheel) move through the images, Enter (or a click on the middle card)
-//! keeps every screen's pick, Esc (or a click beside the deck) puts them
-//! all back. Opened by `nova toggle wallpaper`.
-//!
-//! The stage owns the fade over the screen, Esc and the keyboard; this
-//! view draws everything else and closes itself on a click beside the
-//! deck.
-
 use crate::deck::{Deck, Request, next_screen, requests};
 use crate::images::Pictures;
 use crate::others::{Preview as Shown, Previewed};
@@ -32,45 +16,29 @@ use nova_ui_client::{Daemon, Live, Refusal};
 use nova_wallpaper_api::{Command, WallpaperFolder, Wallpapers};
 use std::time::Instant;
 
-/// The panel's name: the feature's id, which `nova toggle` uses.
 pub const NAME: &str = "wallpaper";
 
-/// The card pictures it holds: those in view, and a few it just passed.
 const CARDS_KEPT: usize = 2 * SIDES + 7;
 
 pub struct Carousel {
     pub(crate) screen: Screen,
     pub(crate) deck: Deck,
     pub(crate) focus: FocusHandle,
-    /// Where the deck is on its way to `deck.target`.
     pub(crate) position: Eased,
-    /// 0 closed, 1 open: the deck rises and spreads out as it opens.
     pub(crate) opening: Eased,
-    /// The deck's opacity: it fades out once an image is picked.
     pub(crate) deck_shown: Eased,
-    /// The mark on this screen while the deck picks for it alone.
     pub(crate) picking_here: Eased,
-    /// Waiting for novad to list the folder, and why it couldn't, or why
-    /// the pick didn't work.
     pub(crate) loading: bool,
     pub(crate) problem: String,
-    /// Picked and handed to awww: the preview stays while awww fades the
-    /// image in under it.
     pub(crate) handing_over: bool,
     pub(crate) cards: Entity<Pictures>,
     pub(crate) minis: Entity<Pictures>,
     pub(crate) preview: Preview,
-    /// Cards fading in where they came round to, by image.
     pub(crate) arrivals: Vec<(usize, Eased)>,
-    /// How much of each card showed in the last frame, by image.
     pub(crate) last_seen: Vec<(usize, f32)>,
     wheel: Wheel,
     was_open: bool,
-    /// How many times it opened: an answer for an earlier opening is
-    /// dropped.
     openings: u64,
-    /// Where the compositor's focus is (the focused workspace and its
-    /// window); a change while open closes it.
     focus_key: String,
     desktop: Entity<Live<Desktop>>,
     previewed: Entity<Previewed>,
@@ -117,12 +85,10 @@ impl Carousel {
         }
     }
 
-    /// The screen's size in pixels, which the preview is decoded at.
     pub(crate) fn pixels(&self, window: &Window) -> Size<DevicePixels> {
         crate::draw::device_size(self.screen.size.width, self.screen.size.height, window)
     }
 
-    /// Whether anything of it moves at `now`.
     pub(crate) fn moving(&self, now: Instant) -> bool {
         !(self.position.settled(now)
             && self.opening.settled(now)
@@ -132,8 +98,6 @@ impl Carousel {
             || self.preview.moving(now)
     }
 
-    /// Called from `render` with whether the stage has the panel open:
-    /// follows it opening and closing.
     pub(crate) fn follow_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         if open == self.was_open {
             return;
@@ -146,14 +110,11 @@ impl Carousel {
             cx.defer_in(window, |carousel, _, cx| carousel.opened(cx));
             return;
         }
-        // Kept as it closes, so a picked deck doesn't come back as it
-        // fades; gone once it has.
         self.publish(cx);
         let opening = self.openings;
         cx.spawn(async move |carousel, cx| {
             cx.background_executor().timer(DURATION_PANEL + DURATION_FADE).await;
             let _ = carousel.update(cx, |carousel, cx| {
-                // Not opened (and closed again) since.
                 if !carousel.was_open && carousel.openings == opening {
                     carousel.faded(cx);
                 }
@@ -162,7 +123,6 @@ impl Carousel {
         .detach();
     }
 
-    /// As it opens: an empty deck while novad lists the folder.
     fn opened(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
         self.handing_over = false;
@@ -188,7 +148,6 @@ impl Carousel {
         cx.notify();
     }
 
-    /// novad's answer to the `opening`th opening.
     fn loaded(
         &mut self,
         opening: u64,
@@ -203,7 +162,6 @@ impl Carousel {
         match folder {
             Ok(listing) => {
                 self.deck.load(listing, shown);
-                // Straight to the screen's own image, without moving there.
                 self.position = Eased::lasting(self.deck.target as f32, DURATION_STEP, Instant::now());
                 self.last_seen.clear();
                 self.arrivals.clear();
@@ -214,13 +172,11 @@ impl Carousel {
         cx.notify();
     }
 
-    /// Closed and faded: its images go, and the other screens' previews.
     fn faded(&mut self, cx: &mut Context<Self>) {
         self.deck.clear();
         self.cards.update(cx, |pictures, _| pictures.clear());
         self.minis.update(cx, |pictures, _| pictures.clear());
         self.preview.show("", Default::default(), cx);
-        // Not drawn again until it opens: out of the GPU's atlas now.
         self.release(None, cx);
         self.handing_over = false;
         self.asking = None;
@@ -229,7 +185,6 @@ impl Carousel {
         cx.notify();
     }
 
-    /// Moves the deck `by` cards, round past either end.
     pub(crate) fn step(&mut self, by: i64, cx: &mut Context<Self>) {
         if self.handing_over || !self.deck.step(by) {
             return;
@@ -240,7 +195,6 @@ impl Carousel {
         cx.notify();
     }
 
-    /// Picks for screen `name` from now on, `None` for every one.
     pub(crate) fn choose_for(&mut self, name: Option<String>, cx: &mut Context<Self>) {
         if self.handing_over || !self.deck.choose_for(name) {
             return;
@@ -251,7 +205,6 @@ impl Carousel {
         cx.notify();
     }
 
-    /// Keeps every screen's pick; with none changed, it closes.
     pub(crate) fn choose(&mut self, cx: &mut Context<Self>) {
         if self.deck.count() == 0 || self.handing_over {
             return;
@@ -281,11 +234,7 @@ impl Carousel {
         cx.notify();
     }
 
-    /// novad's answer to the picks: closes once awww has faded them in.
-    /// When one was refused, the ones `done` before it stay shown.
     fn applied(&mut self, opening: u64, done: &[Request], failed: Option<String>, cx: &mut Context<Self>) {
-        // Opened again since. A pick already sent can't be taken back by
-        // Esc: the screens set keep it.
         if !self.handing_over || opening != self.openings {
             return;
         }
@@ -307,8 +256,6 @@ impl Carousel {
         }));
     }
 
-    /// Takes the pictures let go out of the GPU's atlas: from `window`
-    /// too while it is being drawn.
     pub(crate) fn release(&self, mut window: Option<&mut Window>, cx: &mut gpui::App) {
         self.preview.release(window.as_deref_mut(), cx);
         self.cards.update(cx, |pictures, cx| pictures.release(window.as_deref_mut(), cx));
@@ -319,7 +266,6 @@ impl Carousel {
         Stage::close(NAME, self.screen.id, cx);
     }
 
-    /// Hands the other screens what they preview.
     fn publish(&self, cx: &mut Context<Self>) {
         let here = self.screen.name.clone();
         let preview =
@@ -327,9 +273,6 @@ impl Carousel {
         self.previewed.update(cx, |previewed, cx| previewed.set(&here, preview, cx));
     }
 
-    /// Focus moving behind it (Alt+Tab, Super+Tab to another workspace, a
-    /// window opening) closes it as Esc does, rather than leaving it over
-    /// windows switching behind it.
     fn desktop_changed(&mut self, cx: &mut Context<Self>) {
         let key = focus_key(self.desktop.read(cx).get());
         if key == self.focus_key {
@@ -341,7 +284,6 @@ impl Carousel {
         }
     }
 
-    /// A key. Esc goes on to the stage, which closes the panel.
     pub(crate) fn key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         match event.keystroke.key.as_str() {
             "left" | "up" => self.step(-1, cx),
@@ -357,9 +299,7 @@ impl Carousel {
         cx.stop_propagation();
     }
 
-    /// The wheel: one card a notch, down or right for the next.
     pub(crate) fn scrolled(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) {
-        // Sideways only when it is all sideways, as the wheel counts it.
         let sideways = match event.delta {
             ScrollDelta::Lines(lines) => lines.y == 0.0,
             ScrollDelta::Pixels(pixels) => pixels.y == gpui::px(0.0),
@@ -369,7 +309,6 @@ impl Carousel {
     }
 }
 
-/// What a refusal says, for the label.
 fn said(refusal: Refusal) -> String {
     match refusal {
         Refusal::Daemon(error) => error,
@@ -377,8 +316,6 @@ fn said(refusal: Refusal) -> String {
     }
 }
 
-/// Where the compositor's focus is: the focused workspace and the window
-/// on it (`Protocol.focusKey`), "" while it isn't known.
 fn focus_key(desktop: Option<&Desktop>) -> String {
     let focused = desktop.and_then(|desktop| {
         desktop.outputs.iter().flat_map(|output| &output.workspaces).find(|workspace| workspace.focused)
@@ -388,7 +325,6 @@ fn focus_key(desktop: Option<&Desktop>) -> String {
     })
 }
 
-/// Every screen's name, left to right as they are laid out.
 fn screen_order(cx: &gpui::App) -> Vec<String> {
     let Some(screens) = Stage::screens(cx) else { return Vec::new() };
     let mut placed: Vec<(f32, f32, String)> = screens

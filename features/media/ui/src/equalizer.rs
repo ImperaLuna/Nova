@@ -1,32 +1,16 @@
-//! The pill's equalizer between its steps, with no drawing in it. The
-//! model picks new heights every `DURATION_EQ_STEP`; [`Levels`] eases the
-//! drawn heights toward them each frame, quick on the way up and slower on
-//! the way down, and [`outline`] joins them into one smooth shape.
-
 use std::time::{Duration, Instant};
 
-/// Closer to its target than this (px), a bar is there: less than a
-/// twentieth of a pixel, too little to see.
 const REST_DISTANCE: f32 = 0.05;
-/// The longest time one frame may cover: after a stall the bars carry on
-/// from where they were instead of jumping.
 const FRAME_MAX: Duration = Duration::from_millis(100);
-/// Points on each quarter circle that rounds a corner of the outline.
 const CORNER_POINTS: usize = 4;
 
-/// The heights drawn now, easing toward the model's.
 #[derive(Debug, Clone, Default)]
 pub struct Levels {
     heights: Vec<f32>,
-    /// When the last frame eased them, while they move.
     eased_at: Option<Instant>,
 }
 
 impl Levels {
-    /// The heights at `now`, eased toward `targets` since the last frame:
-    /// each closes in on its target with time constant `rise` going up and
-    /// `fall` going down. The first call, or a change in the number of
-    /// bars, starts at the targets.
     pub fn ease(&mut self, targets: &[f32], rise: Duration, fall: Duration, now: Instant) -> &[f32] {
         if self.heights.len() != targets.len() {
             self.heights = targets.to_vec();
@@ -39,30 +23,21 @@ impl Levels {
         &self.heights
     }
 
-    /// The heights the last [`Levels::ease`] gave.
     pub fn heights(&self) -> &[f32] {
         &self.heights
     }
 
-    /// Whether every bar is at its target, so no more frames are needed.
     pub fn settled(&self, targets: &[f32]) -> bool {
         self.heights.len() == targets.len() && self.heights.iter().zip(targets).all(|(height, target)| height == target)
     }
 }
 
-/// `from` after `elapsed` on its way to `to`, closing in with time
-/// constant `tau`; at `to` once within [`REST_DISTANCE`].
 fn approach(from: f32, to: f32, tau: Duration, elapsed: Duration) -> f32 {
     let left = if tau.is_zero() { 0.0 } else { (-elapsed.as_secs_f32() / tau.as_secs_f32()).exp() };
     let value = to + (from - to) * left;
     if (value - to).abs() < REST_DISTANCE { to } else { value }
 }
 
-/// One shape for bars of `heights`, each `width` wide and `gap` apart: a
-/// smooth top through the middle of each bar's top, its ends and its foot
-/// rounded like a bar's, `samples` points between two bars. Points go
-/// round it from the bottom left, `x` from the left edge and `y` up from
-/// the foot, all within the bars' box (`top` high).
 pub fn outline(heights: &[f32], width: f32, gap: f32, top: f32, samples: usize) -> Vec<(f32, f32)> {
     let (Some(first), Some(last)) = (heights.first(), heights.last()) else { return Vec::new() };
     let radius = width / 2.0;
@@ -91,8 +66,6 @@ pub fn outline(heights: &[f32], width: f32, gap: f32, top: f32, samples: usize) 
     points
 }
 
-/// A quarter circle of `radius` round `center`, from `start` degrees on
-/// clockwise (`y` up): the outline turns right at each corner.
 fn corner(points: &mut Vec<(f32, f32)>, center: (f32, f32), radius: f32, start: f32) {
     for step in 0..=CORNER_POINTS {
         let angle = (start - 90.0 * step as f32 / CORNER_POINTS as f32).to_radians();
@@ -100,8 +73,6 @@ fn corner(points: &mut Vec<(f32, f32)>, center: (f32, f32), radius: f32, start: 
     }
 }
 
-/// The point `along` (0..1) the way from `from` to `to` on a Catmull-Rom
-/// curve, which passes through every point it is given.
 fn catmull_rom(before: (f32, f32), from: (f32, f32), to: (f32, f32), after: (f32, f32), along: f32) -> (f32, f32) {
     let (t, t2, t3) = (along, along * along, along * along * along);
     let at = |p0: f32, p1: f32, p2: f32, p3: f32| {
@@ -121,7 +92,6 @@ mod tests {
     const FALL: Duration = Duration::from_millis(160);
     const FRAME: Duration = Duration::from_millis(8);
 
-    /// Eases `levels` toward `targets` for `frames` frames from `start`.
     fn run(levels: &mut Levels, targets: &[f32], start: Instant, frames: u32) -> Vec<f32> {
         let mut heights = Vec::new();
         for frame in 0..=frames {
@@ -142,8 +112,6 @@ mod tests {
         let start = Instant::now();
         let mut levels = Levels::default();
         levels.ease(&[3.0, 12.0], RISE, FALL, start);
-        // 40 ms later: the rising bar is most of the way, the falling one
-        // not yet a third.
         let heights = run(&mut levels, &[12.0, 3.0], start, 5);
         assert!(heights[0] > 3.0 + 9.0 * 0.6, "{heights:?}");
         assert!(heights[1] > 12.0 - 9.0 * 0.3, "{heights:?}");

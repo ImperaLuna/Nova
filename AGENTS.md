@@ -552,6 +552,7 @@ same lints and limits, so both repos read the same.
 | Small functions: at most 80 lines | Clippy `too_many_lines` (`clippy.toml`) |
 | Shallow code: blocks nest at most 5 deep | Clippy `excessive_nesting` (`clippy.toml`) |
 | Small files: a Rust file has at most 800 lines | `scripts/check-file-length.sh` (`just file-length`, flake check `file-length`) |
+| No comments outside the keep list (Comments) | `scripts/check-comments.sh` (`just comments`, flake check `comments`) |
 | No polling: a wait is on a channel or event, with a timeout | Clippy `disallowed-methods` (`std::thread::sleep`); retries against what sends no event wait in `nova_base::backoff::wait_out`, tests in `nova_test_support::settle` |
 
 ## State, threads and files

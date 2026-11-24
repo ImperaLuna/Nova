@@ -1,12 +1,3 @@
-//! `nova ipc`: one raw request to novad, its result printed as JSON, for
-//! scripts. The command and its arguments are checked against the types
-//! novad reads (novad's own in `nova-daemon-info`, or a feature's api
-//! crate's) before anything is sent. `subscribe` instead prints the
-//! events of its topics, one JSON object per line, until the command is
-//! interrupted (watching a topic from a shell, like
-//! `scripts/desktop/isolated-novad` does); novad going away is an error, so
-//! a script can tell it from a normal end.
-
 use crate::client::Client;
 use nova_carrier::names::tagged_names_of;
 use nova_daemon_info::Command;
@@ -16,10 +7,7 @@ use std::path::Path;
 
 #[derive(clap::Args)]
 pub struct IpcArgs {
-    /// The command, as novad names it: `status`, `list_features`,
-    /// `focus_workspace`...
     command: String,
-    /// Its arguments as a JSON object, like `'{"id": 3}'`.
     args: Option<String>,
 }
 
@@ -36,7 +24,6 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
     let mut stdout = std::io::stdout().lock();
     while let Some(event) = client.next_event()? {
         let line = serde_json::to_string(&event).map_err(|e| e.to_string())?;
-        // A closed pipe (`| head`) ends the watch, quietly.
         if writeln!(stdout, "{line}").and_then(|()| stdout.flush()).is_err() {
             return Ok(());
         }
@@ -44,8 +31,6 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
     Err("novad closed the connection".into())
 }
 
-/// A command `nova ipc` sends: one of novad's own, or a feature's (its api
-/// crate's `Command`, one variant per feature, sorted by feature id).
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 enum IpcCommand {
@@ -69,7 +54,6 @@ enum IpcCommand {
     Workspaces(nova_workspaces_api::Command),
 }
 
-/// The command `name` with `args`, as novad would read it off the socket.
 fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     let mut request = serde_json::json!({ "cmd": name });
     if let Some(args) = args {

@@ -1,10 +1,3 @@
-//! Drawing the launcher: the search field with its tabs, the pinned apps
-//! as tiles, and the list, of which only the rows in view are built.
-//!
-//! The list is laid out by `rows::Layout`, not by GPUI: every row's place
-//! is known from the rows alone, so the highlight can slide to the
-//! selected one and a long list costs the six rows it shows.
-
 use crate::launcher::{Launcher, NAME, Running, content_width};
 use crate::rows::{Row, file_glyph, shown};
 use crate::tokens::{
@@ -62,22 +55,16 @@ impl Render for Launcher {
     }
 }
 
-/// A heading: over the pinned apps, over a group of rows.
 fn label(color: Hsla) -> Div {
     div().h(LABEL_HEIGHT).flex_none().pl(ROW_INSET).flex().items_center().text_size(FONT_SIZE_SMALL).text_color(color)
 }
 
-/// What a row's buttons show by: whether the row runs, and whether the
-/// pointer is on it.
 #[derive(Clone, Copy)]
 struct RowState {
     running: bool,
     hovered: bool,
 }
 
-/// A small round button at the end of a row: washed and its icon bright
-/// while the pointer is on it, its icon dim (or `lit`) otherwise. It fades
-/// in to `opacity`, which the row works out.
 struct RowButton {
     id: SharedString,
     glyph: Glyph,
@@ -112,8 +99,6 @@ impl RowButton {
 }
 
 impl Launcher {
-    /// The search field: its icon, the text, the modes' tabs with Nova
-    /// Files on, and the key that closes.
     fn search(&self, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx);
         let (dim, raised) = (theme.fg_dim(), theme.surface_raised());
@@ -143,26 +128,20 @@ impl Launcher {
             .child(div().font_family(FONT_MONO).text_size(FONT_SIZE_SMALL).text_color(dim).child("Esc"))
     }
 
-    /// The pinned apps, spread over one row.
     fn tiles(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let pinned: Vec<InstalledApp> = self.pinned(cx).into_iter().cloned().collect();
         let tiles: Vec<AnyElement> = pinned.iter().map(|app| self.tile(app, window, cx)).collect();
-        // A full row's spacing, however few there are.
         let fit = ((content_width() + GAP) / (TILE_SIZE + GAP)).floor();
         let between = if fit > 1.0 { (content_width() - TILE_SIZE * fit) / (fit - 1.0) } else { px(0.0) };
         div().h(TILE_SIZE + TILE_NAME).flex_none().flex().gap(between).children(tiles)
     }
 
-    /// A pinned app: its icon on a raised tile, its name under it on
-    /// hover. A click runs it.
     fn tile(&self, app: &InstalledApp, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
         let (dim, raised, hover, accent) = (theme.fg_dim(), theme.surface_raised(), theme.hover(), theme.accent_fill());
         let key = format!("tile-{}", app.id);
         let hovered = Hovered::of(SharedString::from(format!("{key}-hovered")), window, cx);
         let running = self.is_running(PROVIDER_APPS, &app.id);
-        // The wash fades in on hover and turns the accent while it runs;
-        // the name under it fades in on hover.
         let (on, shows_name) = (running || hovered.is(cx), hovered.is(cx));
         let wash_color = fade_color(
             SharedString::from(format!("{key}-wash")),
@@ -194,7 +173,6 @@ impl Launcher {
                     launcher.run(Running { provider: PROVIDER_APPS.into(), id: id.clone() }, false, cx);
                 }),
             );
-        // A little wider than the tile, so a longer name still fits.
         let name = div()
             .absolute()
             .top(TILE_SIZE)
@@ -220,8 +198,6 @@ impl Launcher {
             .into_any_element()
     }
 
-    /// The list: the highlight behind the selected row, and the rows in
-    /// view, each under its group's heading when it's the group's first.
     fn list(&self, now: Instant, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx).clone();
         let (dim, selected, accent) = (theme.fg_dim(), theme.selected(), theme.accent_fill());
@@ -265,14 +241,8 @@ impl Launcher {
             .children(items)
     }
 
-    /// One row: its icon, its name (the letters a search matched in the
-    /// accent) and what it is, dimmer. Hovering an app shows a pin button,
-    /// which stays lit while the app is pinned; a file shows a button that
-    /// shows it in its folder. The selected row shows ↵. While it runs,
-    /// the highlight behind it is the accent and its text turns to match.
     fn row(&self, index: usize, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let row = &self.rows[index];
-        // By place as well: an app can be in two groups (recent, and all).
         let key = format!("row-{index}-{}-{}", row.provider, row.id);
         let hovered = Hovered::of(SharedString::from(format!("{key}-hovered")), window, cx);
         let theme = Theme::of(cx).clone();
@@ -322,9 +292,6 @@ impl Launcher {
             .child(end)
     }
 
-    /// A row's buttons: an app's pin, a file's "show in its folder".
-    /// A button shows while the row is hovered (an app's pin also while
-    /// it is pinned), and never while the row runs.
     fn row_buttons(
         &self,
         index: usize,
@@ -375,8 +342,6 @@ impl Launcher {
     }
 }
 
-/// A row's icon: an app's own, or a found file's type as a line icon, a
-/// folder's in its own color and a hidden file's fainter.
 fn row_icon(row: &Row, running: bool, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let slot = div().size(APP_ICON_SIZE).flex_none().flex().items_center().justify_center();
@@ -392,7 +357,6 @@ fn row_icon(row: &Row, running: bool, cx: &App) -> Div {
     if file.hidden { slot.opacity(HIDDEN_ICON_OPACITY).child(icon) } else { slot.child(icon) }
 }
 
-/// A row's name, the runs a search matched heavier and in the accent.
 fn name(row: &Row, running: bool, cx: &App) -> StyledText {
     let accent = (!running).then_some(Theme::of(cx).primary);
     let mut text = String::new();

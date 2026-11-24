@@ -1,28 +1,13 @@
-//! Slots: the places a feature's UI goes, from the `[[slot]]` entries of its
-//! manifest (`features/<id>/feature.toml`), which novad sends with each
-//! feature's state. A host shows the views of its slots, sorted by `order`, for
-//! the features that are ready.
-//!
-//! [`Slots`] is the list as novad last sent it, as an entity a host
-//! observes: it notifies when the features change. A feature that is off or
-//! missing something has no slot here, so nothing of it is ever built.
-
 use gpui::{App, AppContext, Context, Entity, SharedString};
 use nova_daemon_info::{Event, FeatureState, FeatureStatus, Slot, topics};
 use nova_ui_client::Live;
 
-/// The hosts the stage fills itself. The others belong to the feature that
-/// draws them (the central pill's parts, quick settings' tiles), which
-/// names its own.
 pub const HOST_BAR_LEFT: &str = "bar.left";
 pub const HOST_BAR_CENTER: &str = "bar.center";
 pub const HOST_BAR_RIGHT: &str = "bar.right";
 pub const HOST_STAGE_PANELS: &str = "stage.panels";
 pub const HOST_SHELL_OVERLAYS: &str = "shell.overlays";
 
-/// The views of `host`'s slots among the ready features in `features`:
-/// lowest order first, ties by feature id. A view two features list shows
-/// once.
 pub fn for_host(features: &[FeatureState], host: &str) -> Vec<SharedString> {
     let mut found: Vec<(i64, &str, &str)> = features
         .iter()
@@ -41,11 +26,8 @@ pub fn for_host(features: &[FeatureState], host: &str) -> Vec<SharedString> {
     views
 }
 
-/// The slots to fill right now.
 pub struct Slots {
     features: Entity<Live<Vec<FeatureState>>>,
-    /// Slots no manifest lists, filled whatever novad says: `nova-ui
-    /// --demo`'s pill and panel.
     extra: FeatureState,
 }
 
@@ -68,7 +50,6 @@ impl Slots {
         })
     }
 
-    /// The views to show in `host`, in order.
     pub fn for_host(&self, host: &str, cx: &App) -> Vec<SharedString> {
         let mut features = self.features.read(cx).get().cloned().unwrap_or_default();
         features.push(self.extra.clone());

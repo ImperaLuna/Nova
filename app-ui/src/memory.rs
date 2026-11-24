@@ -1,23 +1,11 @@
-//! How nova-ui's heap gives memory back (IMP-462).
-//!
-//! glibc's malloc serves a large block from its own mapping, which goes
-//! back to the system when freed, but after each such free it raises that
-//! threshold to the freed block's size (up to 32 MB). Pictures decoded on
-//! worker threads (the wallpaper carousel's, the screenshot picker's frozen
-//! screens) then land in per-thread arenas, which keep the pages once
-//! freed: on RyzenShine each carousel open added 30 to 100 MB that never
-//! came back (592 MB after use, against 144 MB right after start). A fixed
-//! threshold keeps every block from 1 MB up in its own mapping, so it is
-//! returned the moment it is freed.
-
-/// Blocks from this size up are mapped on their own and unmapped on free:
-/// above what a frame allocates over and over (each an mmap and munmap),
-/// below every picture.
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
+// Each carousel open kept 30 to 100 MB (592 MB after use against 144 MB at start); 1 MB sits above a frame's
+// allocations and below every picture: https://linear.app/imperaluna/issue/IMP-462
 const OWN_MAPPING_FROM: std::ffi::c_int = 1024 * 1024;
 
-/// glibc's `M_MMAP_THRESHOLD` (malloc.h).
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
+// glibc raises the mmap threshold after each mapped block is freed, so later pictures stay in arenas that keep the pages:
+// https://man7.org/linux/man-pages/man3/mallopt.3.html
 const M_MMAP_THRESHOLD: std::ffi::c_int = -3;
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -25,8 +13,6 @@ unsafe extern "C" {
     fn mallopt(param: std::ffi::c_int, value: std::ffi::c_int) -> std::ffi::c_int;
 }
 
-/// Fixes malloc's mapping threshold. Called first thing in `main`, before
-/// any thread starts.
 pub fn give_back_large_blocks() {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     // SAFETY: mallopt takes plain integers and only changes malloc's

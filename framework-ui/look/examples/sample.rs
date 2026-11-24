@@ -1,15 +1,3 @@
-//! A pill and a panel drawn with the whole look kit, to look at and to
-//! screenshot: glass with its edge and shadow, text at
-//! each size and ink, icons, fills, a meter that eases in, the theme's
-//! colors, and a footer held inside the panel's rounded corners. The blur
-//! and click regions follow the two shapes.
-//!
-//! It opens one shell window across the top of the first screen. A click on
-//! the panel swaps dark and light, which shows that a theme change redraws
-//! everything with nothing watching for it.
-//!
-//! `cargo run -p nova-look --example sample -- --help` lists its switches.
-
 use gpui::{
     App, AppContext, Bounds, Context, Div, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Render,
     Styled, Window, div, point, px, relative, size,
@@ -34,8 +22,6 @@ const HELP: &str = "sample [switches]
   --flip-after MS  swap dark and light once, MS after it opens
   --tint OPACITY   the glass tint's opacity, in place of the look's own";
 
-/// The sample's own sizes: the pill's width, the panel's height, the dots
-/// that show the theme's colors, the footer, and how full the meter is.
 const PILL_WIDTH: Pixels = px(236.0);
 const PANEL_HEIGHT: Pixels = px(404.0);
 const SWATCH_SIZE: Pixels = px(14.0);
@@ -71,7 +57,6 @@ fn parse_options() -> Result<Options, String> {
     Ok(options)
 }
 
-/// A theme file (`nova-theme` owns the format).
 #[derive(Deserialize)]
 struct ThemeFile {
     name: String,
@@ -79,8 +64,6 @@ struct ThemeFile {
     light: Option<Palette>,
 }
 
-/// The file's dark and light themes; light is dark again where the file has
-/// no light colors.
 fn read_themes(path: &str) -> Result<[Theme; 2], String> {
     let text = std::fs::read_to_string(path).map_err(|error| format!("can't read {path}: {error}"))?;
     let file: ThemeFile = toml::from_str(&text).map_err(|error| format!("{path}: {error}"))?;
@@ -94,11 +77,9 @@ fn read_themes(path: &str) -> Result<[Theme; 2], String> {
 }
 
 struct Sample {
-    /// The dark and the light theme; a click swaps them.
     themes: [Theme; 2],
     tint: Option<f32>,
     width: Pixels,
-    /// How full the meter is, on its way to [`METER_VALUE`].
     fill: Eased,
 }
 
@@ -191,8 +172,6 @@ impl Sample {
                     .child(swatches),
             )
             .child(div().flex_1())
-            // A fill that reaches the panel's bottom corners: without
-            // fit_corners its square corners would stick out of the glass.
             .child(
                 div()
                     .h(FOOTER_HEIGHT)
@@ -210,7 +189,6 @@ impl Sample {
     }
 }
 
-/// The panel's title, and the theme in use in a chip.
 fn header(theme: &Theme) -> Div {
     let mode = if theme.mode == ThemeMode::Dark { "dark" } else { "light" };
     div()
@@ -232,7 +210,6 @@ fn header(theme: &Theme) -> Div {
         )
 }
 
-/// A headline number over a meter, both at `fill` (0..1).
 fn headline(fill: f32, theme: &Theme) -> Div {
     let number = div()
         .flex()
@@ -261,7 +238,6 @@ enum RowState {
     Disabled,
 }
 
-/// A list row: an icon, a label and a quieter word at its end.
 fn row(glyph: Glyph, label: &'static str, detail: &'static str, state: RowState, theme: &Theme) -> Div {
     let ink = match state {
         RowState::Disabled => theme.fg_disabled(),
@@ -290,7 +266,6 @@ fn row(glyph: Glyph, label: &'static str, detail: &'static str, state: RowState,
 impl Render for Sample {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
-        // Frames only while the meter moves.
         if !self.fill.settled(now) {
             window.request_animation_frame();
         }
@@ -322,7 +297,6 @@ fn open(options: Options, themes: Option<[Theme; 2]>, cx: &mut App) {
             if let Some(after) = options.flip_after {
                 cx.spawn(async move |sample, cx| {
                     cx.background_executor().timer(after).await;
-                    // The window may be gone by now; then there is nothing to flip.
                     sample.update(cx, |sample: &mut Sample, cx| sample.flip(cx)).ok();
                 })
                 .detach();

@@ -1,27 +1,3 @@
-//! Running linux-wallpaperengine (feature `wallpaper-engine`): one process
-//! shows every output's dynamic wallpaper, each with `--screen-root <output>
-//! --bg <project>`, and is started again whenever that set changes.
-//!
-//! Flags from the IMP-168 spike on niri: the background layer (its default,
-//! bottom, is cloned onto every workspace in niri's overview), pausing only
-//! under an active fullscreen window (otherwise any output-sized window,
-//! even on a hidden workspace, freezes every screen), no sound, and an
-//! assets folder: Wallpaper Engine's own from Steam when it's installed,
-//! otherwise an empty one, which simple scenes and videos don't need more
-//! than.
-//!
-//! It only opens projects, and only finds files that are really inside the
-//! project's folder (not through a symlink), so a video gets a project of
-//! its own in the state folder with a hard link to it, or a copy when it's
-//! on another disk or a link isn't allowed.
-//!
-//! Each run also writes one frame of what it shows (`--screenshot`): every
-//! output side by side in one image, in the order of their names, each as
-//! wide and as tall as its surface in pixels, from the top. novad cuts it
-//! into one still per output (`save_stills`) and keeps them by project and
-//! size, so awww can show a sharp picture while the engine starts next time
-//! instead of the project's small preview.
-
 use super::source::PROJECT_FILE;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -30,48 +6,36 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub const PROGRAM: &str = "linux-wallpaperengine";
+// On niri the default bottom layer is cloned onto every workspace in the overview, and pausing under any
+// output-sized window freezes every screen: https://linear.app/imperaluna/issue/IMP-168
 const FLAGS: &[&str] = &[
     "--silent",
     "--layer",
     "background",
     "--fullscreen-pause-only-active",
-    // Fills the output and crops, like awww's images.
     "--scaling",
     "fill",
-    // The frames it waits before writing its frame: its most.
     "--screenshot-delay",
     "5",
 ];
-/// Wallpaper Engine's assets in a Steam library.
 const STEAM_ASSETS: &str = "steamapps/common/wallpaper_engine/assets";
-/// Nova's folder in the state folder: the empty assets folder and the
-/// videos' projects.
 const STATE_FOLDER: &str = "wallpaper-engine";
 const EMPTY_ASSETS: &str = "assets";
 const VIDEO_PROJECTS: &str = "videos";
-/// Where a run writes its frame, and where the stills cut from it are kept
-/// (`<project>/<width>x<height>.png`).
 const FRAME_FILE: &str = "frame.png";
 const STILLS: &str = "stills";
-/// NixOS keeps the GPU driver's libraries here, outside every package, and
-/// nixpkgs' linux-wallpaperengine doesn't look there: without it, NVIDIA
-/// video decoding falls back to a copy on the CPU (15% of a core instead of
-/// 3.7% in the IMP-168 spike). Remove once nixpkgs wraps the program with
-/// the driver path.
+// nixpkgs' linux-wallpaperengine misses the driver folder, so NVIDIA decodes video on the CPU. Remove once nixpkgs
+// wraps it with the driver path: https://linear.app/imperaluna/issue/IMP-168
 const NIXOS_DRIVER_LIBS: &str = "/run/opengl-driver/lib";
 
-/// Where its files go: `<state>/wallpaper-engine`.
 pub fn state_folder(state_dir: &Path) -> PathBuf {
     state_dir.join(STATE_FOLDER)
 }
 
-/// Where a run writes its frame, in `folder`.
 pub fn frame_file(folder: &Path) -> PathBuf {
     folder.join(FRAME_FILE)
 }
 
-/// The command that shows `screens` (output name to project folder) and
-/// writes its frame to `frame`.
 pub fn command(screens: &BTreeMap<String, PathBuf>, assets: &Path, frame: &Path, path_var: &str) -> Command {
     let mut command = Command::new(PROGRAM);
     command.env("PATH", path_var).args(FLAGS).arg("--assets-dir").arg(assets).arg("--screenshot").arg(frame);
@@ -89,8 +53,6 @@ pub fn command(screens: &BTreeMap<String, PathBuf>, assets: &Path, frame: &Path,
     command
 }
 
-/// Wallpaper Engine's assets from the first Steam library that has them,
-/// else an empty folder in `folder` (made if missing).
 pub fn assets(steam_roots: &[PathBuf], folder: &Path) -> Result<PathBuf, String> {
     if let Some(steam) = steam_roots.iter().map(|root| root.join(STEAM_ASSETS)).find(|assets| assets.is_dir()) {
         return Ok(steam);
@@ -100,11 +62,7 @@ pub fn assets(steam_roots: &[PathBuf], folder: &Path) -> Result<PathBuf, String>
     Ok(empty)
 }
 
-/// The project that plays `video`, made in `folder` if it isn't there yet.
-/// Named after the video's name, file (device and inode), size and time,
-/// so another file or a changed one gets its own.
 pub fn video_project(video: &Path, folder: &Path) -> Result<PathBuf, String> {
-    // A hard link to a symlink would be a symlink, which it won't follow.
     let video = &std::fs::canonicalize(video).map_err(|e| format!("can't read {}: {e}", video.display()))?;
     let metadata = std::fs::metadata(video).map_err(|e| format!("can't read {}: {e}", video.display()))?;
     let modified = metadata
@@ -120,8 +78,6 @@ pub fn video_project(video: &Path, folder: &Path) -> Result<PathBuf, String> {
     if project.join(PROJECT_FILE).is_file() {
         return Ok(project);
     }
-    // Made under another name and renamed into place, so a half-made one
-    // is never used.
     let making = videos.join(format!(".making-{}", std::process::id()));
     let made = (|| {
         let _ = std::fs::remove_dir_all(&making);
@@ -141,34 +97,26 @@ pub fn video_project(video: &Path, folder: &Path) -> Result<PathBuf, String> {
     Ok(project)
 }
 
-/// Removes the videos' projects in `folder` that aren't in `keep`.
 pub fn forget_videos(folder: &Path, keep: &BTreeSet<PathBuf>) -> Result<(), String> {
     forget(&folder.join(VIDEO_PROJECTS), keep)
 }
 
-/// The folder in `folder` with `project`'s stills, named like a video's
-/// project after its name and folder (device and inode), so a project put
-/// back in another folder or another one with the same name gets its own.
-/// `None` when it can't be read.
 pub fn stills_of(project: &Path, folder: &Path) -> Option<PathBuf> {
     let metadata = std::fs::metadata(project).ok()?;
     let name = project.file_name().unwrap_or_default().to_string_lossy();
     Some(folder.join(STILLS).join(format!("{name}-{}-{}", metadata.dev(), metadata.ino())))
 }
 
-/// `project`'s still for an output `size` pixels big, if one was kept.
 pub fn still(project: &Path, size: (u32, u32), folder: &Path) -> Option<PathBuf> {
     let still = stills_of(project, folder)?.join(still_name(size));
     still.is_file().then_some(still)
 }
 
-/// Whether any still of `project` was kept.
 #[cfg(test)]
 pub fn has_stills(project: &Path, folder: &Path) -> bool {
     stills_of(project, folder).is_some_and(|stills| stills.is_dir())
 }
 
-/// Removes the stills in `folder` of projects that aren't in `keep`.
 pub fn forget_stills(folder: &Path, keep: &[&Path]) -> Result<(), String> {
     let keep = keep.iter().filter_map(|project| stills_of(project, folder)).collect();
     forget(&folder.join(STILLS), &keep)
@@ -178,21 +126,12 @@ fn still_name((width, height): (u32, u32)) -> String {
     format!("{width}x{height}.png")
 }
 
-/// Why [`save_stills`] kept nothing.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Unsaved {
-    /// The frame is cut off: it's still being written.
     NotYet,
-    /// It never will from this frame.
     Never(String),
 }
 
-/// Cuts `frame`, a run's frame of `screens`, into a still for each output
-/// and keeps them in `folder`. `sizes`: each output's size in pixels; with
-/// one output, the frame's own size stands in for an unknown one. Nothing
-/// is kept from a frame that isn't laid out as those sizes say (with an
-/// output at a fractional scale, which the engine draws at a size of its
-/// own, say). Checks `stopped` before each still it writes.
 pub fn save_stills(
     frame: &[u8],
     screens: &BTreeMap<String, PathBuf>,
@@ -242,8 +181,6 @@ pub fn save_stills(
     Ok(())
 }
 
-/// Written under another name and renamed into place, so awww never reads
-/// half of one.
 fn save_png(pixels: &[u8], (width, height): (u32, u32), alpha: bool, path: &Path) -> Result<(), String> {
     let making = path.with_extension(format!("making-{}", std::process::id()));
     let made = (|| -> Result<(), Box<dyn std::error::Error>> {
@@ -261,7 +198,6 @@ fn save_png(pixels: &[u8], (width, height): (u32, u32), alpha: bool, path: &Path
     })
 }
 
-/// Removes the folders in `parent` that aren't in `keep`.
 fn forget(parent: &Path, keep: &BTreeSet<PathBuf>) -> Result<(), String> {
     let entries = match std::fs::read_dir(parent) {
         Ok(entries) => entries,
@@ -291,12 +227,10 @@ mod tests {
         assert!(line.contains("--layer background") && line.contains("--fullscreen-pause-only-active"), "{line}");
         assert!(line.contains("--silent") && line.contains("--assets-dir /assets"), "{line}");
         assert!(line.ends_with("--screen-root DP-1 --bg /w/tide --screen-root DP-2 --bg /w/rain"), "{line}");
-        // --scaling applies to the screens after it.
         assert!(line.find("--scaling").unwrap() < line.find("--screen-root").unwrap());
         assert!(line.contains("--screenshot-delay 5") && line.contains("--screenshot /state/frame.png"), "{line}");
     }
 
-    /// A PNG `width` pixels wide whose pixel at x is (x, y, 7).
     fn frame(width: u32, height: u32) -> Vec<u8> {
         let mut png = Vec::new();
         let mut encoder = png::Encoder::new(&mut png, width, height);
@@ -322,7 +256,6 @@ mod tests {
         std::fs::create_dir_all(&rain).unwrap();
         let folder = dir.join("nova");
         let screens = [("DP-1".to_owned(), tide.clone()), ("HDMI-A-1".to_owned(), rain.clone())].into();
-        // Side by side in name order, the shorter one from the top.
         let sizes = [("DP-1".to_owned(), (3, 2)), ("HDMI-A-1".to_owned(), (2, 1))].into();
         assert!(!has_stills(&tide, &folder));
         save_stills(&frame(5, 2), &screens, &sizes, &folder, &|| false).unwrap();
@@ -358,7 +291,6 @@ mod tests {
         let no_sizes = save_stills(&png, &screens, &BTreeMap::new(), &folder, &|| false);
         assert!(matches!(no_sizes, Err(Unsaved::Never(why)) if why.contains("DP-1's size")));
         assert!(!has_stills(&tide, &folder));
-        // One output: the frame is its size.
         save_stills(&png, &[("DP-1".to_owned(), tide.clone())].into(), &BTreeMap::new(), &folder, &|| false).unwrap();
         assert!(still(&tide, (5, 2), &folder).is_some());
     }
@@ -386,14 +318,12 @@ mod tests {
         assert_eq!(std::fs::read_to_string(project.join(description["file"].as_str().unwrap())).unwrap(), "frames");
         assert!(!project.join("video.webm").is_symlink(), "linux-wallpaperengine doesn't follow symlinks");
         assert_eq!(video_project(&video, &folder).unwrap(), project, "made once");
-        // A changed video gets a new one; the old one goes once unused.
         std::fs::write(&video, "more frames").unwrap();
         let changed = video_project(&video, &folder).unwrap();
         assert_ne!(changed, project);
         forget_videos(&folder, &[changed.clone()].into()).unwrap();
         assert!(!project.exists() && changed.is_dir());
         assert!(video_project(&dir.join("missing.mp4"), &folder).unwrap_err().contains("can't read"));
-        // Through a symlink: the project gets the file itself.
         std::os::unix::fs::symlink(&video, dir.join("link.webm")).unwrap();
         let linked = video_project(&dir.join("link.webm"), &folder).unwrap();
         assert!(!linked.join("video.webm").is_symlink());

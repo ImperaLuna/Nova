@@ -1,13 +1,9 @@
-//! The launcher's logic that draws nothing: what its list shows, where each row
-//! sits and moving the selection.
-
 use crate::tokens::{LABEL_HEIGHT, ROW_GAP, ROW_HEIGHT};
 use nova_app_info::App;
 use nova_launcher_api::{LauncherFile, LauncherItem, PROVIDER_APPS, RAW_BYTE_BASE, TextRun};
 use nova_look::Glyph;
 use std::collections::HashSet;
 
-/// The headings of the list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
     Recent,
@@ -27,19 +23,14 @@ impl Group {
     }
 }
 
-/// One row of the list: an app, or what a provider found.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
-    /// The provider that runs it, and what it is to that provider.
     pub provider: String,
     pub id: String,
     pub name: String,
-    /// The name in runs, the letters a search matched marked.
     pub runs: Vec<TextRun>,
     pub description: String,
-    /// An absolute path to its icon.
     pub icon: Option<String>,
-    /// What it is when it's a file or folder.
     pub file: Option<LauncherFile>,
     pub group: Group,
 }
@@ -72,15 +63,10 @@ impl Row {
     }
 }
 
-/// The apps with these ids, in their order, skipping any not in `apps`.
 pub fn pick<'a>(apps: &'a [App], ids: &[String]) -> Vec<&'a App> {
     ids.iter().filter_map(|id| apps.iter().find(|app| app.id == *id)).collect()
 }
 
-/// What the list shows: what the providers found while there's a query,
-/// else the recent apps followed by every other app by name, so the arrows
-/// reach any app without typing; in the Files mode (`files`), only what was
-/// found.
 pub fn rows(query: &str, matches: &[LauncherItem], recent: &[String], apps: &[App], files: bool) -> Vec<Row> {
     if query.trim().is_empty() {
         if files {
@@ -96,8 +82,6 @@ pub fn rows(query: &str, matches: &[LauncherItem], recent: &[String], apps: &[Ap
     matches.iter().map(|item| Row::found(item, group)).collect()
 }
 
-/// The selection after moving `by` rows from `index` among `count`, going
-/// round at either end.
 pub fn step(index: usize, count: usize, by: isize) -> usize {
     if count == 0 {
         return 0;
@@ -105,13 +89,10 @@ pub fn step(index: usize, count: usize, by: isize) -> usize {
     (index as isize + by).rem_euclid(count as isize) as usize
 }
 
-/// The query starts a path (`~` or `/`), which the Files mode completes.
 pub fn types_path(query: &str) -> bool {
     query.starts_with('~') || query.starts_with('/')
 }
 
-/// What Tab would add to `query` to complete it to `row`'s path: the rest
-/// of its completion when the query starts it (case aside), else "".
 pub fn completion<'a>(query: &str, row: Option<&'a Row>) -> &'a str {
     let Some(full) = row.and_then(|row| row.file.as_ref()).map(|file| file.completion.as_str()) else {
         return "";
@@ -125,9 +106,6 @@ fn same_letter(one: char, other: char) -> bool {
     one == other || one.to_lowercase().eq(other.to_lowercase())
 }
 
-/// `text` (a name or path from novad, wire text) for people: each run of
-/// raw bytes shows as one replacement character, as other apps show such
-/// names.
 pub fn shown(text: &str) -> String {
     let raw = |character: char| (RAW_BYTE_BASE + 0x80..=RAW_BYTE_BASE + 0xFF).contains(&u32::from(character));
     let mut out = String::with_capacity(text.len());
@@ -144,8 +122,6 @@ pub fn shown(text: &str) -> String {
     out
 }
 
-/// The line icon for a found file: a folder, a picture, a video, music, a
-/// document with text, or a plain file.
 pub fn file_glyph(file: &LauncherFile) -> Glyph {
     if file.dir {
         return Glyph::FOLDER;
@@ -160,11 +136,8 @@ pub fn file_glyph(file: &LauncherFile) -> Glyph {
     }
 }
 
-/// Where the list's rows sit, in the list's own content: each under its
-/// group's heading when it's the group's first.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Layout {
-    /// Each item's top, heading included, and whether it has one.
     items: Vec<(f32, bool)>,
     height: f32,
 }
@@ -182,33 +155,26 @@ impl Layout {
         Self { items, height: (top - gap).max(0.0) }
     }
 
-    /// The height of all of it.
     pub fn height(&self) -> f32 {
         self.height
     }
 
-    /// Whether row `index` sits under a heading.
     pub fn heads(&self, index: usize) -> bool {
         self.items.get(index).is_some_and(|(_, heads)| *heads)
     }
 
-    /// Where item `index` starts, its heading included.
     pub fn top(&self, index: usize) -> f32 {
         self.items.get(index).map_or(0.0, |(top, _)| *top)
     }
 
-    /// Where row `index` itself starts, below its heading.
     pub fn row_top(&self, index: usize) -> f32 {
         self.top(index) + if self.heads(index) { f32::from(LABEL_HEIGHT) } else { 0.0 }
     }
 
-    /// The furthest a view `shown` tall scrolls.
     pub fn furthest(&self, shown: f32) -> f32 {
         (self.height - shown).max(0.0)
     }
 
-    /// The scroll offset that has item `index` in a view `shown` tall,
-    /// moving as little as it can from `offset`.
     pub fn contain(&self, index: usize, offset: f32, shown: f32) -> f32 {
         let top = self.top(index);
         let bottom = self.row_top(index) + f32::from(ROW_HEIGHT);
@@ -216,7 +182,6 @@ impl Layout {
         offset.clamp(0.0, self.furthest(shown))
     }
 
-    /// The items a view `shown` tall scrolled to `offset` shows any of.
     pub fn visible(&self, offset: f32, shown: f32) -> std::ops::Range<usize> {
         let ends = |index: usize| self.row_top(index) + f32::from(ROW_HEIGHT);
         let first = self.items.partition_point(|(top, heads)| {
@@ -318,7 +283,6 @@ mod tests {
     fn rows_sit_under_their_group_s_heading() {
         let apps = [app("a", "A"), app("b", "B"), app("c", "C")];
         let layout = Layout::of(&rows("", &[], &["c".to_owned()], &apps, false));
-        // Recent: heading 16 + row 46, gap 2; All apps: heading + two rows.
         assert!(layout.heads(0) && layout.heads(1) && !layout.heads(2));
         assert_eq!((layout.top(0), layout.row_top(0)), (0.0, 16.0));
         assert_eq!((layout.top(1), layout.row_top(1)), (64.0, 80.0));
@@ -331,10 +295,8 @@ mod tests {
     fn the_list_scrolls_only_as_far_as_the_selection_needs() {
         let apps: Vec<App> = (0..10).map(|index| app(&format!("{index}"), &format!("App {index}"))).collect();
         let layout = Layout::of(&rows("", &[], &[], &apps, false));
-        // One heading, ten rows: 16 + 10 * 46 + 9 * 2.
         assert_eq!(layout.height(), 494.0);
         assert_eq!(layout.contain(1, 0.0, 200.0), 0.0);
-        // Row 5 ends at 16 + 5 * 48 + 46 = 302.
         assert_eq!(layout.contain(5, 0.0, 200.0), 102.0);
         assert_eq!(layout.contain(0, 102.0, 200.0), 0.0, "back to the heading");
         assert_eq!(layout.contain(9, 0.0, 200.0), 294.0);

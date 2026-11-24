@@ -1,17 +1,3 @@
-//! What the notifications feature draws with GPUI, as its manifest's slots
-//! name the views (`features/notifications/feature.toml`):
-//!
-//! - `notifications.popups` (host `shell.overlays`): the pop-ups, with a
-//!   window of their own on each screen ([`popups`], drawn by [`window`]
-//!   and [`card`]).
-//! - `notifications.list` (host `quick-settings.fill`): the list in quick
-//!   settings, with clear all and do not disturb ([`list`]).
-//! - `notifications.page` (host `quick-settings.pages`): do not disturb and
-//!   the per-app switches ([`page`]).
-//!
-//! [`model`] is their shared link to novad; [`stack`] and [`logic`] are
-//! the logic without drawing, each tested alone.
-
 mod app_icon;
 mod card;
 mod list;
@@ -26,7 +12,6 @@ mod window;
 
 use gpui::{App, AppContext};
 
-/// The settings page's view id, a page of quick settings.
 const PAGE: &str = "notifications.page";
 
 pub fn register(cx: &mut App) {

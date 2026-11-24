@@ -1,12 +1,3 @@
-//! `resources.card`: CPU, memory, GPU and the CPU's temperature as rings at the
-//! drawer's foot, a dash for a reading novad doesn't have. A click opens the
-//! resources page. The rings fill once the drawer has grown most of the way,
-//! and empty with it as it closes.
-//!
-//! The card is drawn whenever the drawer is, so it also decides when this
-//! screen watches the machine: while the drawer is open on its first page
-//! or on the resources page.
-
 use crate::logic;
 use crate::ring::Ring;
 use crate::{PAGE, QUICK_SETTINGS};
@@ -25,14 +16,10 @@ use std::time::Instant;
 pub struct Card {
     screen: Screen,
     resources: Entity<Live<Resources>>,
-    /// The drawer is open on this screen, and since when; or closed, and
-    /// since when, with how full the rings were then.
     open: bool,
     since: Instant,
     fill_at_close: f32,
-    /// novad samples the machine while some screen's card wants it.
     watch: Entity<Watch>,
-    /// Whether this screen wants it, as last told.
     watching: bool,
     _followed: Vec<Subscription>,
 }
@@ -43,7 +30,6 @@ impl Card {
         let mut followed = vec![cx.observe(&resources, |_, _, cx| cx.notify())];
         followed.extend(Stage::observe_panels(cx, |card, cx| card.follow_stage(cx)));
         let watch = Watch::named("resources", |watching| Command::WatchResources { watching }, cx);
-        // Gone with its screen or its feature: this screen wants it no more.
         let me = cx.entity_id();
         followed.push(cx.on_release(move |card: &mut Self, cx| {
             if card.watching {
@@ -85,7 +71,6 @@ impl Card {
         }
     }
 
-    /// How full the rings are drawn, 0 to 1.
     fn fill(&self, now: Instant) -> f32 {
         let since = now.saturating_duration_since(self.since).as_secs_f32();
         match self.open {

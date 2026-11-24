@@ -1,15 +1,3 @@
-//! XDG autostart, as the freedesktop.org Desktop Application Autostart
-//! Specification describes it: the apps the user wants at login, from
-//! `autostart/` in each XDG config folder (the user's first, whose file
-//! replaces the system's of the same name).
-//!
-//! With systemd, its generator starts them (`xdg-desktop-autostart.target`),
-//! after novad is ready: nova.service is `Type=notify`, and Nova's drop-in
-//! for `app-*.service` orders them after it. Without systemd, `nova` starts
-//! novad with `--autostart`, and novad starts them itself once the tray's
-//! name is claimed, once a session. Either way an app that looks for a tray
-//! only at startup (Electron) finds one (IMP-107).
-
 use nova_apps::desktop_entry::{self, Context, Entry, Locale, Skipped};
 use nova_apps::launch::{self, Runner};
 use nova_log::Logger;
@@ -20,15 +8,11 @@ use std::time::Duration;
 
 const LOG_SOURCE: &str = "autostart";
 const FOLDER: &str = "autostart";
-/// The spec's default for an unset `XDG_CONFIG_DIRS`.
 const DEFAULT_CONFIG_DIRS: &str = "/etc/xdg";
 const ENTRY_EXTENSION: &str = "desktop";
-/// systemd's target for the autostart units its generator makes.
 const SYSTEMD_TARGET: &str = "xdg-desktop-autostart.target";
-/// How long systemd gets to say whether that target runs.
 const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// The autostart folders, in the order they're searched.
 pub fn dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     dirs.extend(nova_paths::config_home());
@@ -39,9 +23,6 @@ pub fn dirs() -> Vec<PathBuf> {
     dirs.into_iter().map(|dir| dir.join(FOLDER)).collect()
 }
 
-/// The apps to start from `dirs`, in file name order, and the problems with
-/// entries that aren't valid, for the log. The first folder with a file name
-/// decides it, so a user's copy with `Hidden=true` turns a system one off.
 pub fn entries(dirs: &[PathBuf], context: &Context) -> (Vec<Entry>, Vec<String>) {
     let mut files: Vec<(String, PathBuf)> = Vec::new();
     let mut decided = BTreeSet::new();
@@ -79,15 +60,9 @@ pub fn entries(dirs: &[PathBuf], context: &Context) -> (Vec<Entry>, Vec<String>)
     (apps, problems)
 }
 
-/// Starts the login apps on a thread of its own, unless `marker` says a
-/// novad already did this session (it lives in `XDG_RUNTIME_DIR`, which
-/// goes at logout), so a restarted novad doesn't start them twice.
 pub fn start(marker: &Path, path_var: String, logger: Arc<Logger>) {
     let marker = marker.to_path_buf();
-    // On a thread from the start: asking systemd may take a while.
     std::thread::spawn(move || {
-        // A compositor that runs systemd's autostart itself (niri does) on a
-        // system where Nova's unit isn't installed.
         if systemd_starts_them(&path_var, &logger) {
             logger.info(LOG_SOURCE, "systemd starts the login apps (xdg-desktop-autostart.target)");
             return;
@@ -98,7 +73,6 @@ pub fn start(marker: &Path, path_var: String, logger: Arc<Logger>) {
                 logger.info(LOG_SOURCE, "login apps already started this session");
                 return;
             }
-            // Started anyway: missing them is worse than a second start.
             Err(e) => logger.warn(LOG_SOURCE, &format!("can't write {}: {e}", marker.display())),
         }
         let locale = Locale::from_env();
@@ -118,8 +92,6 @@ pub fn start(marker: &Path, path_var: String, logger: Arc<Logger>) {
     });
 }
 
-/// Whether the user's systemd runs `xdg-desktop-autostart.target`.
-/// One that doesn't answer in time counts as no.
 fn systemd_starts_them(path_var: &str, logger: &Logger) -> bool {
     let Some(systemctl) = nova_paths::find_program("systemctl", path_var) else { return false };
     let mut command = std::process::Command::new(systemctl);
@@ -133,8 +105,6 @@ fn systemd_starts_them(path_var: &str, logger: &Logger) -> bool {
     }
 }
 
-/// Notes in `marker` that the login apps are started: false when a novad
-/// already did.
 fn first_this_session(marker: &Path) -> std::io::Result<bool> {
     match std::fs::OpenOptions::new().write(true).create_new(true).open(marker) {
         Ok(_) => Ok(true),
@@ -168,7 +138,6 @@ mod tests {
     fn the_users_entries_replace_the_systems_and_switches_count() {
         let root = temp("entries");
         let (user, system) = (root.join("user"), root.join("system"));
-        // The user turned the system's one off with a copy.
         write(&system, "blueman.desktop", "");
         write(&user, "blueman.desktop", "Hidden=true\n");
         write(&system, "steam.desktop", "NoDisplay=true\n");

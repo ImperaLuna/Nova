@@ -1,34 +1,3 @@
-//! Now playing (feature `media`): the MPRIS media players on the session
-//! bus, which one the bar shows, and their controls.
-//!
-//! Players are the bus names under `org.mpris.MediaPlayer2.`, followed with
-//! `NameOwnerChanged` (no polling). Each one is read whole (`player`) when it
-//! comes and again whenever it says a property changed
-//! (`PropertiesChanged`); one player's reads run one at a time on a thread
-//! of their own, so a slow player holds up nobody else. `Position` changes
-//! without a signal, so each read stamps when it read it and the UI moves it
-//! on at the player's rate; `Seeked` says when it jumps. Covers become image
-//! files (`cover`). Every player is published as one [`Event::Media`], with
-//! the one the bar shows: the user's pick (`media_show`) until another
-//! player starts playing or the pick moves on to another track while it
-//! isn't playing, else the one that started playing last, else the
-//! one paused last.
-//!
-//! A player whose track is a short clip (a known length under
-//! [`SHORT_CLIP`]) is left out: not published, never shown, its start ends
-//! no pick, and no command reaches it. Chat apps built on Electron (Ferdium,
-//! Slack, Discord) announce a player for every notification sound and short
-//! clip, which no one means to control. It comes back by itself once its
-//! track is longer, or its length unknown (streams).
-//!
-//! The app a player belongs to is looked up in the app index by its
-//! `DesktopEntry`, then by the process that owns it on the bus, as the
-//! tray does (the [`ProcessNames`] port novad fills with the tray's
-//! lookup): never by its bus name, since browsers
-//! name theirs `org.mpris.MediaPlayer2.firefox.instance_NNN`. A player's own
-//! desktop entry can be wrong: Zen's says `zen`, its app is
-//! `zen-beta.desktop`, and its process is `zen-beta`.
-
 mod cover;
 mod player;
 #[cfg(test)]
@@ -54,43 +23,29 @@ use zbus::{Connection, MatchRule, MessageStream};
 
 pub const FEATURE_ID: &str = "media";
 const LOG_SOURCE: &str = "media";
-/// Every MPRIS player's bus name starts with this.
 const PREFIX: &str = "org.mpris.MediaPlayer2.";
-/// playerctld's name: it stands in for whichever player played last, so
-/// following it too would list that player twice.
 const PLAYERCTLD: &str = "org.mpris.MediaPlayer2.playerctld";
 const DBUS_NAME: &str = "org.freedesktop.DBus";
 const DBUS_PATH: &str = "/org/freedesktop/DBus";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
-/// More than any desktop plays at once; players past it are left out.
 const MAX_PLAYERS: usize = 32;
-/// How long novad waits for a player, or the bus, to answer a call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
-/// A track shorter than this is a sound or a clip, not media to control:
-/// its player is left out. No song, video or podcast is this short.
 const SHORT_CLIP: Duration = Duration::from_secs(15);
 
-/// Where the players are, and where covers are downloaded to.
 #[derive(Clone)]
 pub struct Sources {
     pub bus: Bus,
     pub covers: PathBuf,
-    /// Where a player's process is looked up (`/proc`, or a copy in tests).
     pub proc: PathBuf,
-    /// The names a player's process goes by.
     pub process_names: ProcessNames,
 }
 
 impl Sources {
-    /// Covers go in `runtime_dir/media`, beside novad's socket.
     pub fn new(runtime_dir: &Path, process_names: ProcessNames) -> Self {
         Self { bus: Bus::Session, covers: runtime_dir.join("media"), proc: PathBuf::from("/proc"), process_names }
     }
 }
 
-/// The names the process `pid` (read from `proc`, normally `/proc`) goes
-/// by, to find its app with: a port novad fills with the tray's lookup,
-/// which finds a tray icon's app the same way.
 pub type ProcessNames = fn(proc: &Path, pid: Option<u32>) -> Vec<String>;
 
 pub struct Media {
@@ -101,9 +56,7 @@ struct Shared {
     state: Mutex<State>,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
-    /// Finds a player's app.
     apps: Arc<AppIndex>,
-    /// The connection to the bus, once it's up, for the commands.
     connection: Mutex<Option<Connection>>,
     covers: Covers,
     proc: PathBuf,
@@ -114,42 +67,26 @@ struct Shared {
 #[derive(Default)]
 struct State {
     players: Vec<Player>,
-    /// The player the user picked (`media_show`), until another starts
-    /// playing or it moves on to another track while it isn't playing.
     picked: Option<String>,
-    /// Counts status changes, so the latest to start playing or pause is known.
     clock: u64,
-    /// The last event published, so an unchanged one isn't sent again.
     sent: Option<MediaEvent>,
 }
 
 struct Player {
-    /// Its well-known bus name.
     id: String,
-    /// The unique name that owns it: signals come from this.
     owner: String,
-    /// `None` until it's first read.
     read: Option<Read>,
-    /// The names its owner's process goes by, to find its app with;
-    /// `None` until read with it.
     process: Option<Vec<String>>,
-    /// Its cover as a file, and the art URL that file is for.
     cover: Option<String>,
     cover_url: Option<String>,
-    /// When `read.position_us` was read or last jumped, in milliseconds since 1970.
     position_at_ms: i64,
-    /// `State::clock` when it last started playing, and when it last paused.
     played: u64,
     paused: u64,
-    /// A read runs, and whether another was asked for meanwhile.
     reading: bool,
     again: bool,
 }
 
 impl Media {
-    /// Connects to the bus and follows its players on a thread of its own.
-    /// Returns once the players there are known (their reads may still run),
-    /// or connecting failed (logged).
     pub fn start(sources: Sources, apps: Arc<AppIndex>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let shared = Arc::new(Shared {
             state: Mutex::new(State::default()),
@@ -171,35 +108,27 @@ impl Media {
             *lock(&serving.connection) = None;
             let _ = ready.send(());
         });
-        // Waits as long as connecting may take; a timed-out call fails sooner.
         let _ = started.recv_timeout(2 * CALL_TIMEOUT);
         let media = Arc::new(Self { shared });
-        // Looked up again too, for a read of the apps that ended while it
-        // connected, before it listened.
         media.shared.apps.on_change(&media, Self::apps_changed);
         media.apps_changed();
         media
     }
 
-    /// Stops following the players and publishes nothing more.
     pub fn stop(&self) {
         let _state = lock(&self.shared.state);
         self.shared.stop.stop();
     }
 
-    /// Looks the players' apps up again, after the installed apps changed.
     fn apps_changed(&self) {
         self.shared.publish(&mut lock(&self.shared.state));
     }
 
-    /// Sends a new subscriber, client `id`, the players as they are, under
-    /// the lock that publishing takes, so a newer event can't arrive before it.
     pub fn send_state(&self, id: ClientId) {
         let state = lock(&self.shared.state);
         self.shared.hub.send_to(id, &Event::Media(self.shared.event(&state)));
     }
 
-    /// Shows `player` in the bar until another player starts playing.
     pub fn show(&self, player: &str) -> Result<(), String> {
         let mut state = lock(&self.shared.state);
         find(&state, player)?;
@@ -208,7 +137,6 @@ impl Media {
         Ok(())
     }
 
-    /// Plays or pauses `player`, or skips a track.
     pub fn control(&self, player: &str, action: MediaAction) -> Result<(), String> {
         let (owner, _) = self.known(player)?;
         let method = match action {
@@ -219,7 +147,6 @@ impl Media {
         self.call(&owner, PLAYER_INTERFACE, method, &()).map_err(|e| format!("{player} didn't {method}: {e}"))
     }
 
-    /// Moves `player` to `position_us` into its track, kept within the track.
     pub fn seek(&self, player: &str, position_us: i64) -> Result<(), String> {
         let (owner, read) = self.known(player)?;
         if !read.can_seek {
@@ -229,7 +156,6 @@ impl Media {
         let failed = |e: zbus::Error| format!("{player} didn't seek: {e}");
         match &read.track_id {
             Some(track) => self.call(&owner, PLAYER_INTERFACE, "SetPosition", &(track, target)).map_err(failed),
-            // Without a track id, SetPosition is ignored: move by the difference.
             None => {
                 let now = self.position(player)?;
                 self.call(&owner, PLAYER_INTERFACE, "Seek", &(target - now,)).map_err(failed)
@@ -237,8 +163,6 @@ impl Media {
         }
     }
 
-    /// Asks `player` to bring its window forward (MPRIS `Raise`). False when
-    /// it can't.
     pub fn raise(&self, player: &str) -> Result<bool, String> {
         let (owner, read) = self.known(player)?;
         if !read.can_raise {
@@ -248,10 +172,6 @@ impl Media {
         Ok(true)
     }
 
-    /// The app ids (lower case) `player`'s windows may have: its app's,
-    /// after its desktop entry's name; without an app, all its own names
-    /// (`names`). Its process's other names can be another app's: one
-    /// started from a terminal sits in the terminal's unit.
     pub fn window_ids(&self, player: &str) -> Result<Vec<String>, String> {
         let (names, entry) = {
             let state = lock(&self.shared.state);
@@ -272,7 +192,6 @@ impl Media {
         Ok(ids)
     }
 
-    /// The owner of the read player `player`, and its read.
     fn known(&self, player: &str) -> Result<(String, Read), String> {
         let state = lock(&self.shared.state);
         let found = find(&state, player)?;
@@ -280,7 +199,6 @@ impl Media {
         Ok((found.owner.clone(), read))
     }
 
-    /// Where `player` is in its track now.
     fn position(&self, player: &str) -> Result<i64, String> {
         let state = lock(&self.shared.state);
         let found = find(&state, player)?;
@@ -302,8 +220,6 @@ impl Media {
     }
 }
 
-/// The names (lower case) to find `player`'s app and windows by: its
-/// desktop entry, then its process's names.
 fn names(player: &Player) -> Vec<String> {
     let entry = player.read.as_ref().and_then(|read| read.desktop_entry.as_deref()).map(str::to_lowercase);
     let mut names: Vec<String> = entry.into_iter().collect();
@@ -315,7 +231,6 @@ fn names(player: &Player) -> Vec<String> {
     names
 }
 
-/// The player `id`, if novad follows it and lists it.
 fn find<'a>(state: &'a State, id: &str) -> Result<&'a Player, String> {
     if id.len() > MEDIA_PLAYER_MAX_BYTES {
         return Err(format!("player ids are at most {MEDIA_PLAYER_MAX_BYTES} bytes"));
@@ -327,7 +242,6 @@ fn find<'a>(state: &'a State, id: &str) -> Result<&'a Player, String> {
     }
 }
 
-/// Whether `read`'s track is a short clip, whose player is left out.
 fn short_clip(read: &Read) -> bool {
     read.length_us > 0 && read.length_us < SHORT_CLIP.as_micros() as i64
 }
@@ -379,11 +293,9 @@ impl Shared {
         }
     }
 
-    /// Follows the player `id`, owned by `owner`, and reads it.
     fn add(self: &Arc<Self>, connection: &Connection, id: &str, owner: &str) {
         let mut state = lock(&self.state);
         if let Some(player) = state.players.iter_mut().find(|player| player.id == id) {
-            // Handed to another connection: that one's the player now.
             player.owner = owner.to_string();
             player.process = None;
         } else if state.players.len() >= MAX_PLAYERS {
@@ -412,8 +324,6 @@ impl Shared {
         let mut state = lock(&self.state);
         let before = state.players.len();
         state.players.retain(|player| player.id != id);
-        // The user's pick ends with the player: one back under its name
-        // later is a new one.
         if state.picked.as_deref() == Some(id) {
             state.picked = None;
         }
@@ -423,7 +333,6 @@ impl Shared {
         }
     }
 
-    /// Reads the players `owner` owns again: they said something changed.
     fn changed(self: &Arc<Self>, connection: &Connection, owner: &str) {
         let mut state = lock(&self.state);
         let ids: Vec<String> =
@@ -433,7 +342,6 @@ impl Shared {
         }
     }
 
-    /// The players `owner` owns jumped to `position_us`.
     fn seeked(&self, owner: &str, position_us: i64) {
         let mut state = lock(&self.state);
         for player in state.players.iter_mut().filter(|player| player.owner == owner) {
@@ -445,8 +353,6 @@ impl Shared {
         self.publish(&mut state);
     }
 
-    /// Reads the player `id` on a thread of its own, or once more after the
-    /// read that runs now.
     fn read_soon(self: &Arc<Self>, state: &mut State, connection: &Connection, id: &str) {
         let Some(player) = state.players.iter_mut().find(|player| player.id == id) else { return };
         if player.reading {
@@ -469,9 +375,6 @@ impl Shared {
         });
     }
 
-    /// Reads the player `id` and publishes it; a new cover follows once
-    /// downloaded. A player that went, or was handed to another connection,
-    /// meanwhile is left as it is.
     fn read(self: &Arc<Self>, connection: &Connection, id: &str) {
         let Some((owner, known)) = lock(&self.state)
             .players
@@ -495,10 +398,6 @@ impl Shared {
         let State { players, picked, clock, .. } = &mut *state;
         let Some(player) = players.iter_mut().find(|player| player.id == id && player.owner == owner) else { return };
         let was = player.read.as_ref().map(|read| read.status);
-        // A picked player that isn't playing moving to another track ends
-        // the pick too: a browser keeps one player for all its tabs, so
-        // closing the picked tab leaves it there with another tab's media,
-        // or none.
         let moved_on = player.read.as_ref().is_some_and(|old| old.track_id != read.track_id || old.title != read.title);
         if moved_on && read.status != PlaybackStatus::Playing && picked.as_deref() == Some(id) {
             *picked = None;
@@ -508,8 +407,6 @@ impl Shared {
             match read.status {
                 PlaybackStatus::Playing => {
                     player.played = *clock;
-                    // Another player starting ends the user's pick, unless
-                    // it only plays a short clip.
                     if picked.as_deref().is_some_and(|picked| picked != id) && !short_clip(&read) {
                         *picked = None;
                     }
@@ -529,9 +426,6 @@ impl Shared {
             player.cover_url = None;
         }
         match url {
-            // Downloaded on a thread of its own, so a slow cover holds back
-            // neither this read nor the player's next ones. Its URL counts
-            // as handled meanwhile, so it's downloaded once.
             Some(url) if new_cover && Covers::downloads(&url) => {
                 player.cover_url = Some(url.clone());
                 self.publish(&mut state);
@@ -539,7 +433,6 @@ impl Shared {
                 let (shared, id, owner) = (Arc::clone(self), id.to_string(), owner);
                 std::thread::spawn(move || shared.download_cover(&id, &owner, &url));
             }
-            // A local one only needs a look, so it comes with the rest.
             Some(url) if new_cover => {
                 player.cover = self.cover(id, &url);
                 player.cover_url = Some(url);
@@ -549,8 +442,6 @@ impl Shared {
         }
     }
 
-    /// The names the process that owns `owner`, player `id`'s bus name,
-    /// goes by; none when the bus can't tell which process it is.
     fn process_names(&self, connection: &Connection, id: &str, owner: &str) -> Vec<String> {
         let pid = zbus::block_on(connection.call_method(
             Some(DBUS_NAME),
@@ -566,8 +457,6 @@ impl Shared {
         (self.process_names)(&self.proc, pid.ok())
     }
 
-    /// Downloads player `id`'s cover at `url`, and publishes it unless the
-    /// player has moved on meanwhile.
     fn download_cover(&self, id: &str, owner: &str, url: &str) {
         let cover = self.cover(id, url);
         if self.stop.stopped() {
@@ -585,7 +474,6 @@ impl Shared {
         self.publish(&mut state);
     }
 
-    /// The file for player `id`'s cover at `url`, if it has one.
     fn cover(&self, id: &str, url: &str) -> Option<String> {
         match self.covers.file(url) {
             Ok(file) => file.map(|file| file.display().to_string()),
@@ -597,9 +485,6 @@ impl Shared {
     }
 }
 
-/// The player the bar shows: the user's pick while it isn't stopped, else
-/// the one that started playing last, else the one paused last. Never one
-/// left out for a short clip.
 fn shown(state: &State) -> Option<String> {
     let status = |player: &Player| player.read.as_ref().filter(|read| !short_clip(read)).map(|read| read.status);
     let picked = state.picked.as_ref().and_then(|picked| state.players.iter().find(|player| &player.id == picked));
@@ -613,12 +498,8 @@ fn shown(state: &State) -> Option<String> {
         .map(|player| player.id.clone())
 }
 
-/// Connects to `bus` and follows its players until `stop` or the bus goes.
-/// Sends on `ready` once the players there are known.
 async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<()>) -> zbus::Result<()> {
     let connection = bus.builder().method_timeout(CALL_TIMEOUT).build().await?;
-    // Followed before the players are listed, so none that comes or changes
-    // in between is missed.
     let signal = |sender: Option<&'static str>, interface: &'static str, member: &'static str| {
         let rule = MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(interface).member(member);
         match sender {
@@ -712,7 +593,6 @@ async fn name_owner(connection: &Connection, name: &str) -> zbus::Result<String>
     reply.body().deserialize()
 }
 
-/// Whether bus name `name` is a media player of its own.
 fn is_player(name: &str) -> bool {
     name.starts_with(PREFIX) && name != PLAYERCTLD
 }

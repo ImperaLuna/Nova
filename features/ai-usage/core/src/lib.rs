@@ -1,18 +1,3 @@
-//! AI usage (feature `ai-usage`): how much of their Claude and Codex plan
-//! limits the user has used. Claude's come from Claude Code's status line
-//! (`nova claude-statusline`) when a terminal session runs and, if the user
-//! turns it on, from Anthropic's usage endpoint with Claude Code's sign-in,
-//! or the Claude desktop app's (see `claude_api`, `claude_desktop`), polled
-//! gently. Codex logs its limits in its session
-//! files, which novad watches, after each turn; if the user turns it on,
-//! OpenAI's usage endpoint is polled the same way (see `codex_api`), so the
-//! numbers stay current between turns.
-//!
-//! Numbers change only when a source does, except at a window's reset time:
-//! novad wakes then and shows that window at 0% until the tool is used again.
-//! When every window has reset and the endpoint is on but can't answer
-//! (signed out), that 0% would be a guess, so the panel shows why instead.
-
 mod claude;
 mod claude_api;
 mod claude_desktop;
@@ -27,7 +12,6 @@ pub use config::AiUsageConfig;
 #[cfg(any(test, feature = "test-support"))]
 pub use claude_desktop::{entry_name as claude_desktop_entry, write_unsealed_config as write_claude_desktop_config};
 
-/// The desktop app's sign-in under `config_home`.
 #[cfg(any(test, feature = "test-support"))]
 pub fn claude_desktop_in(config_home: &Path) -> claude_desktop::Desktop {
     claude_desktop::Desktop::at(claude_desktop::config_in(config_home))
@@ -53,34 +37,20 @@ use std::time::{Duration, Instant};
 
 pub const FEATURE_ID: &str = "ai-usage";
 const LOG_SOURCE: &str = "ai-usage";
-/// Codex writes several lines per turn; they're read once it pauses.
 const CODEX_SETTLE: Duration = Duration::from_millis(500);
-/// Sessions that never pause (several at once) are read this often anyway.
 const CODEX_MAX_DELAY: Duration = Duration::from_secs(5);
-/// Longest sleep with nothing scheduled.
 const IDLE_WAKE: Duration = Duration::from_secs(24 * 60 * 60);
-/// How often a usage endpoint is asked (nova-shell asked as often).
 const ENDPOINT_POLL: Duration = Duration::from_secs(5 * 60);
-/// Opening the panel asks again, but not more often than this.
 const ENDPOINT_REFRESH_GAP: Duration = Duration::from_secs(60);
-/// Failed requests wait twice as long each time, up to this.
 const ENDPOINT_MAX_BACKOFF: Duration = Duration::from_secs(60 * 60);
-/// Being told to slow down waits at least this long.
 const ENDPOINT_RATE_LIMITED: Duration = Duration::from_secs(15 * 60);
-/// What the panel says while the endpoint is off and no status line has run.
 const CLAUDE_ENDPOINT_OFF: &str = "Claude's limits show after a Claude Code session in a terminal. To see them anytime, add this to ~/.config/nova/config.toml:\n[ai-usage]\nclaude-usage-endpoint = true\nNova then asks Anthropic with Claude Code's sign-in, a use Anthropic doesn't document.";
 
-/// Where the module reads and keeps things.
 #[derive(Clone)]
 pub struct Paths {
-    /// Codex's home folder, `None` when neither `CODEX_HOME` nor `HOME` is set.
     pub codex_home: Option<PathBuf>,
-    /// The bar's provider choice and Claude's last report.
     pub state_file: PathBuf,
-    /// Claude Code's credentials file, `None` without `HOME`.
     pub claude_credentials: Option<PathBuf>,
-    /// The Claude desktop app's sign-in, asked when Claude Code's file has
-    /// no token; `None` without `HOME`.
     pub claude_desktop: Option<claude_desktop::Desktop>,
     pub claude_usage_url: String,
     pub codex_usage_url: String,
@@ -112,31 +82,20 @@ pub struct Usage {
     logger: Arc<Logger>,
     state_file: PathBuf,
     wake: Sender<Wake>,
-    /// One per endpoint poller.
     refresh: Vec<Sender<()>>,
-    /// Set by `stop`; every thread checks it when it wakes.
     stopped: AtomicBool,
-    /// Ends the Codex watcher's thread; `None` until it starts.
     codex_watch: Mutex<Option<inotify::Stopper>>,
 }
 
 struct State {
     saved: Saved,
-    /// Why there are no Claude numbers yet; `None` while the first answer
-    /// is pending. Starts as the opt-in hint when the endpoint is off.
     claude_problem: Option<String>,
-    /// Whether Claude's endpoint is on. Only then does a problem mean the
-    /// numbers can't be told, rather than that only the status line tells.
     claude_endpoint: bool,
     codex: Codex,
-    /// When the status line last reported Claude's limits. An endpoint
-    /// answer to a request sent before then is older, so it's dropped.
     claude_reported: Option<Instant>,
-    /// The last event published, so unchanged numbers aren't sent again.
     sent: Option<AiUsage>,
 }
 
-/// What survives a restart.
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 struct Saved {
     #[serde(default)]
@@ -154,15 +113,11 @@ enum Codex {
 }
 
 enum Wake {
-    /// State changed; publish and recompute the next reset.
     Changed,
-    /// A Codex log was written to.
     CodexLog(PathBuf),
-    /// The sessions folder appeared or moved; look again from scratch.
     CodexRescan,
 }
 
-/// A provider's usage endpoint, asked by `Usage::poll`.
 enum Endpoint {
     Claude { credentials: Option<PathBuf>, desktop: Option<claude_desktop::Desktop>, url: String },
     Codex { auth: Option<PathBuf>, url: String },
@@ -176,8 +131,6 @@ impl Endpoint {
         }
     }
 
-    /// The limits and plan, read with the tool's sign-in. `stopped` is
-    /// checked before each request (the keyring's, the provider's).
     fn ask(&self, stopped: &dyn Fn() -> bool) -> Result<(Vec<UsageLimit>, Option<String>), Problem> {
         let unless_stopped = || if stopped() { Err(Problem::Stopped) } else { Ok(()) };
         match self {
@@ -196,9 +149,6 @@ impl Endpoint {
     }
 }
 
-/// Claude Code's own token, else the desktop app's when Claude Code has none
-/// that works. The desktop app being signed out too leaves Claude Code's
-/// problem, which says more.
 fn claude_token(
     credentials: Option<&Path>,
     desktop: Option<&claude_desktop::Desktop>,
@@ -218,8 +168,6 @@ fn claude_token(
 }
 
 impl Usage {
-    /// Loads the saved state, starts watching Codex's logs and asking for
-    /// Claude's limits.
     pub fn start(paths: Paths, config: &AiUsageConfig, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let saved = match std::fs::read_to_string(&paths.state_file) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
@@ -268,11 +216,7 @@ impl Usage {
         usage
     }
 
-    /// Ends its threads (watching, asking, publishing) and publishes nothing
-    /// more. A request already on its way is dropped when it answers.
     pub fn stop(&self) {
-        // Under the watcher's lock, so a watcher starting right now sees it,
-        // and the state's, so nothing is published or saved after this.
         let mut codex_watch = lock(&self.codex_watch);
         {
             let _state = lock(&self.state);
@@ -289,15 +233,10 @@ impl Usage {
         self.stopped.load(Ordering::SeqCst)
     }
 
-    /// The current numbers, as sent to a new subscriber. The broadcast
-    /// bookkeeping (`sent`) is left alone: a change this already shows may
-    /// still need publishing to everyone else.
     pub fn event(&self) -> Event {
         Event::AiUsage(snapshot(&lock(&self.state), Timestamp::now()))
     }
 
-    /// Sends [`event`](Self::event) to `client` alone, as a new subscriber
-    /// gets it.
     pub fn send_state(&self, client: ClientId) {
         self.hub.send_to(client, &self.event());
     }
@@ -314,29 +253,23 @@ impl Usage {
         })
     }
 
-    /// Asks the endpoints that are on now, unless one was asked less than
-    /// `ENDPOINT_REFRESH_GAP` ago or is backing off.
     pub fn refresh(&self) {
         for refresh in &self.refresh {
             let _ = refresh.send(());
         }
     }
 
-    /// Asks `endpoint` every `ENDPOINT_POLL`, and on `refresh`.
     fn poll(&self, endpoint: &Endpoint, refreshes: mpsc::Receiver<()>) {
         let provider = endpoint.provider();
-        // The first failed request waits twice the poll.
         let mut backoff = Backoff::new(ENDPOINT_POLL * 2, ENDPOINT_MAX_BACKOFF);
         let mut last_problem: Option<String> = None;
         loop {
-            // Before reading the sign-in: a stopped poller asks nothing more.
             if self.stopped() {
                 return;
             }
             let asked = Instant::now();
             let asked_at = Timestamp::now();
             let result = endpoint.ask(&|| self.stopped());
-            // Local problems cost the provider nothing; only failed requests back off.
             let wait = match &result {
                 Ok(_) | Err(Problem::SignedOut | Problem::Expired | Problem::Unsafe(_)) => {
                     backoff.reset();
@@ -344,8 +277,6 @@ impl Usage {
                 }
                 Err(Problem::RateLimited(after)) => {
                     let wait = backoff.next_at_least(ENDPOINT_RATE_LIMITED);
-                    // Capped: a huge Retry-After would stop asking for good,
-                    // or overflow the deadline below.
                     after.map_or(wait, |after| after.max(wait)).min(ENDPOINT_MAX_BACKOFF)
                 }
                 Err(Problem::Failed(_)) => backoff.next(),
@@ -386,8 +317,6 @@ impl Usage {
         }
     }
 
-    /// Takes `provider`'s endpoint's answer to the request made at `asked`
-    /// (as an instant and as a time).
     fn answered(
         &self,
         provider: AiProvider,
@@ -400,26 +329,19 @@ impl Usage {
             AiProvider::Claude => {
                 let _ = self.update(|state| {
                     state.claude_problem = None;
-                    // The status line reported while this request was out: its numbers are newer.
                     if state.claude_reported.is_none_or(|reported| reported < asked) {
                         state.saved.claude = Some(limits);
                         state.saved.claude_plan = plan;
                     }
                 });
             }
-            // As of the request: a log line written meanwhile is newer.
             AiProvider::Codex => self.offer_codex(CodexUsage { plan, limits, logged_at: asked_at }),
         }
-        // A cleared problem shows even when the numbers didn't change.
         let _ = self.wake.send(Wake::Changed);
     }
 
-    /// Applies `change` to the state, then saves and publishes what it
-    /// changed of `Saved`.
     fn update(&self, change: impl FnOnce(&mut State)) -> Result<(), String> {
         {
-            // Saved under the lock, so concurrent updates reach the file in
-            // the order they were made.
             let mut state = lock(&self.state);
             if self.stopped() {
                 return Err(not_ready(FEATURE_ID));
@@ -440,14 +362,12 @@ impl Usage {
     fn run(&self, codex_home: Option<PathBuf>, wakes: mpsc::Receiver<Wake>) {
         match &codex_home {
             Some(home) => {
-                // Watched first, so nothing written between the two is missed.
                 self.watch_codex(home);
                 self.rescan_codex(home);
             }
             None => self.codex_unavailable("Can't find Codex's folder: HOME isn't set.".into()),
         }
         let mut written: BTreeSet<PathBuf> = BTreeSet::new();
-        // When the oldest unread write in `written` came.
         let mut written_since: Option<Instant> = None;
         loop {
             if self.stopped() {
@@ -497,8 +417,6 @@ impl Usage {
         }
     }
 
-    /// Takes limits from a log or the endpoint unless newer ones are
-    /// already known.
     fn offer_codex(&self, found: CodexUsage) {
         let mut state = lock(&self.state);
         if let Codex::Found(current) = &state.codex
@@ -509,8 +427,6 @@ impl Usage {
         state.codex = Codex::Found(found);
     }
 
-    /// Says why there are no Codex numbers, unless there are some: the
-    /// endpoint's, or a log's that has since gone, still beat none.
     fn codex_unavailable(&self, hint: String) {
         let mut state = lock(&self.state);
         if !matches!(state.codex, Codex::Found(_)) {
@@ -518,27 +434,19 @@ impl Usage {
         }
     }
 
-    /// Watches Codex's home for the sessions folder and every folder in it,
-    /// on a thread that turns changes into wakes. The home itself is watched
-    /// through its parent, so a home that appears later (before Codex's
-    /// first run), is replaced, or is a symlink that's repointed is followed.
     fn watch_codex(&self, home: &Path) {
-        // Absolute, so a relative home (`CODEX_HOME=codex`) has a parent to
-        // watch and matches the paths changes come with.
         let home = std::path::absolute(home).unwrap_or_else(|_| home.to_owned());
         let sessions = codex::sessions_dir(&home);
         let watching = inotify::Inotify::new(inotify::WRITES).and_then(|mut watcher| {
             if let Some(parent) = home.parent() {
                 watcher.watch_for(parent, inotify::ENTRIES)?;
             }
-            // After the parent: a home that appears meanwhile is still seen.
             watch_codex_home(&mut watcher, &home, &sessions)?;
             Ok(watcher)
         });
         let mut watcher = match watching {
             Ok(watcher) => watcher,
             Err(e) => {
-                // Without a folder there is nothing to watch; the hint says so.
                 if home.is_dir() {
                     self.logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", home.display()));
                 }
@@ -570,14 +478,11 @@ impl Usage {
     }
 }
 
-/// Watches Codex's home and every sessions folder, once they exist.
-/// Where Codex keeps its logs: its home, and the sessions folder in it.
 struct CodexHome {
     home: PathBuf,
     sessions: PathBuf,
 }
 
-/// Turns `watcher`'s changes into wakes until the watcher or the feature stops.
 fn follow_codex(watcher: &mut inotify::Inotify, codex: &CodexHome, wake: &mpsc::Sender<Wake>, logger: &Logger) {
     loop {
         let changes = match watcher.read() {
@@ -589,7 +494,6 @@ fn follow_codex(watcher: &mut inotify::Inotify, codex: &CodexHome, wake: &mpsc::
             }
         };
         if changes.overflowed {
-            // Some changes were dropped: watch everything again and rescan.
             rewatch_codex_home(watcher, codex, logger);
             if wake.send(Wake::CodexRescan).is_err() {
                 return;
@@ -605,8 +509,6 @@ fn follow_codex(watcher: &mut inotify::Inotify, codex: &CodexHome, wake: &mpsc::
     }
 }
 
-/// The wake for one change under Codex's home, if it's one that matters;
-/// a new folder under sessions is watched too.
 fn codex_wake(
     watcher: &mut inotify::Inotify,
     codex: &CodexHome,
@@ -614,10 +516,7 @@ fn codex_wake(
     logger: &Logger,
 ) -> Option<Wake> {
     let CodexHome { home, sessions } = codex;
-    // Any kind of entry: a symlinked home is repointed by renaming a new
-    // link over it.
     if change.path == *home {
-        // The sessions folder may have come with it.
         rewatch_codex_home(watcher, codex, logger);
         Some(Wake::CodexRescan)
     } else if (change.is_dir && change.path.starts_with(sessions)) || change.path == *sessions {
@@ -632,7 +531,6 @@ fn codex_wake(
     }
 }
 
-/// Watches Codex's home and sessions again, saying so when it can't.
 fn rewatch_codex_home(watcher: &mut inotify::Inotify, codex: &CodexHome, logger: &Logger) {
     if let Err(e) = watch_codex_home(watcher, &codex.home, &codex.sessions) {
         logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", codex.home.display()));
@@ -650,9 +548,6 @@ fn watch_codex_home(watcher: &mut inotify::Inotify, home: &Path, sessions: &Path
     Ok(())
 }
 
-/// The event for `state` at `now`: windows past their reset show 0%, unless
-/// all of Claude's have and its endpoint, which is on, has a problem: that
-/// shows instead.
 fn snapshot(state: &State, now: Timestamp) -> AiUsage {
     let claude = match (&state.saved.claude, &state.claude_problem) {
         (Some(limits), Some(hint)) if state.claude_endpoint && all_reset(limits, now) => {
@@ -681,8 +576,6 @@ fn ready(provider: AiProvider, plan: Option<String>, limits: &[UsageLimit], now:
     ProviderUsage { provider, state: UsageState::Ready, plan, limits, hint: None }
 }
 
-/// Whether every window in `limits` has passed its reset at `now`, so none
-/// is known any more. A window without a reset time never has.
 fn all_reset(limits: &[UsageLimit], now: Timestamp) -> bool {
     limits.iter().all(|limit| reset_time(limit).is_some_and(|at| at <= now))
 }
@@ -695,7 +588,6 @@ fn unavailable(provider: AiProvider, hint: String) -> ProviderUsage {
     ProviderUsage { provider, state: UsageState::Unavailable, plan: None, limits: vec![], hint: Some(hint) }
 }
 
-/// How long until the next window resets.
 fn next_reset(state: &State, now: Timestamp) -> Option<Duration> {
     let codex = match &state.codex {
         Codex::Found(found) => found.limits.as_slice(),
@@ -715,7 +607,6 @@ fn reset_time(limit: &UsageLimit) -> Option<Timestamp> {
     limit.resets_at.as_deref()?.parse().ok()
 }
 
-/// Reports come over the socket, so they're checked like any request.
 fn validate(limits: &[UsageLimit]) -> Result<(), String> {
     for (index, limit) in limits.iter().enumerate() {
         if limit.percent > 100 {
@@ -733,14 +624,12 @@ fn validate(limits: &[UsageLimit]) -> Result<(), String> {
     Ok(())
 }
 
-/// A plan's display name: `plus` -> `Plus`; `None` when it's empty.
 fn display_plan(plan: &str) -> Option<String> {
     let mut chars = plan.chars();
     let first = chars.next()?;
     Some(first.to_uppercase().chain(chars).collect())
 }
 
-/// Whole percent, clamped to 0..=100.
 fn round_percent(used: f64) -> u8 {
     used.round().clamp(0.0, 100.0) as u8
 }

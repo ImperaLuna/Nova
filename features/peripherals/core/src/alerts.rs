@@ -1,37 +1,13 @@
-//! Low battery alerts: a notification when a device's battery drops to
-//! [`STEPS`] (20%, 10%, then 5%, critical), each once per discharge.
-//!
-//! A device read for the first time already low gets one alert, for the
-//! lowest step it's under. Charging says them all again next time; so does
-//! a reading [`REARM`] points over a step (a device that comes back
-//! charged), for that step and the ones under it, so a reading wobbling
-//! around a step doesn't say it twice. A device that only reports a level
-//! reads as [`level_percent`]: `low` is the 10% alert, `critical` the 5%
-//! one. What's been said is kept by device id while novad runs, also while
-//! a device is away, so one that reconnects still low isn't alerted again;
-//! one back under a new id takes over what was said under an id that's gone
-//! for the same device ([`same_device`]): a headset whose Bluetooth drops
-//! while its dongle carries on is still the headset.
-//!
-//! An alert is the device's name and its percent, and takes the place of
-//! the device's last one; after a restart, of its row still in the list
-//! ([`row_of`]).
-
 use super::{names_match, same_kind};
 use nova_notifications_api::{Notification, NotificationDevice, Own};
 use nova_peripherals_api::{Battery, BatteryLevel, Peripheral, PeripheralKind, PeripheralLink};
 use std::collections::HashMap;
 
-/// The percents alerted at, highest first; the last one is critical.
 pub const STEPS: [u8; 3] = [20, 10, 5];
-/// How far over a step a reading has to go to say it again.
 pub const REARM: u8 = 10;
-/// Devices remembered; past it, ones not connected now are forgotten.
 const MAX_REMEMBERED: usize = 64;
-/// Who the alerts read as from.
 pub const APP: &str = "Devices";
 
-/// What's been said about each device, by id.
 #[derive(Debug, Default)]
 pub struct Alerts {
     devices: HashMap<String, Said>,
@@ -39,18 +15,13 @@ pub struct Alerts {
 
 #[derive(Debug, Clone)]
 struct Said {
-    /// What the device is, its name and whether it's on Bluetooth, to
-    /// know it under another id.
     kind: PeripheralKind,
     name: String,
     bluetooth: bool,
-    /// The lowest step alerted this discharge.
     step: Option<u8>,
-    /// The device's last alert, which its next one takes the place of.
     notification: u32,
 }
 
-/// An alert to send for device `id`.
 #[derive(Debug, PartialEq)]
 pub struct Alert {
     pub id: String,
@@ -58,7 +29,6 @@ pub struct Alert {
 }
 
 impl Alerts {
-    /// The alerts `devices`, the list as it is now, call for.
     pub fn update(&mut self, devices: &[Peripheral]) -> Vec<Alert> {
         let mut alerts = Vec::new();
         for device in devices {
@@ -107,12 +77,10 @@ impl Alerts {
         alerts
     }
 
-    /// The notifications sent for the devices known, by id.
     pub fn notifications(&self) -> Vec<u32> {
         self.devices.values().map(|said| said.notification).filter(|id| *id != 0).collect()
     }
 
-    /// Device `id`'s alert was sent as notification `notification`.
     pub fn sent(&mut self, id: &str, notification: u32) {
         if let Some(said) = self.devices.get_mut(id) {
             said.notification = notification;
@@ -120,12 +88,6 @@ impl Alerts {
     }
 }
 
-/// Whether what was `said` is about `device` back under a new id: UPower
-/// numbers a Logitech battery anew each time it connects
-/// (`mouse_hidpp_battery_3`), and a headset on Bluetooth and its dongle is
-/// listed as the dongle's (`Arctis Nova 5X`) while Bluetooth is away. The
-/// same name, or the way the list merges a device on Bluetooth and its
-/// dongle: one of them on Bluetooth, and one name inside the other.
 fn same_device(said: &Said, device: &Peripheral) -> bool {
     let names =
         said.name == device.name || (said.bluetooth != on_bluetooth(device) && names_match(&said.name, &device.name));
@@ -136,15 +98,11 @@ fn on_bluetooth(device: &Peripheral) -> bool {
     device.link == Some(PeripheralLink::Bluetooth)
 }
 
-/// Whether `listed` is the row an earlier alert like `own` left: Nova's,
-/// about a device of its kind and the same name. A row doesn't say how its
-/// device was connected, so a name inside another's isn't enough.
 pub fn row_of(listed: &Notification, own: &Own) -> bool {
     let kinds = listed.device.zip(own.device).is_some_and(|(listed, own)| same_kind(listed.kind, own.kind));
     listed.app == own.app && kinds && listed.summary == own.summary
 }
 
-/// About how full a battery that only reports `level` is.
 pub fn level_percent(level: BatteryLevel) -> u8 {
     match level {
         BatteryLevel::Critical => 5,
@@ -155,9 +113,6 @@ pub fn level_percent(level: BatteryLevel) -> u8 {
     }
 }
 
-/// The notification for `device`, at `battery`, reaching `step`: its name
-/// and its percent. The icon says what it is; when critical, the card's
-/// rim says to charge it.
 fn own(device: &Peripheral, battery: Battery, step: u8, replaces: u32) -> Own {
     let critical = step == STEPS[STEPS.len() - 1];
     let body = match (battery, critical) {
@@ -192,7 +147,6 @@ mod tests {
         }
     }
 
-    /// What the alerts each reading in turn calls for say.
     fn bodies(readings: &[(Battery, bool)]) -> Vec<Vec<String>> {
         let mut alerts = Alerts::default();
         readings
@@ -255,7 +209,6 @@ mod tests {
                 vec!["9%".to_string()],
                 vec![],
                 vec!["9%".to_string()],
-                // 10 points over the 10% step says it again; 20% stays said.
                 vec![],
                 vec![],
                 vec![],
@@ -303,8 +256,6 @@ mod tests {
         assert!(alerts.update(&[mouse(Battery::Percent(5), false)])[0].own.critical);
     }
 
-    /// The Arctis Nova 5X on Bluetooth and its dongle is listed as UPower's
-    /// while Bluetooth is there, as HeadsetControl's while it's away.
     #[test]
     fn a_headset_on_bluetooth_and_its_dongle_is_one_device() {
         let bluetooth = |percent| Peripheral {
@@ -338,8 +289,6 @@ mod tests {
         assert_eq!((critical[0].own.replaces, critical[0].own.body.as_str()), (7, "5%"));
     }
 
-    /// A name inside another's is one device only across Bluetooth and a
-    /// dongle: an MX Keys Mini isn't the MX Keys that left.
     #[test]
     fn another_device_with_a_longer_name_is_another_device() {
         let keyboard = |id: &str, name: &str, percent| Peripheral {

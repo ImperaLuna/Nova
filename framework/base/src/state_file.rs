@@ -1,21 +1,12 @@
-//! What features keep across restarts, in a JSON file of their own in the
-//! state folder, and other files novad writes for the UI: private to the
-//! user, and replaced in one step, so a crash mid-save never leaves half a
-//! file.
-
 use serde::Serialize;
 use std::path::Path;
 
-/// The saved state is the user's own business.
 const MODE: u32 = 0o600;
 
-/// Writes a private temp file next to `path` and renames it over `path`.
 pub fn save(path: &Path, saved: &impl Serialize) -> std::io::Result<()> {
     write(path, &serde_json::to_vec_pretty(saved).map_err(std::io::Error::other)?)
 }
 
-/// Writes `bytes` to a private temp file next to `path` and renames it over
-/// `path`, so nothing ever reads half of it.
 pub fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
@@ -25,8 +16,8 @@ pub fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut partial = path.as_os_str().to_owned();
     partial.push(".partial");
     let partial = std::path::PathBuf::from(partial);
-    // One left by a crash, or anything else in its place, goes first:
-    // `create_new` never follows a link or reuses a file.
+    // `create_new` fails on any entry already there, a link included:
+    // https://doc.rust-lang.org/std/fs/struct.OpenOptions.html#method.create_new
     match std::fs::remove_file(&partial) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
         _ => {}

@@ -1,17 +1,9 @@
-//! The watcher on the session bus: claiming its name, the apps that
-//! register with it and leave, the signals that say an item's look or menu
-//! changed, and the calls novad makes to items.
-
 use super::*;
 
-/// Connects to `bus`, claims the watcher's name and serves it, dropping
-/// items whose app leaves the bus, until `stop` or the bus goes. Sends on
-/// `ready` once apps can register.
 pub(crate) async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<()>) -> zbus::Result<()> {
     let builder = bus.builder();
     let watcher = Watcher { shared: Arc::clone(shared) };
     let connection = builder.method_timeout(CALL_TIMEOUT).serve_at(WATCHER_PATH, watcher).build().await?;
-    // Followed before the name is claimed, so no app leaving in between is missed.
     let rule = MatchRule::builder()
         .msg_type(zbus::message::Type::Signal)
         .sender(DBUS_NAME)
@@ -20,7 +12,6 @@ pub(crate) async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mps
         .build()?;
     let mut owners = MessageStream::for_match_rule(rule, &connection, None).await?;
     follow_looks(shared, &connection).await?;
-    // Queued behind another watcher (another shell's, say), novad takes over when it leaves.
     match session_bus::claim(&connection, WATCHER_NAME).await? {
         RequestNameReply::InQueue => shared.logger.warn(
             LOG_SOURCE,
@@ -31,17 +22,12 @@ pub(crate) async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mps
     *lock(&shared.connection) = Some(connection.clone());
     let _ = ready.send(());
     let result = follow_owners(shared, &connection, &mut owners).await;
-    // The watcher it serves holds `shared`: kept, the connection would never
-    // close, and a stopped tray would keep the name from the next one.
     *lock(&shared.connection) = None;
     result
 }
 
-/// The signals an item sends when what it shows changed.
 pub(crate) const LOOK_SIGNALS: [&str; 5] = ["NewIcon", "NewAttentionIcon", "NewStatus", "NewIconThemePath", "NewMenu"];
 
-/// Follows items' signals that their look changed, and menus' that their
-/// layout did, on a thread of their own, until `stop` or the bus goes.
 pub(crate) async fn follow_looks(shared: &Arc<Shared>, connection: &Connection) -> zbus::Result<()> {
     let signals = |interface: &'static str| {
         MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(interface).build()
@@ -79,7 +65,6 @@ pub(crate) async fn follow_looks(shared: &Arc<Shared>, connection: &Connection) 
     Ok(())
 }
 
-/// Drops the items of apps that leave the bus, until `stop` or the bus goes.
 pub(crate) async fn follow_owners(
     shared: &Shared,
     connection: &Connection,
@@ -100,7 +85,6 @@ pub(crate) async fn follow_owners(
     Ok(())
 }
 
-/// The stream's next message; `None` once the connection closes or `stop` is set.
 pub(crate) async fn next_unless_stopped(
     stream: &mut MessageStream,
     stop: &Stop,
@@ -114,8 +98,6 @@ pub(crate) async fn next_unless_stopped(
     .await
 }
 
-/// Whether `e` is an app's answer that it has no such item, rather than
-/// no answer in time or a passing failure.
 pub(crate) fn says_not_there(e: &zbus::Error) -> bool {
     matches!(
         error_name(e).as_deref().unwrap_or_default(),
@@ -126,7 +108,6 @@ pub(crate) fn says_not_there(e: &zbus::Error) -> bool {
     )
 }
 
-/// The name of the D-Bus error an app answered with, if it answered.
 pub(crate) fn error_name(e: &zbus::Error) -> Option<String> {
     use zbus::DBusError;
     match e {
@@ -136,7 +117,6 @@ pub(crate) fn error_name(e: &zbus::Error) -> Option<String> {
     }
 }
 
-/// Tells hosts the items at `addresses` went.
 pub(crate) async fn unregister(connection: &Connection, addresses: Vec<String>) {
     let Ok(emitter) = SignalEmitter::new(connection, WATCHER_PATH) else { return };
     for address in addresses {
@@ -149,24 +129,19 @@ pub(crate) async fn name_owner(connection: &Connection, name: &str) -> zbus::Res
     reply.body().deserialize()
 }
 
-/// A string property of the item at `bus` and `path`, cut to [`MAX_TEXT_CHARS`].
 pub(crate) async fn item_text(connection: &Connection, bus: &str, path: &str, name: &str) -> zbus::Result<String> {
     let reply = connection.call_method(Some(bus), path, Some(PROPERTIES), "Get", &(ITEM_INTERFACE, name)).await?;
     let text: String = reply.body().deserialize::<OwnedVariant>()?.try_into()?;
     Ok(text.chars().take(MAX_TEXT_CHARS).collect())
 }
 
-/// The properties the item at `bus` and `path` shows itself with, or
-/// `None` when it doesn't answer.
 pub(crate) async fn item_props(connection: &Connection, bus: &str, path: &str) -> Option<look::Props> {
     let reply = connection.call_method(Some(bus), path, Some(PROPERTIES), "GetAll", &(ITEM_INTERFACE,)).await;
     reply.and_then(|reply| reply.body().deserialize::<HashMap<String, OwnedValue>>()).map(look::Props::from_all).ok()
 }
 
-/// Whether the item at `bus` and `path` has `Activate`. libayatana's items
-/// (Spotify's, Steam's) only have a menu, and say so when introspected;
-/// an item that can't be introspected (Electron's) is taken to have it,
-/// and `Tray::send_activate` finds out otherwise.
+// libayatana's items have only a menu, and Electron's can't be introspected:
+// https://github.com/AyatanaIndicators/libayatana-appindicator
 pub(crate) async fn can_activate(connection: &Connection, bus: &str, path: &str) -> bool {
     let Ok(reply) = connection.call_method(Some(bus), path, Some(INTROSPECTABLE), "Introspect", &()).await else {
         return true;
@@ -174,8 +149,6 @@ pub(crate) async fn can_activate(connection: &Connection, bus: &str, path: &str)
     reply.body().deserialize::<String>().map_or(true, |xml| has_method(&xml, ITEM_INTERFACE, "Activate") != Some(false))
 }
 
-/// Whether the introspection data `xml` gives `interface` the method
-/// `method`; `None` when it doesn't list the interface.
 pub(crate) fn has_method(xml: &str, interface: &str, method: &str) -> Option<bool> {
     let quoted = |name: &str| [format!("name=\"{name}\""), format!("name='{name}'")];
     let start = quoted(interface).iter().filter_map(|attribute| xml.find(attribute.as_str())).min()?;
@@ -187,7 +160,6 @@ pub(crate) fn has_method(xml: &str, interface: &str, method: &str) -> Option<boo
     }))
 }
 
-/// The watcher apps see on the bus.
 pub(crate) struct Watcher {
     shared: Arc<Shared>,
 }
@@ -207,20 +179,15 @@ impl Watcher {
             zbus::fdo::Error::InvalidArgs(e)
         })?;
         emitter.status_notifier_item_registered(&address).await?;
-        // Read once, by the first registration: an app registering again
-        // doesn't get another thread.
         if !new {
             return Ok(());
         }
-        // On a thread of its own, so the app gets its answer first and a slow
-        // one holds up nobody else.
         let shared = Arc::clone(&self.shared);
         let connection = connection.clone();
         std::thread::spawn(move || zbus::block_on(shared.read(&connection, &address)));
         Ok(())
     }
 
-    /// Hosts are welcome, but the watcher says there's one whatever they do.
     async fn register_status_notifier_host(
         &self,
         _service: &str,
@@ -235,7 +202,6 @@ impl Watcher {
         self.shared.addresses()
     }
 
-    /// Always: Nova's UI is the host, and it may still be starting.
     #[zbus(property)]
     fn is_status_notifier_host_registered(&self) -> bool {
         true

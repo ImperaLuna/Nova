@@ -1,10 +1,3 @@
-//! What the network page asks NetworkManager to do: turn Wi-Fi on or off,
-//! scan, connect to a network (with its saved profile, or a new one with
-//! the password), and lower a link's route metric so it carries traffic.
-//!
-//! polkit decides who may: on most desktops it allows the active session
-//! all of these without asking.
-
 use super::manager::{
     self, ACTIVE_STATE_DEACTIVATED, DEVICE, NM, NM_PATH, NO_OBJECT, PROPERTIES, Reading, SETTINGS_CONNECTION, Settings,
     TYPE_WIFI, WIRELESS,
@@ -17,18 +10,11 @@ use zbus::Connection;
 use zbus::wire::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 
 const SECURITY_SETTING: &str = "802-11-wireless-security";
-/// NetworkManager's error when a scan comes too soon after the last one:
-/// the list is fresh, so that's no failure.
 const SCAN_TOO_SOON: &str = "Scanning not allowed";
-/// `Settings.Connection.Update2`'s flag: save to disk.
 const UPDATE_TO_DISK: u32 = 0x1;
 
-/// A started connection attempt.
 pub struct Started {
-    /// The active connection to follow.
     pub active: OwnedObjectPath,
-    /// The profile it made, when there was none: removed again if the
-    /// password turns out wrong.
     pub created: Option<OwnedObjectPath>,
 }
 
@@ -61,7 +47,6 @@ pub async fn scan(connection: &Connection, reading: &Reading) -> Result<(), Stri
     }
 }
 
-/// Starts connecting the Wi-Fi card to `ssid`.
 pub async fn connect(
     connection: &Connection,
     reading: &Reading,
@@ -113,7 +98,6 @@ pub async fn connect(
             HashMap::from([("key-mgmt", Variant::from(key_mgmt)), ("psk", Variant::from(password.expose()))]),
         );
     }
-    // NetworkManager fills in the rest from the network itself.
     let reply = call(connection, NM_PATH, NM, "AddAndActivateConnection", &(settings, &wifi.path, root()))
         .await
         .map_err(failed)?;
@@ -136,7 +120,6 @@ fn validate_password(password: &WifiPassword, key_mgmt: Option<&str>) -> Result<
     }
 }
 
-/// Saves `password` in the saved profile at `path`, replacing the old one.
 async fn save_password(
     connection: &Connection,
     path: &OwnedObjectPath,
@@ -155,15 +138,12 @@ async fn save_password(
 pub async fn disconnect(connection: &Connection, reading: &Reading) -> Result<(), String> {
     let wifi = reading.wifi.as_ref().ok_or("there's no Wi-Fi card")?;
     let active = wifi.active.as_ref().ok_or("Wi-Fi isn't connected")?;
-    // Not the device's Disconnect, which stops it connecting to anything
-    // by itself until a network is picked.
     call(connection, NM_PATH, NM, "DeactivateConnection", &(active,))
         .await
         .map(|_| ())
         .map_err(|e| format!("can't disconnect Wi-Fi: {e}"))
 }
 
-/// Removes every saved profile for `ssid`.
 pub async fn forget(connection: &Connection, reading: &Reading, ssid: &str) -> Result<(), String> {
     let profiles: Vec<_> = reading
         .profiles
@@ -183,26 +163,18 @@ pub async fn forget(connection: &Connection, reading: &Reading, ssid: &str) -> R
     Ok(())
 }
 
-/// Removes the profile novad made for a network it couldn't get onto.
 pub async fn forget_created(connection: &Connection, profile: &OwnedObjectPath) -> zbus::Result<()> {
     call(connection, profile.as_str(), SETTINGS_CONNECTION, "Delete", &()).await.map(|_| ())
 }
 
-/// What a deactivated connection's `StateChanged` reason says about a
-/// password: `NM_ACTIVE_CONNECTION_STATE_REASON_NO_SECRETS` (9) and
-/// `LOGIN_FAILED` (10).
 pub fn wrong_password(state: u32, reason: u32) -> bool {
     state == ACTIVE_STATE_DEACTIVATED && matches!(reason, 9 | 10)
 }
 
-/// The device's applied connection and its version, for `Reapply`.
 pub async fn applied(connection: &Connection, device: &OwnedObjectPath) -> zbus::Result<(Settings, u64)> {
     call(connection, device.as_str(), DEVICE, "GetAppliedConnection", &(0u32,)).await?.body().deserialize()
 }
 
-/// Sets the device's route metrics, one per [`manager::FAMILIES`] (`None`
-/// for NetworkManager's default), without touching its saved profile: they
-/// last while it stays connected.
 pub async fn set_route_metric(
     connection: &Connection,
     device: &OwnedObjectPath,
@@ -219,10 +191,6 @@ pub async fn set_route_metric(
     call(connection, device.as_str(), DEVICE, "Reapply", &(settings, version, 0u32)).await.map(|_| ())
 }
 
-/// A call to NetworkManager, within the connection's timeout. It doesn't
-/// let polkit ask for a password (no agent may be running to ask, and the
-/// wait would have no end): where polkit wants one, the call fails and says
-/// so.
 async fn call<B>(
     connection: &Connection,
     path: &str,
@@ -236,7 +204,6 @@ where
     connection.call_method(Some(NM), path, Some(interface), method, body).await
 }
 
-/// "/": no particular access point, NetworkManager picks the best.
 fn root() -> ObjectPath<'static> {
     ObjectPath::from_static_str_unchecked(NO_OBJECT)
 }

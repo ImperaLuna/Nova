@@ -1,13 +1,3 @@
-//! The network service against a stand-in for NetworkManager only: a
-//! private `dbus-daemon` per test with `fake_nm` serving what RyzenShine's
-//! NetworkManager reported (`recorded/nm-ryzenshine.json`: a desktop on a
-//! cable and Wi-Fi at once, Wi-Fi carrying traffic by its profile's route
-//! metric, plus loopback, a libvirt bridge, Wi-Fi P2P and Tailscale's
-//! tunnel), and the signals of a rescan there (`recorded/nm-rescan.jsonl`,
-//! which found one more network). Network names other than the user's are
-//! `Neighbor-N`, the user's own were renamed, and MAC addresses and IP
-//! addresses were scrubbed.
-
 use super::fake_nm::FakeNm;
 use super::*;
 use nova_carrier::log::LogLevel;
@@ -18,8 +8,6 @@ use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc::Receiver;
 
-/// How long a test waits for what should come at once: a read after the
-/// settle, a connection attempt.
 const WAIT: Duration = Duration::from_secs(15);
 const WIRED_DEVICE: &str = "/org/freedesktop/NetworkManager/Devices/2";
 
@@ -50,18 +38,13 @@ impl Fixture {
         Self { dir, bus, hub, logger, ui, client, _ui_stream: ui_stream }
     }
 
-    /// NetworkManager as RyzenShine's was.
     fn nm(&self) -> FakeNm {
         self.nm_with(|_| {})
     }
 
-    /// NetworkManager as RyzenShine's was, after `edit` changes the
-    /// recording.
     fn nm_with(&self, edit: impl FnOnce(&mut Value)) -> FakeNm {
         let mut recording = serde_json::from_str(&recorded("nm-ryzenshine.json")).unwrap();
         edit(&mut recording);
-        // A connection of its own, without zbus's object server: the fake
-        // answers every call itself.
         let connection = zbus::block_on(zbus::connection::Builder::address(self.bus.address.as_str()).build()).unwrap();
         FakeNm::start(connection, &recording)
     }
@@ -73,7 +56,6 @@ impl Fixture {
             state_dir: self.dir.join("state"),
         };
         let network = Network::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger));
-        // A new run first clears what clients heard from an earlier one.
         assert_eq!(self.next()["running"], json!(false));
         network
     }
@@ -82,7 +64,6 @@ impl Fixture {
         nova_hub::next_named(&self.ui, "network", WAIT)
     }
 
-    /// The next network event that `wanted` holds for, skipping others.
     fn until(&self, what: &str, wanted: impl Fn(&Value) -> bool) -> Value {
         let deadline = Instant::now() + WAIT;
         loop {
@@ -95,7 +76,6 @@ impl Fixture {
         }
     }
 
-    /// Kernel counters for a link, as `/sys/class/net` has them.
     fn counters(&self, link: &str, down: u64, up: u64) {
         let statistics = self.dir.join("sys/class/net").join(link).join("statistics");
         std::fs::create_dir_all(&statistics).unwrap();
@@ -220,7 +200,6 @@ fn preferring_a_link_sets_route_metrics_on_the_devices_not_the_profiles() {
     let network = fixture.start();
     fixture.next();
 
-    // The profiles put Wi-Fi first (metric 10 against the cable's 900).
     network.prefer(LinkKind::Wired).unwrap();
     let event = fixture.until("the cable in use", |event| event["primary"] == "wired");
     assert_eq!(event["prefer"], "wired");
@@ -236,7 +215,6 @@ fn preferring_a_link_sets_route_metrics_on_the_devices_not_the_profiles() {
     assert_eq!(network.prefer(LinkKind::Other), Err("only a wired or a Wi-Fi link can be preferred".into()));
     network.stop();
 
-    // The pick is kept across restarts.
     let fixture2 = Fixture::new("prefer-again");
     std::fs::create_dir_all(fixture2.dir.join("state")).unwrap();
     std::fs::copy(fixture.dir.join("state/network.json"), fixture2.dir.join("state/network.json")).unwrap();
@@ -263,7 +241,6 @@ fn a_preference_that_failed_to_apply_is_tried_again() {
 #[test]
 fn a_preference_holds_for_ipv6_where_its_metrics_differ() {
     let fixture = Fixture::new("prefer-ipv6");
-    // Wi-Fi first for IPv4 (10 against 900), the cable first for IPv6.
     let wired_profile = "/org/freedesktop/NetworkManager/Settings/3";
     let nm =
         fixture.nm_with(|recording| {
@@ -273,10 +250,8 @@ fn a_preference_holds_for_ipv6_where_its_metrics_differ() {
     let network = fixture.start();
     fixture.next();
 
-    // Already Wi-Fi's for IPv4, so the event doesn't change.
     network.prefer(LinkKind::Wifi).unwrap();
     let wifi_device = "/org/freedesktop/NetworkManager/Devices/3";
-    // Calls are counted as they come, metrics once they're applied.
     nova_test_support::wait_until(WAIT, "a reapply", || nm.applied_metrics(wifi_device).is_some());
     assert_eq!(nm.calls("Reapply"), [wifi_device], "only Wi-Fi's IPv6 needed to change");
     assert_eq!(
@@ -329,7 +304,6 @@ fn an_attempt_keeps_its_outcome_through_other_connections_changing() {
     network.connect("Home", None).unwrap();
     fixture.until("connected", |event| event["wifi"]["attempt"]["outcome"] == "connected");
 
-    // A VPN or the cable going up and down, many times over.
     for _ in 0..=MAX_TRANSITIONS {
         nm.state_changed("/org/freedesktop/NetworkManager/ActiveConnection/1", ACTIVE_STATE_ACTIVATED, 0);
     }
@@ -374,14 +348,11 @@ fn traffic_is_counted_over_the_links_while_watched() {
     let fixture = Fixture::new("traffic");
     fixture.counters("enp5s0", 1_000, 100);
     fixture.counters("wlp6s0", 5_000, 500);
-    // Not a link NetworkManager lists: never counted.
     fixture.counters("virbr0", 9_000_000, 9_000_000);
     let _nm = fixture.nm();
     let network = fixture.start();
     fixture.next();
     network.watch_traffic(fixture.client, true);
-    // A look once the links are known sets where counting starts: the
-    // second event is one (the first may be what was there before them).
     for _ in 0..2 {
         nova_hub::next_named(&fixture.ui, "network_traffic", WAIT);
     }

@@ -1,6 +1,3 @@
-//! Integration tests: the real `nova` binary against a real daemon (in this
-//! process, without the UI) over a real socket.
-
 #![expect(clippy::unwrap_used, reason = "test setup should fail loudly")]
 
 use nova_daemon_info::{Status, UiProgram, UiState};
@@ -11,16 +8,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 
-/// `nova daemon`'s arguments, parsed on their own.
 #[derive(clap::Parser)]
 struct DaemonArgs {
     #[command(flatten)]
     args: novad::Args,
 }
 
-/// novad in this process, stopped when dropped, then its folder removed.
 struct Novad {
-    // Before `dir`: fields drop in order.
     _running: novad::InProcess,
     dir: TempDir,
 }
@@ -30,13 +24,10 @@ impl Novad {
         Self::start_with(name, "")
     }
 
-    /// With `selection` as the user's features.toml.
     fn start_with(name: &str, selection: &str) -> Self {
         Self::start_in(TempDir::new(name), selection, &["--no-ui".into()])
     }
 
-    /// In `dir`, with `selection` as the user's features.toml and `ui` as
-    /// the arguments that say how the UI runs.
     fn start_in(dir: TempDir, selection: &str, ui: &[std::ffi::OsString]) -> Self {
         std::fs::write(dir.join("features.toml"), selection).unwrap();
         let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
@@ -67,7 +58,6 @@ impl Novad {
 
     fn nova(&self, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_nova"));
-        // Before the command, so it never ends up after a `--`.
         command.arg("--socket").arg(self.dir.join("novad.sock")).args(args);
         command
     }
@@ -94,7 +84,6 @@ fn status_json_is_novads_answer() {
     assert!(status.features.iter().any(|f| f.id == "bar"));
 }
 
-/// A novad that runs a stand-in `nova-ui`, waiting to be stopped.
 fn novad_with_a_stand_in_ui(name: &str, selection: &str) -> Novad {
     let dir = TempDir::new(name);
     let ui = nova_test_support::write_program(dir.path(), "nova-ui", "exec sleep 60");
@@ -108,8 +97,6 @@ fn status_once_the_ui_runs(novad: &Novad) -> Status {
     })
 }
 
-/// `nova-ui` runs whatever `ui` in features.toml says: the `gpui` older
-/// Nix modules wrote quietly, anything else with a warning.
 #[test]
 fn nova_ui_runs_whatever_features_toml_picks() {
     let log = |novad: &Novad| std::fs::read_to_string(nova_paths::log_file(&novad.dir.join("logs"))).unwrap();
@@ -150,7 +137,6 @@ fn version_is_one_line_when_novad_matches() {
 #[test]
 fn logs_print_history_from_the_file() {
     let novad = Novad::start("logs-file");
-    // No --log-dir: the running novad says where its log is.
     let text = stdout(&novad.run(&["logs", "--no-follow"]));
     assert!(text.contains("listening on"), "{text}");
     let ui_only = stdout(&novad.run(&["logs", "--no-follow", "--ui", "--log-dir", &novad.log_dir()]));
@@ -165,18 +151,12 @@ fn logs_follow_novad_live() {
     const BACKLOG: usize = 100;
     let mut child = novad.nova(&["logs", "-n", &BACKLOG.to_string()]).stdout(Stdio::piped()).spawn().unwrap();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    // Within the whole backlog: novad logs a line per feature before it listens.
     let found = lines.by_ref().take(BACKLOG).map_while(Result::ok).any(|line| line.contains("listening on"));
     child.kill().unwrap();
     child.wait().unwrap();
     assert!(found, "the backlog should include novad's start");
 }
 
-/// An enabled feature whose binary is missing fails, while the running novad
-/// passes. The feature is the test's own, needing a program no host has:
-/// the doctor also looks where packages install (the Nix profiles,
-/// /run/current-system), so a real feature's binaries may be found there
-/// whatever PATH says.
 #[test]
 fn doctor_fails_on_what_is_missing() {
     let novad = Novad::start("doctor");
@@ -193,7 +173,6 @@ fn doctor_fails_on_what_is_missing() {
     std::fs::write(config.join("nova/features.toml"), "enabled = [\"missing\"]\n").unwrap();
     let output = novad
         .nova(&["doctor"])
-        // A checkout's layout, where the themes are found.
         .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join(".."))
         .env("PATH", "")
         .env("XDG_CONFIG_HOME", &config)
@@ -243,7 +222,6 @@ fn toggle_reaches_the_ui_and_says_why_when_it_cant() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
 
-    // Stands in for the UI: subscribes to toggle events.
     let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
     ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
@@ -282,7 +260,6 @@ fn wallpaper_says_why_it_cant() {
 #[test]
 fn volume_reaches_the_ui_quietly() {
     let novad = Novad::start("volume");
-    // Stands in for the UI: subscribes to volume events.
     let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
     ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
@@ -290,8 +267,6 @@ fn volume_reaches_the_ui_quietly() {
     assert!(lines.next().unwrap().unwrap().contains("hello"));
     assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
 
-    // The test has no sound server, so novad can't change the volume, but
-    // the UI hears the key and nothing goes to stdout.
     for key in ["up", "down", "mute"] {
         let output = novad.run(&["volume", key]);
         assert!(String::from_utf8_lossy(&output.stderr).contains("no sound server"), "{output:?}");
@@ -309,7 +284,6 @@ fn lock_reaches_the_ui_quietly() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
 
-    // Stands in for the UI: subscribes to lock events, and gets the state.
     let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
     ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
@@ -318,7 +292,6 @@ fn lock_reaches_the_ui_quietly() {
     assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
     assert!(lines.next().unwrap().unwrap().contains(r#""locked":false"#));
 
-    // It answers once the UI says the screens are covered.
     std::thread::scope(|scope| {
         let locking = scope.spawn(|| novad.run(&["lock"]));
         let event = lines.next().unwrap().unwrap();
@@ -338,7 +311,6 @@ fn status_without_novad_fails_with_a_hint() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("Start it with `nova`"));
 }
 
-/// `nova daemon` as its own process, for tests that stop it.
 struct DaemonProcess {
     dir: TempDir,
     child: std::process::Child,
@@ -384,7 +356,6 @@ impl DaemonProcess {
         })
     }
 
-    /// Waits for the daemon to exit on its own and checks it cleaned up.
     fn assert_exits(mut self) {
         assert!(self.child.wait().unwrap().success());
         assert!(!self.socket().exists());
@@ -404,7 +375,7 @@ fn nova_daemon_is_named_nova_and_quits_over_the_socket() {
     let stream = daemon.connect();
     let mut writer = stream.try_clone().unwrap();
     let mut lines = BufReader::new(stream).lines();
-    lines.next().unwrap().unwrap(); // hello
+    lines.next().unwrap().unwrap();
     let comm = std::fs::read_to_string(format!("/proc/{}/comm", daemon.child.id())).unwrap();
     assert_eq!(comm.trim_end(), novad::PROCESS_NAME, "ps and btop show the daemon by this name");
     writeln!(writer, r#"{{"v":2,"id":1,"cmd":"quit"}}"#).unwrap();
@@ -412,8 +383,6 @@ fn nova_daemon_is_named_nova_and_quits_over_the_socket() {
     daemon.assert_exits();
 }
 
-/// Even while the installed `nova.service` runs (as on a desktop running
-/// Nova), `nova --socket <other> quit` stops the daemon on that socket.
 #[test]
 fn quit_stops_the_daemon_on_the_given_socket() {
     let daemon = DaemonProcess::start("quit");
@@ -434,7 +403,6 @@ fn a_second_daemon_is_refused_before_touching_the_log() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    // The running daemon's log is still nova.log, not rotated to nova.log.1.
     let text = stdout(&novad.run(&["logs", "--no-follow", "--log-dir", &novad.log_dir()]));
     assert!(text.contains("listening on"), "{text}");
 }
@@ -455,7 +423,6 @@ fn claude_statusline_reports_limits_and_passes_input_on() {
     let event = BufReader::new(stream)
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(&line.unwrap()).unwrap())
-        // The report isn't answered, so it may land just after subscribing.
         .find(|message| message["event"] == "ai_usage" && message["data"]["providers"][0]["state"] == "ready")
         .unwrap();
     let claude = &event["data"]["providers"][0];

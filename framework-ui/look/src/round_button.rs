@@ -1,8 +1,3 @@
-//! A small round icon button: the notification list's ✕, ⋯, bell and gear, a
-//! network's ⋯, a password field's eye. Raised, or with [`RoundButton::quiet`]
-//! clear until hovered, for buttons that sit on a card or a row. `on` fills it
-//! with the accent (do not disturb).
-
 use crate::tokens::ICON_SIZE_SMALL;
 use crate::{Glyph, Icon, Theme};
 use gpui::{
@@ -10,8 +5,6 @@ use gpui::{
     Styled, Window, div,
 };
 
-/// A small round icon button (see the module). [`RoundButton::build`]
-/// gives the element; its click goes no further than it.
 pub struct RoundButton {
     id: ElementId,
     glyph: Glyph,
@@ -26,7 +19,6 @@ impl RoundButton {
         Self { id: id.into(), glyph, filled: false, size, on: false, quiet: false }
     }
 
-    /// Its glyph drawn solid too (the ⋯).
     pub fn filled(mut self) -> Self {
         self.filled = true;
         self

@@ -1,13 +1,3 @@
-//! One screen of the lock screen: a session lock surface as big as the screen,
-//! the backdrop, and the prompt when this is the screen in use. Keys go to the
-//! lock, whichever screen gets them.
-//!
-//! It draws from its own copy of the prompt ([`Prompt`]), taken when the
-//! lock changes, so a screen that only shows the backdrop draws nothing
-//! while the user types on another. It asks for frames only while the
-//! field shakes, its ring changes color, the spinner turns or the prompt
-//! fades.
-
 use crate::lock::{LockScreen, Prompt};
 use crate::prompt::{self, PLACEHOLDER};
 use crate::tokens::{
@@ -29,7 +19,6 @@ use std::time::Instant;
 pub struct LockSurface {
     screen: Screen,
     lock: WeakEntity<LockScreen>,
-    /// What this screen shows over the backdrop, as the lock last said.
     prompt: Option<Prompt>,
     focus: FocusHandle,
     frames: Option<FrameLog>,
@@ -37,7 +26,6 @@ pub struct LockSurface {
 }
 
 impl LockSurface {
-    /// Opens `screen`'s lock surface. The compositor sizes it.
     pub fn open(screen: &Screen, lock: WeakEntity<LockScreen>, cx: &mut App) -> Option<WindowHandle<Self>> {
         let options = lock_surface(screen.id, screen.size);
         let screen = screen.clone();
@@ -60,7 +48,6 @@ impl LockSurface {
         }
     }
 
-    /// The lock changed: draws when what this screen shows did.
     fn follow(&mut self, lock: Entity<LockScreen>, cx: &mut Context<Self>) {
         let prompt = lock.read(cx).prompt_on(self.screen.id, cx);
         if prompt != self.prompt {
@@ -71,7 +58,6 @@ impl LockSurface {
 
     fn key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let _ = self.lock.update(cx, |lock, cx| lock.key(&event.keystroke, cx));
-        // Nothing else acts on a key while the session is locked.
         cx.stop_propagation();
     }
 
@@ -109,15 +95,10 @@ impl Render for LockSurface {
     }
 }
 
-/// Where the prompt's motions are at one frame.
 struct Look {
-    /// The prompt's opacity: it fades once the password checked out.
     presence: f32,
-    /// How far through its shake the field is, from 0 to 1.
     shake: f32,
-    /// How far the ring is on its way to its color.
     ring: f32,
-    /// One of them is on its way, or the spinner turns.
     moving: bool,
 }
 
@@ -134,8 +115,6 @@ impl Look {
     }
 }
 
-/// The user's initial in a circle, their name, the field, and a line for
-/// what went wrong.
 fn draw(prompt: &Prompt, look: &Look, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let initial: String = prompt.user.chars().take(1).flat_map(char::to_uppercase).collect();
@@ -153,7 +132,6 @@ fn draw(prompt: &Prompt, look: &Look, cx: &App) -> Div {
         .text_color(theme.fg_dim())
         .child(initial);
     let name = div().text_size(FONT_SIZE_TITLE).font_weight(WEIGHT_TITLE).child(prompt.user.clone());
-    // Kept when empty, so the prompt doesn't move as a message comes.
     let message = div()
         .h(FONT_SIZE_SMALL * LINE_HEIGHT_WRAPPED)
         .text_size(FONT_SIZE_SMALL)
@@ -171,8 +149,6 @@ fn draw(prompt: &Prompt, look: &Look, cx: &App) -> Div {
         .child(message)
 }
 
-/// The password field: a dot per character typed, a spinner while it's
-/// checked, a ring in the error color after a wrong one.
 fn field(prompt: &Prompt, look: &Look, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let (focused, wrong) = (theme.primary.opacity(FOCUS_OPACITY), theme.error);
@@ -193,7 +169,6 @@ fn field(prompt: &Prompt, look: &Look, cx: &App) -> Div {
         .border_color(ring)
         .flex()
         .items_center()
-        // The ring is inside the field's box; the text starts a pad in from its edge.
         .pl((PAD - STROKE_THIN).max(px(0.0)))
         .child(typed)
         .children(spinner);

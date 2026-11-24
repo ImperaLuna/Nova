@@ -1,7 +1,3 @@
-//! How the network page looks: traffic over the last minute on the link in use,
-//! which link to prefer while a cable and Wi-Fi are both connected, the Wired
-//! row, Wi-Fi's switch, and the networks in reach, scrolling below them.
-
 use crate::logic::{self, LinkIcon, Role};
 use crate::page::NetworkPage;
 use crate::tokens::{LEGEND_DOT, MENU_WIDTH, MORE_SIZE, PASSWORD_HEIGHT, TRAFFIC_GRAPH_HEIGHT, WIFI_ARC_FADED_OPACITY};
@@ -36,7 +32,6 @@ impl Render for NetworkPage {
         let network = network.as_ref();
         let traffic = self.traffic.read(cx).get().cloned();
         let screen = self.screen.id;
-        // A spinner in sight turns.
         let scanning = network.and_then(|network| network.wifi.as_ref()).is_some_and(|wifi| wifi.scanning);
         if !self.wifi_knob.settled(now) || logic::connecting(network).is_some() || scanning {
             window.request_animation_frame();
@@ -74,7 +69,6 @@ impl Render for NetworkPage {
             .child(rows_above)
             .when(shown_list, |page| page.child(self.list(network, window, cx)))
             .when(menu_open, |page| {
-                // A click beside the menu closes it, and does nothing else.
                 page.child(
                     div()
                         .id("beside-menu")
@@ -88,7 +82,6 @@ impl Render for NetworkPage {
 }
 
 impl NetworkPage {
-    /// Wi-Fi's switch; a hardware switch or airplane key greys it out.
     fn wifi_row(&self, network: Option<&Network>, now: Instant, cx: &mut Context<Self>) -> Stateful<Div> {
         let on = logic::wifi_on(network);
         let blocked = network.and_then(|network| network.wifi.as_ref()).is_some_and(|wifi| wifi.blocked);
@@ -103,9 +96,6 @@ impl NetworkPage {
             .build(cx)
     }
 
-    /// The networks in reach: the one it's on, then the others, then a
-    /// line while it scans. Scrolling closes the ⋯ menu, which stays where
-    /// it opened.
     fn list(&self, network: Option<&Network>, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let theme = Theme::of(cx).clone();
         let current = logic::current(network);
@@ -144,8 +134,6 @@ impl NetworkPage {
             )
     }
 
-    /// A network's row, its password field while it asks for one, and its
-    /// ⋯ menu while that is open.
     fn entry(&self, network: Option<&Network>, net: &WifiNetwork, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx).clone();
         let ssid: SharedString = net.ssid.clone().into();
@@ -169,8 +157,6 @@ impl NetworkPage {
             };
             let more =
                 RoundButton::new(("more", hash(&ssid)), Glyph::DOTS, MORE_SIZE).filled().quiet().build(cx, toggle);
-            // Seen while the row is hovered, its menu is open, or it's the
-            // one Wi-Fi is on.
             let more = match menu_open || net.connected {
                 true => more,
                 false => more.opacity(0.0).group_hover(group.clone(), |style| style.opacity(1.0)),
@@ -201,7 +187,6 @@ impl NetworkPage {
             .when(menu_open, |entry| entry.child(self.menu(net, cx)))
     }
 
-    /// The password, Enter or Connect joins, Esc or Cancel closes it.
     fn password_field(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx).clone();
         let focused = self.password_focus(cx).is_focused(window);
@@ -254,8 +239,6 @@ impl NetworkPage {
         div().flex().flex_col().pt(LABEL_NUDGE * 2.0).pb(GAP).gap(GAP).child(field).child(buttons)
     }
 
-    /// Disconnect (the one it's on) and Forget (a saved one), under the ⋯
-    /// that opened it, over everything.
     fn menu(&self, net: &WifiNetwork, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx).clone();
         let page = cx.entity();
@@ -289,7 +272,6 @@ impl NetworkPage {
             .flex_col()
             .body_text(cx)
             .children(items);
-        // Its top right corner just under the ⋯ at the row's end.
         div()
             .absolute()
             .top((LIST_ROW_HEIGHT + MORE_SIZE) / 2.0 + LABEL_NUDGE)
@@ -299,7 +281,6 @@ impl NetworkPage {
     }
 }
 
-/// A short stable id for a network's elements, from its name.
 fn hash(ssid: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -323,8 +304,6 @@ fn menu_item(id: &'static str, glyph: Glyph, label: &'static str, theme: &Theme)
         .child(div().flex_1().min_w_0().truncate().text_size(FONT_SIZE_SMALL).child(label))
 }
 
-/// Traffic on the link in use: its name and speed, down and up now, the
-/// last minute as a graph, and today's totals.
 fn traffic_card(network: Option<&Network>, traffic: Option<&NetworkTraffic>, cx: &App) -> Div {
     let theme = Theme::of(cx);
     let online = network.is_some_and(|network| network.primary.is_some());
@@ -370,7 +349,6 @@ fn traffic_card(network: Option<&Network>, traffic: Option<&NetworkTraffic>, cx:
         .child(link)
         .when(online, |card| card.child(speeds))
         .child(traffic_graph(traffic.filter(|_| online).cloned(), theme))
-        // A line tall even when empty, so the card keeps its height.
         .child(
             div()
                 .flex()
@@ -383,7 +361,6 @@ fn traffic_card(network: Option<&Network>, traffic: Option<&NetworkTraffic>, cx:
         )
 }
 
-/// A speed now: a dot in its line's color, the arrow and the number.
 fn speed(color: Hsla, arrow: &str, bytes_per_second: u64, ink: Hsla) -> Div {
     div().flex().items_center().gap(ICON_GAP).child(div().size(LEGEND_DOT).flex_none().rounded_full().bg(color)).child(
         div()
@@ -394,8 +371,6 @@ fn speed(color: Hsla, arrow: &str, bytes_per_second: u64, ink: Hsla) -> Div {
     )
 }
 
-/// Down (primary) and up (secondary) on one scale, newest at the right,
-/// over a quiet middle line.
 fn traffic_graph(traffic: Option<NetworkTraffic>, theme: &Theme) -> impl IntoElement {
     let (outline, down_color, up_color) = (theme.outline(), theme.primary, theme.secondary);
     let span = NETWORK_TRAFFIC_HISTORY_SECS as usize;
@@ -424,8 +399,6 @@ fn link_icon(icon: LinkIcon, size: Pixels, color: Hsla) -> Icon {
     }
 }
 
-/// Wi-Fi's icon for a network of `strength`: the arcs its signal reaches in
-/// `color`, the others faint, over the solid dot.
 fn wifi_icon(strength: u8, color: Hsla) -> AnyElement {
     let lit = logic::arcs(strength);
     let arcs = [Glyph::WIFI_ARC_INNER, Glyph::WIFI_ARC_MIDDLE, Glyph::WIFI_ARC_OUTER];
@@ -441,7 +414,6 @@ fn wifi_icon(strength: u8, color: Hsla) -> AnyElement {
     div().relative().size(ICON_SIZE_MENU).flex_none().children(layers).into_any_element()
 }
 
-/// Which link carries traffic while both are connected.
 fn prefer(network: Option<&Network>) -> Div {
     let current = match network.and_then(|network| network.prefer) {
         Some(LinkKind::Wired) => "wired",
@@ -467,8 +439,6 @@ fn prefer(network: Option<&Network>) -> Div {
 
 type RowClicked = Box<dyn Fn(&mut Window, &mut App)>;
 
-/// A row: an icon at its start, a name with a line under it, a role chip
-/// (`In use` in the accent) and what goes at its end.
 struct LinkRow {
     id: gpui::ElementId,
     title: SharedString,
@@ -520,8 +490,6 @@ impl LinkRow {
         self
     }
 
-    /// `false`: no hover and no click on the row itself (what's at its end
-    /// still takes clicks).
     fn clickable(mut self, clickable: bool) -> Self {
         self.clickable = clickable;
         self

@@ -1,10 +1,3 @@
-//! Codex's limits from OpenAI's usage endpoint, the one Codex's `/status`
-//! reads, signed in with Codex's own ChatGPT token. The logs only change
-//! when Codex runs a turn, so without this their numbers can be days old.
-//!
-//! Off unless the user turns it on (`config`): OpenAI doesn't document this
-//! use of Codex's sign-in. How the token is kept safe is in `endpoint`.
-
 use super::codex::{self, Window};
 use super::display_plan;
 use super::endpoint::{self, Problem};
@@ -15,20 +8,15 @@ use std::path::{Path, PathBuf};
 
 pub const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 
-/// Codex's sign-in, in its home folder. Codex can keep it in the system
-/// keyring instead; then there's no file and Nova can't ask.
 pub fn auth_file(home: &Path) -> PathBuf {
     home.join("auth.json")
 }
 
 pub struct Token {
     access: String,
-    /// The ChatGPT workspace the sign-in is for, sent along as Codex does.
     account: Option<String>,
 }
 
-/// The ChatGPT token in `path`, if it's there and private to the user. An
-/// API key sign-in has no plan limits.
 pub fn read_token(path: &Path) -> Result<Token, Problem> {
     let json = endpoint::read_sign_in(path)?;
     let tokens = json.get("tokens").ok_or(Problem::SignedOut)?;
@@ -36,7 +24,6 @@ pub fn read_token(path: &Path) -> Result<Token, Problem> {
     Ok(Token { access: text("access_token").ok_or(Problem::SignedOut)?, account: text("account_id") })
 }
 
-/// Asks `url` for the limits and the plan.
 pub fn fetch(url: &str, token: &Token) -> Result<(Vec<UsageLimit>, Option<String>), Problem> {
     let authorization = format!("Bearer {}", token.access);
     let mut headers = vec![("Authorization", authorization.as_str())];
@@ -48,8 +35,6 @@ pub fn fetch(url: &str, token: &Token) -> Result<(Vec<UsageLimit>, Option<String
     Ok((limits_from_usage(&json), plan))
 }
 
-/// The account's windows in the endpoint's answer; a model's own limits
-/// (`additional_rate_limits`) aren't shown, as in the logs.
 pub fn limits_from_usage(json: &Value) -> Vec<UsageLimit> {
     let Some(limit) = json.get("rate_limit") else { return vec![] };
     let windows = [("primary_window", UsageWindow::Session), ("secondary_window", UsageWindow::Weekly)]
@@ -74,7 +59,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// The file written and the folder it's in, which goes when dropped.
     fn write(dir: &str, text: &str) -> (nova_test_support::TempDir, PathBuf) {
         let dir = nova_test_support::TempDir::new(&format!("codex-api-{dir}"));
         let path = auth_file(&dir);
@@ -101,8 +85,6 @@ mod tests {
         assert_eq!(read_token(&path).err(), Some(Problem::SignedOut));
     }
 
-    /// The answer's shape, from Codex's backend client (codex-rs
-    /// `RateLimitStatusPayload`), with a Plus plan's weekly-only limits.
     #[test]
     fn reads_the_accounts_windows_by_length() {
         let answer = json!({

@@ -1,18 +1,3 @@
-//! A stand-in NetworkManager on a test's bus, serving the objects of a
-//! recording (`recorded/nm-*.json`: every object, with the properties
-//! novad reads as `busctl --json=short` prints them, and each saved
-//! profile's `GetSettings`). It answers calls itself, straight off the bus, rather
-//! than through zbus's object server: one generic handler serves whatever
-//! the recording holds.
-//!
-//! It acts like NetworkManager where novad's calls change something:
-//! Wi-Fi's switch, scans, activating a saved or a new profile (which
-//! connects when its password is the network's, else fails for missing
-//! secrets), deactivating, deleting profiles, and reapplying route
-//! metrics (the link with the lowest becomes the primary connection). It
-//! says so with `PropertiesChanged` and the active connection's
-//! `StateChanged`, as NetworkManager does.
-
 use super::manager::{
     ACCESS_POINT, ACTIVE, DEVICE, NM, NM_PATH, NO_OBJECT, PROPERTIES, SETTINGS, SETTINGS_CONNECTION, WIRELESS,
 };
@@ -27,14 +12,12 @@ use zbus::message::Type;
 use zbus::wire::{OwnedObjectPath, OwnedVariant, Structure, Variant};
 use zbus::{Connection, Message, MessageStream};
 
-/// What `connect` and `PropertiesChanged` carry: (signature, JSON value).
 type Property = (String, Value);
 type Interfaces = BTreeMap<String, BTreeMap<String, Property>>;
 type Settings = HashMap<String, HashMap<String, OwnedVariant>>;
 
 const ACTIVE_PREFIX: &str = "/org/freedesktop/NetworkManager/ActiveConnection/";
 const SETTINGS_PREFIX: &str = "/org/freedesktop/NetworkManager/Settings/";
-/// `NMActiveConnectionState`s and the reason for a missing secret.
 const ACTIVATING: u32 = 1;
 const ACTIVATED: u32 = 2;
 const DEACTIVATED: u32 = 4;
@@ -52,27 +35,17 @@ pub struct FakeNm {
 #[derive(Default)]
 struct Fake {
     objects: BTreeMap<String, Interfaces>,
-    /// Each profile's settings (JSON as recorded), by path.
     profiles: BTreeMap<String, Value>,
-    /// The password each network takes; a network that isn't here takes
-    /// whatever its saved profile has.
     passwords: HashMap<String, String>,
-    /// Passwords saved in profiles, by profile path.
     saved_passwords: HashMap<String, String>,
-    /// Route metrics (IPv4, IPv6) reapplied on devices, by device path.
     metrics: HashMap<String, [i64; 2]>,
     next_id: u32,
-    /// A method whose next call fails, as NetworkManager's do when a
-    /// connection changed under the caller.
     fail_next: Option<String>,
-    /// Activations stay activating, as when the network doesn't answer.
     stall: bool,
-    /// Every call novad made: (path, interface, method).
     calls: Vec<(String, String, String)>,
 }
 
 impl FakeNm {
-    /// Serves `recording` on `connection` under NetworkManager's name.
     pub fn start(connection: Connection, recording: &Value) -> Self {
         let mut fake = Fake { next_id: 100, ..Fake::default() };
         for (path, interfaces) in recording.as_object().unwrap() {
@@ -99,32 +72,26 @@ impl FakeNm {
         serving
     }
 
-    /// The password `ssid` takes.
     pub fn set_password(&self, ssid: &str, password: &str) {
         lock(&self.state).passwords.insert(ssid.into(), password.into());
     }
 
-    /// The calls novad made of `method`, by path.
     pub fn calls(&self, method: &str) -> Vec<String> {
         lock(&self.state).calls.iter().filter(|call| call.2 == method).map(|call| call.0.clone()).collect()
     }
 
-    /// Leaves connections it activates from now activating.
     pub fn stall(&self) {
         lock(&self.state).stall = true;
     }
 
-    /// Goes off the bus, as NetworkManager does when it stops.
     pub fn vanish(&self) {
         zbus::block_on(self.connection.release_name(NM)).unwrap();
     }
 
-    /// Makes the next call of `method` fail.
     pub fn fail_next(&self, method: &str) {
         lock(&self.state).fail_next = Some(method.to_owned());
     }
 
-    /// The route metrics (IPv4, IPv6) last reapplied on `device`.
     pub fn applied_metrics(&self, device: &str) -> Option<[i64; 2]> {
         lock(&self.state).metrics.get(device).copied()
     }
@@ -141,7 +108,6 @@ impl FakeNm {
             .collect()
     }
 
-    /// Sets properties of `path` and says so.
     pub fn change(&self, path: &str, interface: &str, changes: &[(&str, &str, Value)]) {
         let changes: Vec<(String, Property)> = changes
             .iter()
@@ -150,8 +116,6 @@ impl FakeNm {
         set(&self.state, &self.connection, path, interface, changes);
     }
 
-    /// Plays a recorded signal (`recorded/nm-*.jsonl`): what it changes is
-    /// changed, and novad hears a `PropertiesChanged` for it.
     pub fn replay(&self, signal: &Value) {
         let data = &signal["payload"]["data"];
         match signal["member"].as_str().unwrap() {
@@ -186,7 +150,6 @@ impl FakeNm {
                     lock(&self.state).objects.entry(path.into()).or_default().insert(interface.clone(), properties);
                 }
             }
-            // Its effect comes with the PropertiesChanged that follows.
             _ => {}
         }
     }
@@ -306,8 +269,6 @@ impl FakeNm {
         }
     }
 
-    /// `Update2` on the profile at `path`: keeps the Wi-Fi password in
-    /// `settings`.
     fn save_password(&self, path: &str, settings: &Settings) -> Result<Reply, String> {
         let psk = settings
             .get("802-11-wireless-security")
@@ -318,8 +279,6 @@ impl FakeNm {
         Ok(Reply::Dict)
     }
 
-    /// `GetAppliedConnection` on the device at `path`: its profile, with the
-    /// route metrics last reapplied.
     fn applied(&self, path: &str) -> Reply {
         let active = self.property(path, DEVICE, "ActiveConnection");
         let profile = self.property(active.as_str().unwrap(), ACTIVE, "Connection");
@@ -332,8 +291,6 @@ impl FakeNm {
         Reply::Applied(settings_variant(&settings), 1)
     }
 
-    /// `Reapply` on the device at `path`: takes `settings`' route metrics,
-    /// which can change which device is primary.
     fn reapply(&self, path: &str, settings: &Settings) {
         let metrics = ["ipv4", "ipv6"].map(|family| {
             settings[family]["route-metric"].try_clone().ok().and_then(|value| i64::try_from(value).ok()).unwrap()
@@ -368,8 +325,6 @@ impl FakeNm {
         path
     }
 
-    /// Activates `profile` on `device`: it connects a moment later, or
-    /// fails for missing secrets when its password isn't the network's.
     fn activate(&self, profile: &str, device: &str) -> OwnedObjectPath {
         let (active, works, ssid, stall) = {
             let mut state = lock(&self.state);
@@ -405,7 +360,6 @@ impl FakeNm {
         let state = Arc::clone(&self.state);
         let finishing = active.clone();
         let device = device.to_owned();
-        // After the reply, as NetworkManager's own state changes come.
         std::thread::spawn(move || {
             nova_test_support::settle(std::time::Duration::from_millis(50));
             let fake = FakeNm { connection, state };
@@ -510,8 +464,6 @@ impl FakeNm {
         lock(&self.state).objects.get(path).is_some_and(|object| object.contains_key(interface))
     }
 
-    /// The primary connection: the activated wired or Wi-Fi connection
-    /// whose device has the lowest route metric.
     fn choose_primary(&self) {
         let primary = {
             let state = lock(&self.state);
@@ -558,7 +510,6 @@ impl FakeNm {
         );
     }
 
-    /// Sends `active`'s `StateChanged`.
     pub fn state_changed(&self, active: &str, state: u32, reason: u32) {
         self.signal(active, ACTIVE, "StateChanged", &(state, reason));
     }
@@ -576,7 +527,6 @@ impl FakeNm {
 
 const SETTINGS_PATH_STR: &str = super::manager::SETTINGS_PATH;
 
-/// Changes properties of `path` and sends `PropertiesChanged` for them.
 fn set(state: &Mutex<Fake>, connection: &Connection, path: &str, interface: &str, changes: Vec<(String, Property)>) {
     let changed: HashMap<String, OwnedVariant> = {
         let mut state = lock(state);
@@ -630,7 +580,6 @@ fn paths(value: &Value) -> Vec<OwnedObjectPath> {
     value.as_array().unwrap().iter().map(|path| object_path(path.as_str().unwrap())).collect()
 }
 
-/// A recorded `GetSettings` as D-Bus values.
 fn settings_variant(settings: &Value) -> Settings {
     settings
         .as_object()
@@ -650,8 +599,6 @@ fn settings_variant(settings: &Value) -> Settings {
         .collect()
 }
 
-/// A recorded value with its signature, as a D-Bus value. Only the
-/// signatures NetworkManager's recordings hold.
 fn variant((signature, value): &Property) -> OwnedVariant {
     let owned = |variant: Variant<'_>| OwnedVariant::try_from(variant).unwrap();
     let text = || value.as_str().unwrap().to_owned();

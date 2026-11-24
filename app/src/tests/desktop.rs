@@ -1,5 +1,3 @@
-//! Compositor actions, panels, volume keys, the lock screen and power.
-
 use super::*;
 
 #[test]
@@ -52,8 +50,6 @@ fn hyprland_reaches_subscribers_and_takes_workspace_actions() {
 
 #[test]
 fn hyprland_with_a_lua_config_gets_lua_dispatchers() {
-    // Hyprland 0.57 only reads `hyprland.lua`, where the old dispatchers
-    // fail; log out in the power menu showed its error.
     let mut fake = None;
     let novad = TestDaemon::with_compositor("hyprland-lua", |dir| {
         let (compositor, backend) = FakeCompositor::hyprland_lua(dir);
@@ -91,7 +87,6 @@ fn hyprland_logs_out_in_its_config_language() {
 
 #[test]
 fn hyprland_lua_dispatchers_quote_what_they_name() {
-    // A named workspace goes by its name, which the user chose.
     let dir = nova_test_support::TempDir::new("lua-quoting-hyprland");
     let (fake, backend) = FakeCompositor::hyprland_lua(dir.path());
     let named = nova_desktop_info::Workspace {
@@ -120,8 +115,6 @@ fn hyprland_lua_dispatchers_quote_what_they_name() {
 
 #[test]
 fn hyprland_focuses_an_output_without_its_workspaces() {
-    // A special workspace may show there, which focusing by workspace would
-    // hide (or, by the one under it, cover the new window with).
     let dir = nova_test_support::TempDir::new("focus-output-hyprland");
     let (fake, backend) = FakeCompositor::hyprland(dir.path());
     let output = nova_desktop_info::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new(), layout: 0 };
@@ -173,8 +166,6 @@ fn toggle_names_the_focused_output() {
     assert_eq!(toggle, json!({"panel": "ai-usage", "output": focused_output(&desktop)}));
 }
 
-/// novad changes the volume itself, through the sound feature (here with
-/// no sound server to change it on), and the UI only shows the capsule.
 #[test]
 fn novad_changes_the_volume_and_the_ui_shows_the_key() {
     let novad = TestDaemon::start("volume", None);
@@ -199,7 +190,6 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
     let mut ui = novad.connect();
     ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
     assert_eq!(ui.next_event("lock"), json!({"locked": false}), "the state on subscribe");
-    // `nova lock` answers once the compositor has covered the screens.
     let locking = std::thread::spawn(move || cli.request(2, "lock", None));
     assert_eq!(ui.next_event("lock"), json!({"locked": true}));
     assert!(!locking.is_finished(), "answered before the screens were covered");
@@ -207,13 +197,10 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
     assert_eq!(locking.join().unwrap()["result"], Value::Null);
     assert!(novad.dir.join("locked").exists(), "kept for a restarted novad");
 
-    // A UI that crashed while locked hears on its restart that it should lock.
     drop(ui);
     let mut restarted = novad.connect();
     restarted.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
     assert_eq!(restarted.next_event("lock"), json!({"locked": true}));
-    // The screens stayed covered, so locking again answers at once. The UI
-    // hears it all the same: one about to let go of the lock keeps it.
     assert_eq!(novad.connect().request(1, "lock", None)["result"], Value::Null);
     assert_eq!(restarted.next_event("lock"), json!({"locked": true}));
 
@@ -241,7 +228,6 @@ fn lock_fails_when_the_screens_arent_covered_in_time() {
     let novad = TestDaemon::start("lock-stalled", None);
     let mut ui = novad.connect();
     ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
-    // A UI that hears the lock but never covers the screens.
     let reply = novad.connect().request(1, "lock", None);
     assert!(reply["error"].as_str().unwrap().contains("weren't covered"), "{reply}");
 }
@@ -255,7 +241,6 @@ fn lock_needs_its_feature_but_unlocking_doesnt() {
     ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
     let reply = novad.connect().request(1, "lock", None);
     assert!(reply["error"].as_str().unwrap().contains("lock feature isn't ready"), "{reply}");
-    // Turned off while the screen was locked: the UI can still say it unlocked.
     assert_eq!(ui.request(2, "report_unlocked", None)["result"], Value::Null);
 }
 
@@ -270,7 +255,6 @@ fn power_options_list_every_action_say_why_one_cant_run_and_when_the_system_boot
     assert_eq!(actions, ["lock", "log_out", "suspend", "reboot", "power_off"]);
     let lock = &options[0];
     assert_eq!(lock["available"], true, "the lock feature is on by default: {lock}");
-    // No compositor here, so nothing to quit.
     let log_out = &options[1];
     assert_eq!(log_out["available"], false);
     assert!(log_out["reason"].as_str().unwrap().contains("Not on this compositor"), "{log_out}");
@@ -303,13 +287,10 @@ fn power_lock_locks_like_nova_lock() {
     let mut ui = novad.connect();
     ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
     assert_eq!(ui.next_event("lock"), json!({"locked": false}));
-    // The menu asks over the UI's own connection, which reports the screens
-    // covered only after this answers: it doesn't wait for that.
     let asked = Instant::now();
     assert_eq!(ui.request(2, "power", Some(json!({"action": "lock"})))["result"], Value::Null);
     assert!(asked.elapsed() < Duration::from_secs(1), "waited {:?}", asked.elapsed());
     assert_eq!(ui.next_event("lock"), json!({"locked": true}));
     assert_eq!(ui.request(3, "report_locked", None)["result"], Value::Null);
-    // Covered now, so `nova lock` answers at once.
     assert_eq!(novad.connect().request(1, "lock", None)["result"], Value::Null);
 }

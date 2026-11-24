@@ -1,23 +1,13 @@
-//! novad's log feed: one entry per line, on disk and on the wire, and the
-//! `logs` event that carries them to `nova logs`. It is the framework's own
-//! event (every part of novad logs), so its types live here, not with a
-//! feature.
-
 use crate::topic::{Single, Topic};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-/// The topic of the log feed.
 pub const TOPIC: Topic = Topic::named("logs");
-/// The name of the event that carries log entries.
 pub const EVENT: &str = "logs";
 
-/// Source tag of lines the UI printed.
 pub const UI_LOG_SOURCE: &str = "ui";
 
-/// Log entries from novad and the UI, on [`TOPIC`]. The first event after
-/// subscribing has `backlog: true` and holds recent entries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Logs {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -26,30 +16,24 @@ pub struct Logs {
 }
 
 impl Logs {
-    /// The event carrying these entries.
     pub fn event(&self) -> Single<'_, Self> {
         Single::new(EVENT, TOPIC, self)
     }
 }
 
-/// One log line. On disk it's [`LogEntry::to_line`]; on the wire it's JSON.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LogEntry {
-    /// RFC 3339, UTC, millisecond precision.
     pub time: String,
     pub level: LogLevel,
-    /// `ui` for the UI's output, else the novad module that wrote it.
     pub source: String,
     pub message: String,
 }
 
 impl LogEntry {
-    /// `2026-10-22T13:45:09.123Z  WARN ui: message`, no newline.
     pub fn to_line(&self) -> String {
         format!("{} {:>5} {}: {}", self.time, self.level, self.source, self.message)
     }
 
-    /// The inverse of [`LogEntry::to_line`]. `None` for lines in another format.
     pub fn parse_line(line: &str) -> Option<Self> {
         let (time, rest) = line.split_once(' ')?;
         let rest = rest.trim_start();

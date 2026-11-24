@@ -1,8 +1,3 @@
-//! A connection to novad's socket. Every read and write gives up after
-//! [`REPLY_TIMEOUT`], so a stuck novad can't hang the CLI (`nova restart` is
-//! what you run then); only following events (`nova logs`, `nova ipc
-//! subscribe`) waits forever.
-
 use nova_carrier::{Envelope, Outcome, Response, Topic, encode};
 use nova_daemon_info::{Command, Event, Status};
 use serde::{Deserialize, Serialize};
@@ -11,22 +6,17 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
-/// What to run to restart Nova, for hints.
 pub const RESTART_COMMAND: &str = "nova restart";
 
-/// How long novad may take to say hello or answer a request.
 pub const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct Client {
     reader: BufReader<UnixStream>,
     writer: UnixStream,
     next_id: u64,
-    /// novad's version, from its hello.
     pub daemon_version: String,
 }
 
-/// Why there's no client: no novad listening, or one that doesn't answer
-/// properly (stuck, another version, a socket it can't be reached on).
 #[derive(Debug)]
 pub enum Unreachable {
     NotRunning,
@@ -34,7 +24,6 @@ pub enum Unreachable {
 }
 
 impl Unreachable {
-    /// What a command that needs novad tells the user.
     pub fn advice(&self) -> String {
         match self {
             Self::NotRunning => "Nova isn't running. Start it with `nova`.".into(),
@@ -46,13 +35,10 @@ impl Unreachable {
 }
 
 impl Client {
-    /// Connects, or says what to do about it.
     pub fn connect(socket: &Path) -> Result<Self, String> {
         Self::reach(socket).map_err(|unreachable| unreachable.advice())
     }
 
-    /// Connects once, telling "not running" from "stuck" by how that
-    /// connection fails.
     pub fn reach(socket: &Path) -> Result<Self, Unreachable> {
         use std::io::ErrorKind;
         match UnixStream::connect(socket) {
@@ -64,7 +50,6 @@ impl Client {
         }
     }
 
-    /// A client on a stream that's already connected to novad's socket.
     pub fn over(stream: UnixStream) -> Result<Self, String> {
         stream.set_read_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
         stream.set_write_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
@@ -82,14 +67,10 @@ impl Client {
         serde_json::from_value(value).map_err(|e| format!("novad sent an odd status: {e}"))
     }
 
-    /// Sends `command` and returns its result. Events that arrive first are dropped.
     pub fn request(&mut self, command: impl Serialize) -> Result<serde_json::Value, String> {
         self.request_seeing_events(command, |_| {})
     }
 
-    /// Subscribes to `topics` and returns what novad sends for them now. It
-    /// sends that after its reply, and a topic whose feature is off sends
-    /// nothing, so an empty subscribe after it marks where the state ends.
     pub fn current(&mut self, topics: Vec<Topic>) -> Result<Vec<Sent>, String> {
         self.request(Command::Subscribe { topics: topics.iter().map(|topic| topic.name().to_string()).collect() })?;
         let mut events = Vec::new();
@@ -97,8 +78,6 @@ impl Client {
         Ok(events)
     }
 
-    /// Sends `command` and returns its result, passing events that arrive
-    /// first to `event`.
     fn request_seeing_events(
         &mut self,
         command: impl Serialize,
@@ -122,13 +101,10 @@ impl Client {
         }
     }
 
-    /// Waits for events as long as novad runs, for `next_event`. Requests
-    /// still time out on writing.
     pub fn follow(&mut self) -> Result<(), String> {
         self.reader.get_ref().set_read_timeout(None).map_err(|e| e.to_string())
     }
 
-    /// The next event; replies are skipped. `None` when novad hangs up.
     pub fn next_event(&mut self) -> Result<Option<Sent>, String> {
         loop {
             match self.next_message() {
@@ -157,9 +133,6 @@ impl Client {
 
 const HUNG_UP: &str = "novad closed the connection";
 
-/// An event novad sends: one of novad's own, an -info crate's, or a
-/// feature's (its api crate's `Event`, one variant per feature, sorted by
-/// feature id).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Sent {
@@ -195,8 +168,6 @@ mod tests {
     use nova_test_support::TempDir;
     use std::os::unix::net::UnixListener;
 
-    /// A novad that says hello, then answers the first request with `reply`
-    /// (`{id}` is the request's id).
     fn answering(dir: &TempDir, reply: &'static str) -> std::path::PathBuf {
         let socket = dir.join("novad.sock");
         let listener = UnixListener::bind(&socket).unwrap();
@@ -209,14 +180,11 @@ mod tests {
             reader.read_line(&mut request).unwrap();
             let id = serde_json::from_str::<serde_json::Value>(&request).unwrap()["id"].as_u64().unwrap();
             writer.write_all(format!("{}\n", reply.replace("{id}", &id.to_string())).as_bytes()).unwrap();
-            // Held open until the client hangs up.
             let _ = reader.read_line(&mut request);
         });
         socket
     }
 
-    /// A moved feature's events read like the shared ones (`nova ipc
-    /// subscribe` prints them as novad sent them).
     #[test]
     fn feature_events_are_read() {
         let line = r#"{"v":2,"event":"resources","data":{"cpu":1.0,"memory_used":1,"memory_total":2,"history":[],"history_size":36,"apps":[]}}"#;
@@ -240,8 +208,6 @@ mod tests {
         let socket = answering(&dir, r#"{"v":1,"id":{id},"error":"no such app"}"#);
         assert_eq!(Client::connect(&socket).unwrap().request(Command::Ping), Err("novad: no such app".into()));
 
-        // Neither a result nor an error, or an error that isn't text, is no
-        // success.
         for (name, odd) in [("client-empty", r#"{"v":1,"id":{id}}"#), ("client-odd", r#"{"v":1,"id":{id},"error":3}"#)]
         {
             let dir = TempDir::new(name);
@@ -251,7 +217,6 @@ mod tests {
         }
     }
 
-    /// Not running, and running but not answering, are told apart.
     #[test]
     fn a_silent_novad_times_out() {
         let dir = TempDir::new("client-silent");

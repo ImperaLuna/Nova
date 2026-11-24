@@ -1,13 +1,3 @@
-//! A row of tabs, one of them picked: the launcher's Apps and Files, a page's
-//! sections.
-//!
-//! [`Segments`] draws the options side by side, as wide as each other, in
-//! the width its parent gives it, some with an icon before the label. It
-//! keeps no state: the owner says which key is picked and gets the click.
-//! [`Segments::accent`] fills the picked one with the accent, for a choice
-//! that changes the machine (the network page's Prefer) rather than what
-//! the page shows.
-
 use crate::tokens::{
     FONT_SIZE_SMALL, ICON_GAP, ICON_SIZE_SMALL, RADIUS_ROW, RADIUS_SEGMENT, SEGMENT_HEIGHT, SEGMENT_PAD, WEIGHT_BODY,
     WEIGHT_TITLE,
@@ -21,20 +11,17 @@ use std::rc::Rc;
 
 type Picked = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
-/// A row of tabs (see the module).
 #[derive(IntoElement)]
 pub struct Segments {
     options: Vec<(SharedString, SharedString)>,
     current: SharedString,
     filled: bool,
     accent: bool,
-    /// Icons before some labels, by key: a glyph and its solid parts.
     icons: Vec<(SharedString, Glyph, Option<Glyph>)>,
     on_pick: Option<Picked>,
 }
 
 impl Segments {
-    /// Tabs for `options`, each a key and its label, with `current` picked.
     pub fn new<Key: Into<SharedString>, Label: Into<SharedString>>(
         options: impl IntoIterator<Item = (Key, Label)>,
         current: impl Into<SharedString>,
@@ -43,26 +30,21 @@ impl Segments {
         Self { options, current: current.into(), filled: true, accent: false, icons: Vec::new(), on_pick: None }
     }
 
-    /// The picked one filled with the accent.
     pub fn accent(mut self, accent: bool) -> Self {
         self.accent = accent;
         self
     }
 
-    /// `glyph` (with `fill` solid under it) before the label of `key`.
     pub fn icon(mut self, key: impl Into<SharedString>, glyph: Glyph, fill: Option<Glyph>) -> Self {
         self.icons.push((key.into(), glyph, fill));
         self
     }
 
-    /// `false` for tabs that sit on something raised already (inside a
-    /// field): the row draws no fill of its own.
     pub fn filled(mut self, filled: bool) -> Self {
         self.filled = filled;
         self
     }
 
-    /// Called with an option's key when it is clicked.
     pub fn on_pick(mut self, on_pick: impl Fn(&SharedString, &mut Window, &mut App) + 'static) -> Self {
         self.on_pick = Some(Rc::new(on_pick));
         self

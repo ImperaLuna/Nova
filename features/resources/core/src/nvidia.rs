@@ -1,34 +1,19 @@
-//! How busy an NVIDIA GPU is, from NVIDIA's management library (NVML,
-//! `libnvidia-ml.so.1`, which comes with the driver). The proprietary driver
-//! reports nothing in sysfs. The library is loaded once, if it's there, and
-//! NVML is started only while resources are watched (starting it wakes the
-//! driver) and shut down when watching stops.
-//!
-//! It's the library `nvidia-smi` reads too, without running that binary: on
-//! NixOS with driver 595.104.02 and glibc 2.44, `nvidia-smi` crashed in the
-//! dynamic loader before doing anything (IMP-104). Where the library can't
-//! be loaded (the static musl release can't load any), `nvidia_smi` runs
-//! `nvidia-smi` instead.
-
 use std::ffi::{CString, c_char, c_int, c_uint, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-/// The library's name, found by the dynamic loader's search path.
+// NVML instead of running nvidia-smi: with driver 595.104.02 and glibc 2.44 nvidia-smi crashed in the dynamic loader:
+// https://linear.app/imperaluna/issue/IMP-104
 const LIBRARY: &str = "libnvidia-ml.so.1";
-/// Where NixOS puts the driver's libraries, outside any search path.
 const NIXOS_DRIVER_DIR: &str = "/run/opengl-driver/lib";
-/// NVML_SUCCESS.
 const SUCCESS: c_int = 0;
 
-/// Where the library is looked for, in order.
 pub fn library_paths() -> Vec<PathBuf> {
     vec![PathBuf::from(LIBRARY), Path::new(NIXOS_DRIVER_DIR).join(LIBRARY)]
 }
 
 type Device = *mut c_void;
 
-/// nvmlUtilization_t: percent of time busy over the last sample period.
 #[repr(C)]
 #[derive(Default)]
 struct Utilization {
@@ -36,9 +21,8 @@ struct Utilization {
     memory: c_uint,
 }
 
-/// The NVML functions used, from the library while it's loaded. Dropping
-/// it unloads the library, with what NVML's start loaded and allocated
-/// (libcuda, about 19 MB), so it's loaded only while resources are watched.
+// Starting NVML loads libcuda (about 19 MB), so the library is loaded only while resources are watched:
+// https://linear.app/imperaluna/issue/IMP-151
 pub struct Library {
     handle: *mut c_void,
     init: unsafe extern "C" fn() -> c_int,
@@ -48,7 +32,6 @@ pub struct Library {
 }
 
 impl Library {
-    /// The first of `paths` that loads and has every function, if any.
     pub fn open(paths: &[PathBuf]) -> Option<Self> {
         paths.iter().find_map(|path| Self::open_one(path))
     }
@@ -93,7 +76,6 @@ impl Library {
         }
     }
 
-    /// Starts NVML and finds the first GPU.
     pub fn start(self) -> Result<Nvml, String> {
         // SAFETY: no arguments; NVML counts starts and shutdowns.
         let status = unsafe { (self.init)() };
@@ -119,7 +101,6 @@ impl Drop for Library {
     }
 }
 
-/// NVML while it's started, and the first GPU. Shut down when dropped.
 pub struct Nvml {
     library: Library,
     device: Device,
@@ -132,7 +113,6 @@ unsafe impl Send for Nvml {}
 unsafe impl Send for Library {}
 
 impl Nvml {
-    /// How busy the GPU is now, in percent.
     pub fn busy(&self) -> Option<f32> {
         let mut utilization = Utilization::default();
         // SAFETY: a device from this started NVML, and a valid out pointer.
@@ -159,7 +139,6 @@ mod tests {
         assert!(Library::open(&[]).is_none());
     }
 
-    /// Only where NVIDIA's driver is (the desktop, not CI's build sandbox).
     #[test]
     fn reads_the_gpu_where_there_is_one() {
         let Some(library) = Library::open(&library_paths()) else { return };
@@ -167,7 +146,6 @@ mod tests {
         let busy = nvml.busy().unwrap();
         assert!((0.0..=100.0).contains(&busy));
         drop(nvml);
-        // Loaded and started again after it was unloaded, as each watch does.
         let library = Library::open(&library_paths()).unwrap();
         assert!(library.start().unwrap().busy().is_some());
     }

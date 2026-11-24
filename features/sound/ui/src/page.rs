@@ -1,11 +1,3 @@
-//! `sound.page`: the Sound page in quick settings. The device in use with its
-//! volume on top, then tabs: each app's own volume, and every output and input
-//! to switch to.
-//!
-//! Apps come with a name only; their icons are asked of novad's launcher
-//! (`app_icon`) once per name while the page shows, and drawn as the
-//! answers come. Until then, and without one, an app shows its letter.
-
 use crate::logic::{input, kind_glyph, link_label, output, output_kind, subtitle};
 use crate::{PAGE, QUICK_SETTINGS};
 use gpui::prelude::FluentBuilder as _;
@@ -24,7 +16,6 @@ use nova_stage::{Screen, Stage};
 use nova_ui_client::{Daemon, Live};
 use std::collections::HashMap;
 
-/// The tabs, the apps first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Tab {
     #[default]
@@ -50,11 +41,8 @@ pub struct SoundPage {
     screen: Screen,
     sound: Entity<Live<Sound>>,
     tab: Tab,
-    /// Whether quick settings shows this page on its screen.
     shown: bool,
-    /// Each app's icon by its name, once novad answered (`None` for none).
     icons: HashMap<String, Option<SharedString>>,
-    /// Icons asked and not answered yet, by app name.
     asking: HashMap<String, Task<()>>,
     _followed: Vec<Subscription>,
 }
@@ -78,7 +66,6 @@ impl SoundPage {
         }
     }
 
-    /// Shown or not: it opens on the Apps tab each time.
     fn follow_stage(&mut self, cx: &mut Context<Self>) {
         let shown = Stage::is_open(QUICK_SETTINGS, self.screen.id, cx)
             && Stage::page(QUICK_SETTINGS, self.screen.id, cx).as_deref() == Some(PAGE);
@@ -92,7 +79,6 @@ impl SoundPage {
         }
     }
 
-    /// Asks novad for the icons of the apps not asked about yet.
     fn ask_icons(&mut self, cx: &mut Context<Self>) {
         if !self.shown {
             return;
@@ -121,8 +107,6 @@ impl SoundPage {
         }
     }
 
-    /// novad's answer about `name`'s icon: none keeps the letter, and with
-    /// no launcher to ask yet it is asked again next time.
     fn answered<E>(&mut self, name: String, answer: Result<Option<String>, E>, cx: &mut Context<Self>) {
         self.asking.remove(&name);
         match answer {
@@ -168,8 +152,6 @@ impl Render for SoundPage {
 }
 
 impl SoundPage {
-    /// The card on top: the device in use, how it's connected, and its
-    /// volume; the input's on the Input tab, else the output's.
     fn in_use(&self, sound: Option<&Sound>, cx: &Context<Self>) -> impl IntoElement + use<> {
         let theme = Theme::of(cx);
         let is_input = self.tab == Tab::Input;
@@ -213,7 +195,6 @@ impl SoundPage {
                     .flex()
                     .flex_col()
                     .child(div().truncate().text_size(FONT_SIZE).font_weight(WEIGHT_TITLE).child(name))
-                    // A line tall even when empty, so the card keeps its height.
                     .child(
                         div()
                             .min_h(FONT_SIZE_SMALL * LINE_HEIGHT)
@@ -226,7 +207,6 @@ impl SoundPage {
             .child(slider)
     }
 
-    /// Every output or input, the one in use marked; a click switches.
     fn devices(&self, sound: Option<&Sound>, is_input: bool) -> AnyElement {
         let devices = sound.filter(|sound| sound.available).map_or(&[][..], |sound| match is_input {
             true => sound.inputs.as_slice(),
@@ -248,7 +228,6 @@ impl SoundPage {
         div().flex().flex_col().gap(LABEL_NUDGE * 2.0).children(rows).into_any_element()
     }
 
-    /// Each app's own volume, or a quiet line when nothing plays.
     fn apps(&self, sound: Option<&Sound>, cx: &Context<Self>) -> AnyElement {
         let apps = sound.filter(|sound| sound.available).map_or(&[][..], |sound| sound.apps.as_slice());
         let sliders = apps.iter().map(|app| {

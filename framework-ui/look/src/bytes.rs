@@ -1,19 +1,11 @@
-//! Sizes in bytes as people read them, for every list that shows one (quick
-//! settings' network and resources pages).
-
 const UNITS: [&str; 5] = ["B", "K", "M", "G", "T"];
-/// A unit is shown from this many of the one below: "1000 B" reads as
-/// "1.0 KB" (each unit holds 1024 of the one below).
 const NEXT_UNIT_FROM: f64 = 1000.0;
 const UNIT_SIZE: f64 = 1024.0;
-/// Under this, one decimal.
 const DECIMAL_UNDER: f64 = 10.0;
 
-/// A size in bytes, short: "9.4G", "780M", "42K". One decimal under 10.
 pub fn short_bytes(bytes: u64) -> String {
     let mut value = bytes as f64;
     let mut unit = 0;
-    // Judged on the value as written, so 999.96K reads as 1.0M, not 1000K.
     while rounded(value, unit) >= NEXT_UNIT_FROM && unit < UNITS.len() - 1 {
         value /= UNIT_SIZE;
         unit += 1;
@@ -22,18 +14,15 @@ pub fn short_bytes(bytes: u64) -> String {
     format!("{value:.digits$}{}", UNITS[unit])
 }
 
-/// One decimal under 10 of a unit above bytes, as written: 9.96K is 10K.
 fn decimals(value: f64, unit: usize) -> usize {
     usize::from(unit > 0 && (value * 10.0).round() / 10.0 < DECIMAL_UNDER)
 }
 
-/// `value` as [`short_bytes`] writes it in `unit`.
 fn rounded(value: f64, unit: usize) -> f64 {
     let scale = 10f64.powi(decimals(value, unit) as i32);
     (value * scale).round() / scale
 }
 
-/// A size in bytes for a list: "2.4 GB", "310 MB", "12 B".
 pub fn bytes(bytes: u64) -> String {
     let short = short_bytes(bytes);
     let (number, unit) = short.split_at(short.len() - 1);

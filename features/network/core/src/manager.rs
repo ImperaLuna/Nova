@@ -1,11 +1,3 @@
-//! NetworkManager's objects on the system bus, read whole: the manager
-//! itself, its devices (Ethernet and Wi-Fi), their active connections, the
-//! Wi-Fi card's access points and the saved profiles. Each object is read
-//! with one `GetAll` (or `GetSettings`), so a read is a few dozen calls.
-//!
-//! Nothing here follows changes or decides anything: [`read`] gives a
-//! [`Reading`], and the service turns it into the event.
-
 use nova_network_api::{LinkKind, LinkState, WifiBand, WifiSecurity};
 use std::collections::HashMap;
 use zbus::Connection;
@@ -21,40 +13,28 @@ pub const WIRED: &str = "org.freedesktop.NetworkManager.Device.Wired";
 pub const WIRELESS: &str = "org.freedesktop.NetworkManager.Device.Wireless";
 pub const ACCESS_POINT: &str = "org.freedesktop.NetworkManager.AccessPoint";
 pub const ACTIVE: &str = "org.freedesktop.NetworkManager.Connection.Active";
-/// The address families a profile sets a route metric for, each its own.
 pub const FAMILIES: [&str; 2] = ["ipv4", "ipv6"];
 pub const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
-/// An object path that names nothing, as NetworkManager says "none".
 pub const NO_OBJECT: &str = "/";
 
-/// `NMDeviceType`s novad lists.
 const DEVICE_TYPE_ETHERNET: u32 = 1;
 const DEVICE_TYPE_WIFI: u32 = 2;
-/// `NMDeviceState`s: below `DISCONNECTED` the device can't connect (no
-/// cable, Wi-Fi off), from `PREPARE` up to `ACTIVATED` it's connecting.
 const DEVICE_STATE_DISCONNECTED: u32 = 30;
 const DEVICE_STATE_ACTIVATED: u32 = 100;
-/// `NMActiveConnectionState`.
 pub const ACTIVE_STATE_ACTIVATED: u32 = 2;
 pub const ACTIVE_STATE_DEACTIVATED: u32 = 4;
-/// `NM80211ApFlags`: needs a key (WEP when the WPA flags are empty).
 const AP_FLAG_PRIVACY: u32 = 0x1;
-/// `NM80211ApSecurityFlags`' key managements.
 const AP_KEY_MGMT_PSK: u32 = 0x100;
 const AP_KEY_MGMT_802_1X: u32 = 0x200;
 const AP_KEY_MGMT_SAE: u32 = 0x400;
 const AP_KEY_MGMT_EAP_SUITE_B_192: u32 = 0x2000;
-/// A connection profile's type for Wi-Fi and Ethernet.
 pub const TYPE_WIFI: &str = "802-11-wireless";
 pub const TYPE_ETHERNET: &str = "802-3-ethernet";
-/// Kbit/s in a Mbit/s.
 const KBIT_PER_MBIT: u32 = 1000;
 
-/// A profile's settings: setting name, then its keys.
 pub type Settings = HashMap<String, HashMap<String, OwnedVariant>>;
 type Properties = HashMap<String, OwnedVariant>;
 
-/// What NetworkManager has now.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Reading {
     pub primary: Option<LinkKind>,
@@ -70,7 +50,6 @@ pub struct WiredDevice {
     pub state: LinkState,
     pub connection: Option<String>,
     pub speed_mbps: Option<u32>,
-    /// Its active connection, while it has one.
     pub active: Option<OwnedObjectPath>,
 }
 
@@ -82,10 +61,8 @@ pub struct WifiDevice {
     pub blocked: bool,
     pub state: LinkState,
     pub active: Option<OwnedObjectPath>,
-    /// The network of its active connection.
     pub network: Option<String>,
     pub speed_mbps: Option<u32>,
-    /// When it last finished a scan, in ms on `CLOCK_BOOTTIME` (-1: never).
     pub last_scan: i64,
     pub access_points: Vec<AccessPoint>,
 }
@@ -95,23 +72,18 @@ pub struct AccessPoint {
     pub ssid: Vec<u8>,
     pub strength: u8,
     pub security: WifiSecurity,
-    /// The key management a new profile for it uses (`None`: no key).
     pub key_mgmt: Option<&'static str>,
     pub band: Option<WifiBand>,
     pub active: bool,
 }
 
-/// A saved connection profile.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Profile {
     pub path: OwnedObjectPath,
     pub kind: String,
-    /// A Wi-Fi profile's network.
     pub ssid: Option<Vec<u8>>,
 }
 
-/// Everything NetworkManager has now. Fails when it doesn't answer (it
-/// isn't running); objects that vanish while it's read are left out.
 pub async fn read(connection: &Connection) -> zbus::Result<Reading> {
     let manager = get_all(connection, NM_PATH, NM).await?;
     let wifi_enabled = flag(&manager, "WirelessEnabled");
@@ -152,7 +124,6 @@ pub async fn read(connection: &Connection) -> zbus::Result<Reading> {
                     active,
                 });
             }
-            // The first card only: the switch is NetworkManager's, for all.
             DEVICE_TYPE_WIFI if reading.wifi.is_none() => {
                 let wireless = get_all(connection, device_path.as_str(), WIRELESS).await.unwrap_or_default();
                 let active_point = path(&wireless, "ActiveAccessPoint");
@@ -187,8 +158,6 @@ pub async fn read(connection: &Connection) -> zbus::Result<Reading> {
     Ok(reading)
 }
 
-/// The saved profiles, each read with `GetSettings` (which never holds
-/// secrets). Empty when they can't be listed.
 async fn profiles(connection: &Connection) -> Vec<Profile> {
     let Ok(paths) = async {
         connection
@@ -209,7 +178,6 @@ async fn profiles(connection: &Connection) -> Vec<Profile> {
     profiles
 }
 
-/// A profile's settings, without secrets.
 pub async fn settings(connection: &Connection, path: &OwnedObjectPath) -> zbus::Result<Settings> {
     connection
         .call_method(Some(NM), path.as_str(), Some(SETTINGS_CONNECTION), "GetSettings", &())
@@ -231,8 +199,6 @@ pub fn setting_text(settings: &Settings, setting: &str, key: &str) -> Option<Str
     settings.get(setting)?.get(key).and_then(|value| String::try_from(value.try_clone().ok()?).ok())
 }
 
-/// A route metric a profile or applied connection sets: `None` for
-/// NetworkManager's default (-1, or not set).
 pub fn route_metric(settings: &Settings, family: &str) -> Option<i64> {
     settings.get(family)?.get("route-metric").and_then(|value| i64::try_from(value).ok()).filter(|metric| *metric >= 0)
 }
@@ -256,9 +222,6 @@ fn access_point(properties: &Properties, active: bool) -> AccessPoint {
     }
 }
 
-/// How an access point is secured, and the key management a profile for it
-/// uses: WPA2's PSK when it offers it (it works on WPA3's transition mode
-/// too), else WPA3's SAE.
 pub fn security(flags: u32, wpa: u32, rsn: u32) -> (WifiSecurity, Option<&'static str>) {
     let both = wpa | rsn;
     if both & (AP_KEY_MGMT_802_1X | AP_KEY_MGMT_EAP_SUITE_B_192) != 0 {
@@ -277,7 +240,6 @@ pub fn security(flags: u32, wpa: u32, rsn: u32) -> (WifiSecurity, Option<&'stati
     if both == 0 && flags & AP_FLAG_PRIVACY != 0 {
         return (WifiSecurity::Wep, None);
     }
-    // Open, or Enhanced Open (OWE), which NetworkManager sets up by itself.
     (WifiSecurity::Open, None)
 }
 
@@ -295,8 +257,6 @@ fn link_state(device_state: u32) -> LinkState {
         DEVICE_STATE_ACTIVATED => LinkState::Connected,
         state if state < DEVICE_STATE_DISCONNECTED => LinkState::Unavailable,
         DEVICE_STATE_DISCONNECTED => LinkState::Disconnected,
-        // Prepare up to secondaries: connecting. Deactivating and failed:
-        // on its way down.
         state if state < DEVICE_STATE_ACTIVATED => LinkState::Connecting,
         _ => LinkState::Disconnected,
     }
@@ -310,14 +270,10 @@ pub fn kind(connection_type: &str) -> LinkKind {
     }
 }
 
-/// A network's name as text: NetworkManager's SSIDs are bytes.
 pub fn ssid_text(ssid: &[u8]) -> String {
     String::from_utf8_lossy(ssid).chars().filter(|c| !c.is_control()).collect()
 }
 
-/// The network a command names (by its name as the UI shows it, from
-/// ssid_text) is the one with these bytes: commands come back with the text,
-/// so a name that isn't UTF-8 still matches its network.
 pub fn names_ssid(name: &str, ssid: &[u8]) -> bool {
     ssid == name.as_bytes() || ssid_text(ssid) == name
 }
@@ -334,7 +290,6 @@ fn flag(properties: &Properties, name: &str) -> bool {
     properties.get(name).and_then(|value| bool::try_from(value).ok()).unwrap_or(false)
 }
 
-/// An object path property, `None` for "/".
 fn path(properties: &Properties, name: &str) -> Option<OwnedObjectPath> {
     properties
         .get(name)
@@ -357,7 +312,6 @@ mod tests {
 
     #[test]
     fn access_points_are_secured_by_their_best_method() {
-        // RyzenShine's router: RSN with PSK, CCMP.
         assert_eq!(security(3, 0, 392), (WifiSecurity::Wpa2, Some("wpa-psk")));
         assert_eq!(security(1, 0, 0x400 | 0x88), (WifiSecurity::Wpa3, Some("sae")));
         assert_eq!(security(1, 0, 0x500 | 0x88), (WifiSecurity::Wpa3, Some("wpa-psk")));

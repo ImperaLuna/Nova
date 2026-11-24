@@ -1,11 +1,3 @@
-//! Track covers (`mpris:artUrl`) as image files the UI can load. A
-//! `file://` cover is passed on as it is once its path checks out: absolute,
-//! no `..`, a regular file, not too big. An `https://` one is downloaded
-//! once into novad's runtime folder (`<runtime dir>/media/<hash>.<ext>`,
-//! private to the user), keeping the last few and deleting older ones. Any
-//! other kind (`http://`, `data:`) means no cover. A download that fails
-//! isn't tried again for that URL.
-
 use nova_base::{lock, state_file};
 use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
@@ -14,10 +6,7 @@ use std::path::{Component, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-/// Covers bigger than this aren't shown or downloaded.
 pub const MAX_COVER_BYTES: u64 = 2 * 1024 * 1024;
-/// Covers kept, downloaded or not; the one asked for least lately goes
-/// first.
 const MAX_KEPT: usize = 8;
 const TIMEOUT: Duration = Duration::from_secs(10);
 const USER_AGENT: &str = concat!("nova/", env!("CARGO_PKG_VERSION"));
@@ -27,13 +16,10 @@ const HTTPS_SCHEME: &str = "https://";
 
 pub struct Covers {
     folder: PathBuf,
-    /// URLs asked for lately and their file (`None`: no cover), the latest
-    /// last.
     kept: Mutex<VecDeque<(String, Option<PathBuf>)>>,
 }
 
 impl Covers {
-    /// Covers downloaded into `folder`, which is emptied of earlier ones.
     pub fn new(folder: PathBuf) -> Self {
         if let Ok(entries) = std::fs::read_dir(&folder) {
             for entry in entries.flatten() {
@@ -45,14 +31,10 @@ impl Covers {
         Self { folder, kept: Mutex::new(VecDeque::new()) }
     }
 
-    /// Whether the art URL `url` is downloaded (slow), rather than looked at
-    /// on disk or ignored.
     pub fn downloads(url: &str) -> bool {
         url.starts_with(HTTPS_SCHEME)
     }
 
-    /// The image file for the art URL `url`, downloading it the first time.
-    /// Blocks while it downloads; call it off the bus's thread.
     pub fn file(&self, url: &str) -> Result<Option<PathBuf>, String> {
         if url.starts_with(FILE_SCHEME) {
             return local(url).map(Some);
@@ -61,7 +43,6 @@ impl Covers {
             return Ok(None);
         }
         {
-            // Asked for again: kept longest of all now.
             let mut kept = lock(&self.kept);
             if let Some(entry) = kept.iter().position(|(kept, _)| kept == url).and_then(|at| kept.remove(at)) {
                 let file = entry.1.clone();
@@ -100,8 +81,6 @@ impl Covers {
         Ok(path)
     }
 
-    /// Remembers `url`'s file, deleting the oldest kept past [`MAX_KEPT`]
-    /// unless a newer URL shares its file.
     fn keep(&self, url: &str, file: Option<PathBuf>) {
         let mut kept = lock(&self.kept);
         kept.retain(|(other, _)| other != url);
@@ -115,8 +94,6 @@ impl Covers {
     }
 }
 
-/// The file a `file://` cover names, after the checks a notification's
-/// picture gets, and more: no `..` in it, a regular file, not too big.
 fn local(url: &str) -> Result<PathBuf, String> {
     let path = nova_paths::reference::file(url).ok_or_else(|| format!("{url} isn't a file path"))?;
     if path.components().any(|component| component == Component::ParentDir) {
@@ -132,7 +109,6 @@ fn local(url: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// The file extension for an image's `Content-Type`, for the types Qt loads.
 fn extension(content_type: &str) -> Option<&'static str> {
     match content_type.split(';').next()?.trim() {
         "image/jpeg" => Some("jpg"),
@@ -143,7 +119,6 @@ fn extension(content_type: &str) -> Option<&'static str> {
     }
 }
 
-/// A name for `url`'s file, the same for the same URL.
 fn hash(url: &str) -> u64 {
     let mut hasher = std::hash::DefaultHasher::new();
     url.hash(&mut hasher);
@@ -201,7 +176,6 @@ mod tests {
         }
         assert!(!files[0].exists() && !files[1].exists());
         assert!(files[2..].iter().all(|file| file.exists()));
-        // A URL seen again isn't downloaded again, and is kept longest now.
         assert_eq!(covers.file("https://example.com/2.jpg"), Ok(Some(files[2].clone())));
         let newer = folder.join("newer.jpg");
         std::fs::write(&newer, b"jpg").unwrap();
