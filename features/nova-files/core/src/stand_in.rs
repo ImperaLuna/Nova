@@ -6,6 +6,7 @@ use nova_log::Logger;
 use nova_mime::Mime;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zbus::message::Header;
@@ -26,6 +27,8 @@ pub struct Asked {
 
 pub struct StandIn {
     pub asked: Arc<Mutex<Asked>>,
+    pub release_late: Sender<()>,
+    pub late_asked: Mutex<Receiver<u64>>,
     _connection: zbus::Connection,
     _file_manager: zbus::Connection,
 }
@@ -33,7 +36,10 @@ pub struct StandIn {
 impl StandIn {
     pub fn serve(address: &str, root: &str) -> Self {
         let asked = Arc::default();
-        let search = Search1 { asked: Arc::clone(&asked), root: root.to_string() };
+        let (release_late, late) = mpsc::channel();
+        let (asked_late, late_asked) = mpsc::channel();
+        let late = Arc::new(Mutex::new(late));
+        let search = Search1 { asked: Arc::clone(&asked), root: root.to_string(), late, asked_late };
         let builder = zbus::connection::Builder::address(address).name(APP_ID).serve_at(PATH, search);
         let file_manager = FileManager1 { asked: Arc::clone(&asked) };
         let file_manager = zbus::connection::Builder::address(address)
@@ -42,6 +48,8 @@ impl StandIn {
         let (connection, file_manager) = (builder.build(), file_manager.build());
         Self {
             asked,
+            release_late,
+            late_asked: Mutex::new(late_asked),
             _connection: zbus::block_on(connection).unwrap(),
             _file_manager: zbus::block_on(file_manager).unwrap(),
         }
@@ -64,6 +72,8 @@ pub fn mime(dir: &Path) -> Arc<Mime> {
 struct Search1 {
     asked: Arc<Mutex<Asked>>,
     root: String,
+    late: Arc<Mutex<Receiver<()>>>,
+    asked_late: Sender<u64>,
 }
 
 #[zbus::interface(name = "io.github.ImperaLuna.NovaFiles.Search1")]
@@ -90,6 +100,15 @@ impl Search1 {
                 Self::found(&to_caller, id, vec![hit("kitcen notes.md")], true).await.unwrap();
             }
             "slow" => Self::found(&to_caller, id, vec![hit("slow.txt")], false).await.unwrap(),
+            "late" => {
+                let _ = self.asked_late.send(id);
+                let (late, emitter, hits) = (Arc::clone(&self.late), to_caller.to_owned(), vec![hit("late.txt")]);
+                std::thread::spawn(move || {
+                    if lock(&late).recv().is_ok() {
+                        let _ = zbus::block_on(Self::found(&emitter, id, hits, true));
+                    }
+                });
+            }
             "broken" => Self::failed(&to_caller, id, "index-failed".into()).await.unwrap(),
             _ => Self::found(&to_caller, id, vec![], true).await.unwrap(),
         }

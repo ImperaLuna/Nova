@@ -40,6 +40,7 @@ type Waiting = Arc<Mutex<HashMap<u64, Sender<Stage>>>>;
 
 pub struct Client {
     connection: Connection,
+    pub(crate) first_stage_wait: Duration,
     waiting: Waiting,
     going: Mutex<Option<u64>>,
     next_id: AtomicU64,
@@ -58,7 +59,14 @@ impl Client {
         let stop = Arc::new(Stop::default());
         let (reader_waiting, reader_stop) = (Arc::clone(&waiting), Arc::clone(&stop));
         std::thread::spawn(move || zbus::block_on(read(signals, &reader_waiting, &reader_stop)));
-        Ok(Self { connection, waiting, going: Mutex::new(None), next_id: AtomicU64::new(1), stop })
+        Ok(Self {
+            connection,
+            first_stage_wait: timeout,
+            waiting,
+            going: Mutex::new(None),
+            next_id: AtomicU64::new(1),
+            stop,
+        })
     }
 
     pub fn search(&self, query: &str, limit: u32, wait: Duration) -> Result<Vec<PathBuf>, String> {
@@ -77,13 +85,22 @@ impl Client {
         stages: &mpsc::Receiver<Stage>,
     ) -> Result<Vec<PathBuf>, String> {
         let id = call.0;
-        if let Some(older) = lock(&self.going).replace(id) {
+        let older = {
+            let mut going = lock(&self.going);
+            if going.is_some_and(|newer| newer > id) {
+                return Ok(Vec::new());
+            }
+            going.replace(id)
+        };
+        if let Some(older) = older {
+            lock(&self.waiting).remove(&older);
             self.cancel(older);
         }
         zbus::block_on(self.connection.call_method(Some(APP_ID), PATH, Some(INTERFACE), SEARCH, &call))
             .map_err(|e| e.to_string())?;
-        let deadline = Instant::now() + wait;
+        let mut deadline = Instant::now() + self.first_stage_wait;
         let mut paths = Vec::new();
+        let mut heard = false;
         loop {
             match stages.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                 Ok(Stage::Found { paths: found, done }) => {
@@ -92,10 +109,15 @@ impl Client {
                         self.finished(id);
                         return Ok(paths);
                     }
+                    if !heard {
+                        heard = true;
+                        deadline = Instant::now() + wait;
+                    }
                 }
                 Ok(Stage::Failed(reason)) => return Err(format!("Nova Files couldn't search: {reason}")),
-                Err(RecvTimeoutError::Timeout) => return Ok(paths),
-                Err(RecvTimeoutError::Disconnected) => return Err("the signals stopped".into()),
+                Err(RecvTimeoutError::Timeout) if heard => return Ok(paths),
+                Err(RecvTimeoutError::Timeout) => return Err("Nova Files didn't answer in time".into()),
+                Err(RecvTimeoutError::Disconnected) => return Ok(paths),
             }
         }
     }

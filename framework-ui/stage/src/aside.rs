@@ -66,6 +66,10 @@ impl Aside {
         self.settle(now);
     }
 
+    pub fn new_reason_over_fullscreen(&self, held: bool, fullscreen: bool) -> bool {
+        (held && !self.held) || (fullscreen && !self.fullscreen)
+    }
+
     pub fn set_held(&mut self, held: bool, now: Instant) {
         self.advance(now);
         self.held = held;
@@ -135,6 +139,23 @@ mod tests {
         let now = start + by;
         aside.advance(now);
         now
+    }
+
+    #[test]
+    fn a_panel_opening_or_a_fullscreen_window_is_a_new_reason_to_be_over_fullscreen() {
+        let now = Instant::now();
+        let mut aside = Aside::new(now);
+        assert!(!aside.new_reason_over_fullscreen(false, false));
+        assert!(aside.new_reason_over_fullscreen(true, false), "a panel opens");
+        assert!(aside.new_reason_over_fullscreen(false, true), "a fullscreen window shows");
+        aside.set_fullscreen(true, now);
+        assert!(!aside.new_reason_over_fullscreen(false, true), "the same fullscreen window");
+        assert!(aside.new_reason_over_fullscreen(true, true), "a panel opens over it");
+        aside.set_held(true, now);
+        assert!(!aside.new_reason_over_fullscreen(true, true), "the same panel");
+        aside.set_held(false, now);
+        aside.set_fullscreen(false, now);
+        assert!(aside.new_reason_over_fullscreen(true, false), "the next panel");
     }
 
     #[test]

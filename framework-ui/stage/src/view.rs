@@ -361,7 +361,10 @@ impl StageView {
             let keyboard = if held.keyboard { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
             window.set_keyboard_interactivity(keyboard);
         }
-        if held.overlay && !self.held.overlay {
+        // Hyprland 0.57 drops a layer change committed before a surface's first frame; once it keeps one, drop `again`:
+        // https://github.com/hyprwm/Hyprland/blob/v0.57.2/src/desktop/view/LayerSurface.cpp#L315-L326
+        let again = self.aside.new_reason_over_fullscreen(any_open, fullscreen);
+        if held.overlay && (!self.held.overlay || again) {
             // Compositors draw a focused fullscreen window over the Top layer: https://wayland.app/protocols/wlr-layer-shell-unstable-v1
             window.set_layer(Layer::Overlay);
         }
