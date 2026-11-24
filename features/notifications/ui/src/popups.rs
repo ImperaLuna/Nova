@@ -192,15 +192,14 @@ impl Popups {
     }
 
     fn follow_list(&mut self, cx: &mut Context<Self>) {
-        let on: Vec<DisplayId> = Stage::screens(cx)
-            .map(|screens| {
-                let shown = |screen: &&Screen| {
-                    Stage::is_open(QUICK_SETTINGS, screen.id, cx)
-                        && Stage::page(QUICK_SETTINGS, screen.id, cx).is_none()
-                };
-                screens.read(cx).list().iter().filter(shown).map(|screen| screen.id).collect()
-            })
+        let here: Vec<DisplayId> = Stage::screens(cx)
+            .map(|screens| screens.read(cx).list().iter().map(|screen| screen.id).collect())
             .unwrap_or_default();
+        let shown = |screen: &&DisplayId| {
+            Stage::is_open(QUICK_SETTINGS, **screen, cx) && Stage::page(QUICK_SETTINGS, **screen, cx).is_none()
+        };
+        let on: Vec<DisplayId> = here.iter().filter(shown).copied().collect();
+        self.list_on.retain(|screen| here.contains(screen));
         if on == self.list_on {
             return;
         }

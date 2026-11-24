@@ -411,7 +411,8 @@ every push and keep every line, sorted.
   module computed, with `on_scroll` moving an offset the view keeps. The
   selection's highlight is one `Eased` the rows sit above.
 - Hover is `group(name)` on the row and `group_hover(name, ...)` on what
-  appears. A button inside a clickable row calls `cx.stop_propagation()`
+  appears. Something that takes no room until the row is hovered (a
+  network's ⋯) is left out of the layout while `Hovered` says no. A button inside a clickable row calls `cx.stop_propagation()`
   in its own mouse-down.
 - What another feature adds comes through its slots: `Slots::for_host`
   says which views a host has (the launcher shows its Files tab while
