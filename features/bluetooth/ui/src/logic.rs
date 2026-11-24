@@ -124,7 +124,6 @@ pub fn buttons(ask: &PairingAsk, incoming: bool) -> (&'static str, Option<&'stat
     }
 }
 
-/// How many characters the field for `ask` takes, as today's shell.
 pub fn code_max(ask: &PairingAsk) -> usize {
     match ask {
         PairingAsk::EnterPasskey => PASSKEY_MAX_DIGITS,

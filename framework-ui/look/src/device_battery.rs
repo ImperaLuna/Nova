@@ -36,7 +36,6 @@ impl DeviceBattery {
         self
     }
 
-    /// The level eases to a new value, kept under `id` from frame to frame.
     pub fn eased(mut self, id: impl Into<ElementId>) -> Self {
         self.eased = Some(id.into());
         self

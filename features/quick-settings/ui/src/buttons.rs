@@ -3,8 +3,6 @@ use nova_look::PILL_BUTTONS;
 use nova_look::tokens::{BAR_GAP, BAR_HEIGHT, BAR_MARGIN, PILL_BUTTON_GAP, PILL_BUTTON_INSET};
 use nova_stage::{Parts, Screen, Shown, Stage};
 
-/// The right pill's buttons over the drawer's top right, where the pill
-/// stands: the stage draws them unfaded while the drawer grows out of it.
 pub struct Buttons {
     pub parts: Parts,
     _followed: Vec<Subscription>,

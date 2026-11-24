@@ -191,7 +191,6 @@ impl Popups {
         cx.notify();
     }
 
-    /// The list shows where quick settings is open on its first page.
     fn follow_list(&mut self, cx: &mut Context<Self>) {
         let on: Vec<DisplayId> = Stage::screens(cx)
             .map(|screens| {
@@ -205,9 +204,10 @@ impl Popups {
         if on == self.list_on {
             return;
         }
-        let (open, left) = crate::logic::list_moved(&self.list_on, &on);
+        let moved = crate::logic::list_moved(&self.list_on, &on);
         self.list_on = on;
-        if left && crate::logic::unread(self.model.read(cx).items(cx)) > 0 {
+        let open = moved.pauses_popups;
+        if moved.read_where_it_left && crate::logic::unread(self.model.read(cx).items(cx)) > 0 {
             model::read_all(cx);
         }
         if open != self.list_open {

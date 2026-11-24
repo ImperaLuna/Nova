@@ -211,8 +211,6 @@ impl Panel {
         self
     }
 
-    /// Drawn over the content, filling the same box, but never faded: what
-    /// stays put over the pill it grows out of (quick settings' buttons).
     pub fn steady(mut self, view: impl Into<AnyView>) -> Self {
         self.steady = Some(view.into());
         self

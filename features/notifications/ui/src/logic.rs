@@ -28,11 +28,15 @@ pub fn unread(items: &[Notification]) -> usize {
     items.iter().filter(|item| item.unread).count()
 }
 
-/// The list's screens changed from `before` to `now`: whether pop-ups pause,
-/// and whether the list just left a screen, so what it showed is read.
-pub fn list_moved<T: PartialEq>(before: &[T], now: &[T]) -> (bool, bool) {
+#[derive(Debug, PartialEq, Eq)]
+pub struct ListMoved {
+    pub pauses_popups: bool,
+    pub read_where_it_left: bool,
+}
+
+pub fn list_moved<T: PartialEq>(before: &[T], now: &[T]) -> ListMoved {
     let left = before.iter().any(|screen| !now.contains(screen));
-    (!now.is_empty(), left)
+    ListMoved { pauses_popups: !now.is_empty(), read_where_it_left: left }
 }
 
 pub fn timeout(notification: &Notification, fallback: Duration) -> Duration {
@@ -77,11 +81,12 @@ mod tests {
 
     #[test]
     fn list_pauses_while_any_screen_shows_it_and_reads_where_it_left() {
-        assert_eq!(list_moved::<u8>(&[], &[]), (false, false));
-        assert_eq!(list_moved(&[], &[1]), (true, false));
-        assert_eq!(list_moved(&[1, 2], &[2]), (true, true));
-        assert_eq!(list_moved(&[1], &[]), (false, true));
-        assert_eq!(list_moved(&[1], &[1, 2]), (true, false));
+        let moved = |pauses_popups, read_where_it_left| ListMoved { pauses_popups, read_where_it_left };
+        assert_eq!(list_moved::<u8>(&[], &[]), moved(false, false));
+        assert_eq!(list_moved(&[], &[1]), moved(true, false));
+        assert_eq!(list_moved(&[1, 2], &[2]), moved(true, true));
+        assert_eq!(list_moved(&[1], &[]), moved(false, true));
+        assert_eq!(list_moved(&[1], &[1, 2]), moved(true, false));
     }
 
     fn from(id: u32, app: &str) -> Notification {
