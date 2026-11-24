@@ -20,6 +20,10 @@ let
     if cfg.featuresFile == null then { } else builtins.fromTOML (builtins.readFile cfg.featuresFile);
 in
 {
+  imports = [
+    (lib.mkRemovedOptionModule [ "programs" "nova" "ui" ] "Nova has one UI now.")
+  ];
+
   options.programs.nova = {
     enable = lib.mkEnableOption "Nova, a desktop shell for Wayland compositors";
 
