@@ -451,9 +451,7 @@ pub(super) fn status() -> Status {
         pid: 100,
         uptime_secs: 42,
         pss_kib: Some(4096),
-        quickshell: Some("0.3.2".into()),
         ui: UiStatus {
-            program: UiProgram::Quickshell,
             state: UiState::Running,
             pid: Some(101),
             pss_kib: Some(180_000),

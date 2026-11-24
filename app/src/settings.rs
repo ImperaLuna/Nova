@@ -39,7 +39,6 @@ impl Settings {
         let config = logged(config::read(&sources.config), fallback, logger).unwrap_or_default();
         let selection = logged(features::read_selection(&sources.selection), fallback, logger).unwrap_or_default();
         warn_unknown_modes(&sources.manifests, &selection, logger);
-        warn_unknown_ui(&selection, logger);
         let features = features::states(&sources.manifests, &selection, &sources.path_var);
         let theme = resolve_theme(sources, &config, logger);
         hub.publish(&nova_theme_info::Event::Theme(theme.clone()));
@@ -66,9 +65,6 @@ impl Settings {
         }
         logger.info(LOG_SOURCE, "settings changed, applying them");
         warn_unknown_modes(&sources.manifests, &selection, logger);
-        if selection.ui != self.selection.ui {
-            warn_unknown_ui(&selection, logger);
-        }
         let features = features::states(&sources.manifests, &selection, &sources.path_var);
         if self.config.theme != config.theme {
             let theme = resolve_theme(sources, &config, logger);
@@ -136,12 +132,6 @@ fn publish_features(before: &[FeatureState], features: &[FeatureState], hub: &Hu
 fn warn_unknown_modes(manifests: &[Manifest], selection: &Selection, logger: &Logger) {
     for (id, mode) in selection.unknown_modes(manifests) {
         logger.warn("features", &format!("{id} has no mode \"{mode}\" (features.toml), so it runs in its default"));
-    }
-}
-
-fn warn_unknown_ui(selection: &Selection, logger: &Logger) {
-    if let Some(problem) = selection.ui_problem() {
-        logger.warn("features", &problem);
     }
 }
 

@@ -37,18 +37,6 @@ in
       description = "The Nova Files app, which the `nova-files` feature installs (on NixOS through `programs.nova-files.package`).";
     };
 
-    ui = lib.mkOption {
-      type = lib.types.enum [
-        "quickshell"
-        "gpui"
-      ];
-      default = "gpui";
-      description = ''
-        No longer used: `nova-ui`, the GPUI program, is Nova's only UI.
-        `quickshell` only warns. The option goes in a later release.
-      '';
-    };
-
     uiPackage = lib.mkOption {
       type = lib.types.package;
       default = packages.${pkgs.stdenv.hostPlatform.system}.nova-ui;

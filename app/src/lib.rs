@@ -26,7 +26,7 @@ mod x11_tray;
 
 use nova_base::lock;
 use nova_carrier::log::LogLevel;
-use nova_daemon_info::{Status, UiProgram, UiState, UiStatus};
+use nova_daemon_info::{Status, UiState, UiStatus};
 use nova_hub::Hub;
 use nova_log::Logger;
 use nova_process::{notify, procfs};
@@ -111,7 +111,6 @@ impl nova_socket::Service for Daemon {
 impl Daemon {
     fn status(&self) -> Status {
         let disabled = UiStatus {
-            program: UiProgram::Gpui,
             state: UiState::Disabled,
             pid: None,
             pss_kib: None,
@@ -125,7 +124,6 @@ impl Daemon {
             pid: std::process::id(),
             uptime_secs: self.started.elapsed().as_secs(),
             pss_kib: procfs::pss_kib(Path::new(procfs::PROC), std::process::id()),
-            quickshell: None,
             ui: self.ui.as_ref().map_or(disabled, |ui| ui.status()),
             features: lock(&self.settings).features.clone(),
             log_dir: self.logger.dir().display().to_string(),

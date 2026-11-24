@@ -108,10 +108,7 @@ in
           && !(config.services.pipewire.enable && config.services.pipewire.pulse.enable)
           && !config.services.pulseaudio.enable
         )
-        "programs.nova: the sound feature reads volume and devices from a PulseAudio socket, and none is set up. Set services.pipewire.enable and services.pipewire.pulse.enable, or turn the feature off (programs.nova.features.sound.enable = false)."
-      ++
-        lib.optional (cfg.ui == "quickshell")
-          "programs.nova.ui = \"quickshell\": Nova no longer has the Quickshell UI, so it runs nova-ui. Remove the option.";
+        "programs.nova: the sound feature reads volume and devices from a PulseAudio socket, and none is set up. Set services.pipewire.enable and services.pipewire.pulse.enable, or turn the feature off (programs.nova.features.sound.enable = false).";
 
     systemd.packages = [ cfg.package ];
     # NixOS ignores [Install] in packaged units; this is the unit's WantedBy=.

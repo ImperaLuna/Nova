@@ -1,6 +1,6 @@
 #![expect(clippy::unwrap_used, reason = "test setup should fail loudly")]
 
-use nova_daemon_info::{Status, UiProgram, UiState};
+use nova_daemon_info::{Status, UiState};
 use nova_test_support::TempDir;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -98,23 +98,11 @@ fn status_once_the_ui_runs(novad: &Novad) -> Status {
 }
 
 #[test]
-fn nova_ui_runs_whatever_features_toml_picks() {
+fn an_old_ui_key_in_features_toml_is_named() {
     let log = |novad: &Novad| std::fs::read_to_string(nova_paths::log_file(&novad.dir.join("logs"))).unwrap();
-    for (name, selection) in [("ui-unset", ""), ("ui-gpui", "ui = \"gpui\"")] {
-        let novad = novad_with_a_stand_in_ui(name, selection);
-        assert_eq!(status_once_the_ui_runs(&novad).ui.program, UiProgram::Gpui);
-        assert!(!log(&novad).contains("features.toml picks"), "{name}: {}", log(&novad));
-    }
-    for (name, selection, what) in [
-        ("ui-quickshell", "ui = \"quickshell\"", "Quickshell UI, which Nova no longer has"),
-        ("ui-unknown", "ui = \"qtquick\"", "a \"qtquick\" UI"),
-    ] {
-        let novad = novad_with_a_stand_in_ui(name, selection);
-        let status = status_once_the_ui_runs(&novad);
-        assert_eq!((status.ui.program, status.quickshell), (UiProgram::Gpui, None));
-        let log = log(&novad);
-        assert!(log.lines().any(|line| line.contains("WARN") && line.contains(what)), "{what}: {log}");
-    }
+    let novad = novad_with_a_stand_in_ui("ui-old", "ui = \"gpui\"");
+    status_once_the_ui_runs(&novad);
+    assert!(log(&novad).contains("unknown field `ui`"), "{}", log(&novad));
 }
 
 #[test]
