@@ -6,13 +6,13 @@ use crate::tokens::{
 };
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, Global, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Render, SharedString, Size, StatefulInteractiveElement, Styled, Task, Window, div, size,
+    ParentElement, Pixels, Render, SharedString, Size, Styled, Task, Window, div, size,
 };
 use nova_look::tokens::{
     BAR_GAP, BAR_HEIGHT, BAR_MARGIN, DIVIDER_WIDTH, ICON_GAP, ICON_SIZE_SMALL, MENU_PAD, PILL_BUTTON_SIZE, ROW_INSET,
     STROKE_THIN, WEIGHT_TITLE,
 };
-use nova_look::{AppIcon, Glyph, Icon, Theme};
+use nova_look::{AppIcon, Glyph, Icon, Theme, wheel_list};
 use nova_stage::{Panel, Screen, Stage};
 use nova_tray_api::{Command, Toggle, TrayMenuEntry, TrayMenuLevel};
 use nova_ui_client::Daemon;
@@ -197,7 +197,7 @@ impl TrayMenu {
 }
 
 impl Render for TrayMenu {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(entry) = self.entry.clone() else { return div() };
         let fg = Theme::of(cx).fg;
         let in_submenu = !self.stack.is_empty();
@@ -216,7 +216,7 @@ impl Render for TrayMenu {
         });
         let entries: Vec<AnyElement> = self.level.entries.iter().map(|picked| self.entry_row(picked, cx)).collect();
         let has_entries = !entries.is_empty();
-        let list = div().id("entries").h(list_height).overflow_y_scroll().flex().flex_col().children(entries);
+        let list = wheel_list("entries", window, cx).h(list_height).flex().flex_col().children(entries);
         let nova_own = RowLook {
             text: if entry.hidden { "Show in tray" } else { "Hide from tray" }.into(),
             ink: Ink::Quiet,

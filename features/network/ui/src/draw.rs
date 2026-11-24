@@ -16,7 +16,7 @@ use nova_look::tokens::{
 };
 use nova_look::{
     CardTitle, Glyph, Icon, LookStyled, PageHeader, PromptButton, RoundButton, Segments, Spinner, Theme, ToggleSwitch,
-    graph,
+    graph, wheel_list,
 };
 use nova_network_api::{LinkKind, LinkState, NETWORK_TRAFFIC_HISTORY_SECS, Network, NetworkTraffic, WifiNetwork};
 use nova_stage::Stage;
@@ -102,12 +102,10 @@ impl NetworkPage {
         let others = logic::others(network);
         let scanning = network.and_then(|network| network.wifi.as_ref()).is_some_and(|wifi| wifi.scanning);
         let title = if current.is_some() { "Other networks" } else { "Networks" };
-        div()
-            .id("networks")
+        wheel_list("networks", window, cx)
             .flex_1()
             .min_h_0()
             .mt(GAP)
-            .overflow_y_scroll()
             .on_scroll(cx.listener(|page, _, _, cx| page.close_menu(cx)))
             .child(
                 div()

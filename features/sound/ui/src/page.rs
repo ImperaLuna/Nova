@@ -2,15 +2,15 @@ use crate::logic::{input, kind_glyph, link_label, output, output_kind, subtitle}
 use crate::{PAGE, QUICK_SETTINGS};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, Window, div,
+    AnyElement, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, Window,
+    div,
 };
 use nova_launcher_api::Command as LauncherCommand;
 use nova_look::tokens::{
     FONT_SIZE, FONT_SIZE_SMALL, GAP, LABEL_NUDGE, LINE_HEIGHT, PAD, QUICK_SETTINGS_GAP, RADIUS_CARD, ROW_INSET,
     WEIGHT_TITLE,
 };
-use nova_look::{Glyph, Icon, ListRow, LookStyled, PageHeader, Segments, Slider, Theme, VolumeGlyph};
+use nova_look::{Glyph, Icon, ListRow, LookStyled, PageHeader, Segments, Slider, Theme, VolumeGlyph, wheel_list};
 use nova_sound_api::{Command, Event, Kind, Sound, TOPIC};
 use nova_stage::{Screen, Stage};
 use nova_ui_client::{Daemon, Live};
@@ -128,7 +128,7 @@ impl SoundPage {
 }
 
 impl Render for SoundPage {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let screen = self.screen.id;
         let sound = self.sound.read(cx).get().cloned();
         let entity = cx.entity();
@@ -147,7 +147,7 @@ impl Render for SoundPage {
             .child(PageHeader::new("Sound", move |_, _, cx| Stage::show_page(QUICK_SETTINGS, screen, None, cx)))
             .child(self.in_use(sound.as_ref(), cx))
             .child(tabs)
-            .child(div().id("lists").flex_1().min_h_0().overflow_y_scroll().child(list))
+            .child(wheel_list("lists", window, cx).flex_1().min_h_0().child(list))
     }
 }
 
