@@ -52,5 +52,5 @@ pub use theme::{Theme, mix};
 pub use tile::Tile;
 pub use toggle_switch::ToggleSwitch;
 pub use volume_icon::{OutputKind, VolumeGlyph};
-pub use wheel::{WHEEL_LINE, Wheel, scrolled};
+pub use wheel::{WHEEL_LINE, Wheel, scrolled, wheel_list};
 pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, NAMESPACE_PREFIX, ShellWindow, lock_surface};

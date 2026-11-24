@@ -15,7 +15,7 @@ use nova_look::tokens::{
     ICON_GAP, ICON_SIZE_SMALL, LABEL_NUDGE, PAD, RADIUS_CARD, RADIUS_CONTROL, RADIUS_SEGMENT, ROW_INSET, WEIGHT_LABEL,
     WEIGHT_TITLE,
 };
-use nova_look::{Glyph, Icon, LookStyled, RoundButton, Theme};
+use nova_look::{Glyph, Icon, LookStyled, RoundButton, Theme, wheel_list};
 use nova_notifications_api::Notification;
 use nova_stage::{Screen, Stage};
 use std::collections::HashSet;
@@ -348,7 +348,7 @@ struct Shown {
 }
 
 impl Render for List {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let model = self.model.read(cx);
         let items = model.items(cx).to_vec();
         let do_not_disturb = model.do_not_disturb(cx);
@@ -363,15 +363,7 @@ impl Render for List {
         let found = groups(&items);
         let rows: Vec<AnyElement> = found.iter().map(|group| self.group(group, now, cx)).collect();
         list.child(
-            div()
-                .id("notifications")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .flex()
-                .flex_col()
-                .gap(LIST_GAP)
-                .children(rows),
+            wheel_list("notifications", window, cx).flex_1().min_h_0().flex().flex_col().gap(LIST_GAP).children(rows),
         )
     }
 }
