@@ -46,6 +46,9 @@ impl fmt::Display for Refusal {
 
 type Reply = Box<dyn FnOnce(Result<Value, Refusal>) + Send>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Asked(u64);
+
 pub struct Link {
     shared: Arc<Shared>,
 }
@@ -93,11 +96,29 @@ impl Link {
         state.topics.retain(|(_, askers)| *askers > 0);
     }
 
-    pub fn request(&self, command: impl Serialize, reply: impl FnOnce(Result<Value, Refusal>) + Send + 'static) {
-        let refused = self.shared.lock().request(command, Box::new(reply));
-        if let Some((reply, refusal)) = refused {
-            reply(Err(refusal));
+    pub fn request(
+        &self,
+        command: impl Serialize,
+        reply: impl FnOnce(Result<Value, Refusal>) + Send + 'static,
+    ) -> Option<Asked> {
+        let asked = self.shared.lock().request(command, Box::new(reply));
+        match asked {
+            Ok(id) => Some(Asked(id)),
+            Err((reply, refusal)) => {
+                reply(Err(refusal));
+                None
+            }
         }
+    }
+
+    pub fn forget(&self, asked: Asked) {
+        let forgotten = self.shared.lock().pending.remove(&asked.0);
+        drop(forgotten);
+    }
+
+    #[cfg(test)]
+    pub fn waiting(&self) -> usize {
+        self.shared.lock().pending.len()
     }
 }
 
@@ -111,20 +132,20 @@ impl Drop for Link {
 }
 
 impl State {
-    fn request(&mut self, command: impl Serialize, reply: Reply) -> Option<(Reply, Refusal)> {
-        let Some(writer) = &mut self.writer else { return Some((reply, Refusal::NotConnected)) };
+    fn request(&mut self, command: impl Serialize, reply: Reply) -> Result<u64, (Reply, Refusal)> {
+        let Some(writer) = &mut self.writer else { return Err((reply, Refusal::NotConnected)) };
         self.next_id += 1;
         let id = self.next_id;
         let line = match encode(Request { id: Some(id), command }) {
             Ok(line) => line,
-            Err(e) => return Some((reply, Refusal::Unreadable(format!("can't write the request: {e}")))),
+            Err(e) => return Err((reply, Refusal::Unreadable(format!("can't write the request: {e}")))),
         };
         if writer.write_all(line.as_bytes()).is_err() {
             self.hang_up();
-            return Some((reply, Refusal::WentAway));
+            return Err((reply, Refusal::WentAway));
         }
         self.pending.insert(id, reply);
-        None
+        Ok(id)
     }
 
     fn subscribe(&mut self, topic: Topic) {
