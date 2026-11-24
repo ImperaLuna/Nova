@@ -3263,6 +3263,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui_platform",
+ "image",
  "nova-theme-info",
  "serde",
  "toml 0.8.23",
