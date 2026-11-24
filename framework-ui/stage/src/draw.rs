@@ -426,6 +426,7 @@ impl Render for StageView {
         self.follow_middle(window, cx, now);
         self.give_way(now);
         self.rest_once_closed(window, cx, now);
+        self.ask_layer_once_on_screen(window, cx);
         let moving = self.moving(now);
         if moving {
             window.request_animation_frame();
