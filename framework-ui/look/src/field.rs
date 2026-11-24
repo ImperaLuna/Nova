@@ -376,7 +376,7 @@ fn fit_ghost(text: &str, ghost: &str, width: Pixels, measure: impl Fn(&str) -> P
     if ghost.is_empty() || fits(&format!("{text}{ghost}")) || !fits(text) {
         return ghost.to_owned();
     }
-    let ends: Vec<usize> = ghost.char_indices().map(|(at, _)| at).collect();
+    let ends: Vec<usize> = ghost.grapheme_indices(true).map(|(at, _)| at).collect();
     let shortened = |count: usize| format!("{}{ELLIPSIS}", &ghost[..ends[count]]);
     let kept = ends.partition_point(|&end| fits(&format!("{text}{}{ELLIPSIS}", &ghost[..end])));
     if kept == 0 { String::new() } else { shortened(kept - 1) }
@@ -532,6 +532,7 @@ mod tests {
         assert_eq!(fit("~/do", "cuments/", 5.0), "…");
         assert_eq!(fit("~/do", "cuments/", 4.0), "");
         assert_eq!(fit("~/documents", "/", 4.0), "/", "a field already scrolled keeps it");
+        assert_eq!(fit("~/", "e\u{301}e\u{301}e\u{301}", 6.0), "e\u{301}…", "an accent stays on its letter");
     }
 
     fn editing(text: &str) -> Editing {
