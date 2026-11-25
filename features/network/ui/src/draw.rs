@@ -15,8 +15,8 @@ use nova_look::tokens::{
     SEGMENT_PAD, WEIGHT_BODY, WEIGHT_LABEL, WEIGHT_TITLE,
 };
 use nova_look::{
-    CardTitle, Glyph, Icon, LookStyled, PageHeader, PromptButton, RoundButton, Segments, Spinner, Theme, ToggleSwitch,
-    graph, wheel_list,
+    CardTitle, Glyph, Hovered, Icon, LookStyled, PageHeader, PromptButton, RoundButton, Segments, Spinner, Theme,
+    ToggleSwitch, graph, wheel_list,
 };
 use nova_network_api::{LinkKind, LinkState, NETWORK_TRAFFIC_HISTORY_SECS, Network, NetworkTraffic, WifiNetwork};
 use nova_stage::Stage;
@@ -140,14 +140,14 @@ impl NetworkPage {
         let has_menu = (net.saved || net.connected) && !joining;
         let menu_open = has_menu && self.menu_for.as_deref() == Some(net.ssid.as_str());
         let asking = self.asked.as_deref() == Some(net.ssid.as_str());
-        let group: SharedString = format!("network-{ssid}").into();
+        let hovered = Hovered::of(SharedString::from(format!("network-{ssid}-hovered")), window, cx);
         let mut end: Vec<AnyElement> = Vec::new();
         if joining {
             end.push(Spinner::new().size(ICON_SIZE_SMALL).into_any_element());
         } else if logic::needs_password(net) {
             end.push(Icon::new(Glyph::LOCK).size(ICON_SIZE_SMALL).color(theme.fg_dim()).into_any_element());
         }
-        if has_menu {
+        if has_menu && (menu_open || net.connected || hovered.is(cx)) {
             let entity = cx.entity();
             let toggle = {
                 let ssid = net.ssid.clone();
@@ -155,10 +155,6 @@ impl NetworkPage {
             };
             let more =
                 RoundButton::new(("more", hash(&ssid)), Glyph::DOTS, MORE_SIZE).filled().quiet().build(cx, toggle);
-            let more = match menu_open || net.connected {
-                true => more,
-                false => more.opacity(0.0).group_hover(group.clone(), |style| style.opacity(1.0)),
-            };
             end.push(more.into_any_element());
         }
         let entity = cx.entity();
@@ -170,10 +166,10 @@ impl NetworkPage {
             .role(net.connected.then(|| logic::role(network, LinkKind::Wifi)))
             .selected(net.connected)
             .clickable(joinable)
-            .group(group)
             .ends(end)
             .on_click_window(move |window, cx| entity.update(cx, |page, cx| page.pick(&picked, window, cx)))
             .build(cx)
+            .on_hover(hovered.track())
             .when(!joinable, |row| row.opacity(DIM_OPACITY));
         div()
             .relative()
@@ -446,7 +442,6 @@ struct LinkRow {
     role: Option<Role>,
     selected: bool,
     clickable: bool,
-    group: Option<SharedString>,
     end: Vec<AnyElement>,
     on_click: Option<RowClicked>,
 }
@@ -462,7 +457,6 @@ impl LinkRow {
             role: None,
             selected: false,
             clickable: true,
-            group: None,
             end: Vec::new(),
             on_click: None,
         }
@@ -490,11 +484,6 @@ impl LinkRow {
 
     fn clickable(mut self, clickable: bool) -> Self {
         self.clickable = clickable;
-        self
-    }
-
-    fn group(mut self, group: SharedString) -> Self {
-        self.group = Some(group);
         self
     }
 
@@ -546,7 +535,6 @@ impl LinkRow {
             .items_center()
             .pl(PAD)
             .pr(PAD)
-            .when_some(self.group, |row, group| row.group(group))
             .when(self.selected, |row| row.bg(theme.surface_raised()))
             .when(clickable, |row| row.hover(move |style| style.bg(hover)))
             .when_some(self.on_click.filter(|_| clickable), |row, clicked| {

@@ -104,9 +104,13 @@ impl Pairing {
         }
         if id != self.pin_for {
             self.pin_for = id;
-            if !self.pin.read(cx).text().is_empty() {
-                self.pin.update(cx, |field, cx| field.set_text("", cx));
-            }
+            let max = self.request(cx).map_or(0, |request| crate::logic::code_max(&request.ask));
+            self.pin.update(cx, |field, cx| {
+                field.set_max_chars(max);
+                if !field.text().is_empty() {
+                    field.set_text("", cx);
+                }
+            });
         }
         cx.notify();
     }

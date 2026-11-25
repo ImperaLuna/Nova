@@ -83,18 +83,21 @@ impl SoundPage {
         if !self.shown {
             return;
         }
-        let names: Vec<String> = self
+        let apps: Vec<(String, String, String)> = self
             .sound
             .read(cx)
             .get()
-            .map(|sound| sound.apps.iter().map(|app| app.name.clone()).collect())
+            .map(|sound| {
+                let said = |app: &nova_sound_api::App| (app.name.clone(), app.icon_name.clone(), app.program.clone());
+                sound.apps.iter().map(said).collect()
+            })
             .unwrap_or_default();
-        for name in names {
+        for (name, icon_name, program) in apps {
             if self.icons.contains_key(&name) {
                 continue;
             }
             self.icons.insert(name.clone(), None);
-            let ask = LauncherCommand::AppIcon { icon_name: String::new(), program: String::new(), name: name.clone() };
+            let ask = LauncherCommand::AppIcon { icon_name, program, name: name.clone() };
             let answer = Daemon::call::<Option<String>>(ask, cx);
             let task = cx.spawn({
                 let name = name.clone();

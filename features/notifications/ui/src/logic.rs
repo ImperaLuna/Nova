@@ -28,6 +28,17 @@ pub fn unread(items: &[Notification]) -> usize {
     items.iter().filter(|item| item.unread).count()
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct ListMoved {
+    pub pauses_popups: bool,
+    pub read_where_it_left: bool,
+}
+
+pub fn list_moved<T: PartialEq>(before: &[T], now: &[T]) -> ListMoved {
+    let left = before.iter().any(|screen| !now.contains(screen));
+    ListMoved { pauses_popups: !now.is_empty(), read_where_it_left: left }
+}
+
 pub fn timeout(notification: &Notification, fallback: Duration) -> Duration {
     if notification.urgency == Urgency::Critical {
         return Duration::ZERO;
@@ -64,21 +75,19 @@ pub fn battery_fill(battery: Battery) -> f32 {
     }
 }
 
-pub fn letter(name: &str) -> String {
-    name.chars().find(|c| c.is_alphanumeric()).map_or_else(|| "?".into(), |c| c.to_uppercase().collect())
-}
-
-pub fn swatch(id: &str, count: usize) -> usize {
-    let mut hash: i32 = 0;
-    for unit in id.encode_utf16() {
-        hash = hash.wrapping_mul(31).wrapping_add(i32::from(unit));
-    }
-    hash.unsigned_abs() as usize % count.max(1)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn list_pauses_while_any_screen_shows_it_and_reads_where_it_left() {
+        let moved = |pauses_popups, read_where_it_left| ListMoved { pauses_popups, read_where_it_left };
+        assert_eq!(list_moved::<u8>(&[], &[]), moved(false, false));
+        assert_eq!(list_moved(&[], &[1]), moved(true, false));
+        assert_eq!(list_moved(&[1, 2], &[2]), moved(true, true));
+        assert_eq!(list_moved(&[1], &[]), moved(false, true));
+        assert_eq!(list_moved(&[1], &[1, 2]), moved(true, false));
+    }
 
     fn from(id: u32, app: &str) -> Notification {
         Notification {
@@ -118,15 +127,6 @@ mod tests {
         assert_eq!(ago(0, 2 * 3600 + 10), "2h");
         assert_eq!(ago(0, 3 * 86400), "3d");
         assert_eq!(ago(100, 50), "now", "a clock that went back");
-    }
-
-    #[test]
-    fn an_app_without_an_icon_gets_its_letter_on_the_launcher_s_swatch() {
-        assert_eq!(letter("firefox"), "F");
-        assert_eq!(letter("  7zip"), "7");
-        assert_eq!(letter("--"), "?");
-        assert_eq!(swatch("firefox", 8), 7);
-        assert_eq!(swatch("", 8), 0);
     }
 
     #[test]

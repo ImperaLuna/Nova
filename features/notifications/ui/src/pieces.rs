@@ -1,11 +1,10 @@
-use crate::app_icon::AppIcon;
 use crate::logic::battery_fill;
 use crate::tokens::{DEVICE_GLYPH, DEVICE_RADIUS};
 use gpui::{
     AnyElement, App, Div, IntoElement, ObjectFit, ParentElement, Pixels, Styled, StyledImage, div, img, relative,
 };
 use nova_look::tokens::{FONT_SIZE_SMALL, WEIGHT_TITLE};
-use nova_look::{DeviceBattery, Glyph, Icon, Theme};
+use nova_look::{AppIcon, DeviceBattery, Glyph, Icon, Theme};
 use nova_notifications_api::Notification;
 use nova_peripherals_api::{Battery, PeripheralKind};
 use std::path::PathBuf;
@@ -36,7 +35,7 @@ pub fn who(notification: &Notification, size: Pixels, cx: &App) -> AnyElement {
     let app_icon = {
         let id = notification.app_id.clone().unwrap_or_else(|| notification.app.clone());
         let (name, icon) = (notification.app.clone(), notification.icon.clone());
-        move || AppIcon::new(id.clone(), name.clone(), size).icon(icon.as_deref()).into_any_element()
+        move || AppIcon::new(id.clone(), name.clone()).size(size).icon(icon.as_deref()).into_any_element()
     };
     match notification.image.as_deref().filter(|path| path.starts_with('/')) {
         Some(picture) => img(PathBuf::from(picture))

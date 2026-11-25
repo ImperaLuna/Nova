@@ -102,8 +102,8 @@ fn it_publishes_what_the_server_lists() {
     assert_eq!(
         sound["apps"],
         json!([
-            {"id": 66, "name": "Tunes", "volume": 1.0, "muted": false},
-            {"id": 89, "name": "Chimes", "volume": 1.0, "muted": false},
+            {"id": 66, "name": "Tunes", "program": "pacat", "volume": 1.0, "muted": false},
+            {"id": 89, "name": "Chimes", "program": "pacat", "volume": 1.0, "muted": false},
         ])
     );
     assert_eq!(sound["recorders"], json!(["Talk"]));
