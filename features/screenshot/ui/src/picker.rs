@@ -1,5 +1,5 @@
 use crate::capture::{Capture, Frame, Picking};
-use crate::pick::{around, is_click, region, size_label, to_layout, to_pixels, under_region};
+use crate::pick::{around, is_click, on_pixels, region, size_label, to_layout, to_pixels, under_region};
 use crate::tokens::{
     BADGE_HEIGHT, BUTTON_HEIGHT, BUTTON_PAD, FONT_SIZE_COUNTDOWN, MIN_DRAG, OUTLINE, RECORD_DOT, veil,
 };
@@ -356,8 +356,8 @@ impl Render for PickerWindow {
             (None, CaptureMode::Region) => self.region,
         };
         let theme = Theme::of(cx);
-        let veil = veil();
-        let pieces = around(clear.unwrap_or_default(), screen);
+        let scale = window.scale_factor();
+        let pieces = around(clear.unwrap_or_default(), screen, scale);
         let mut root = div()
             .id("picker")
             .track_focus(&self.focus)
@@ -374,10 +374,11 @@ impl Render for PickerWindow {
                 picker.hovered = *hovered;
                 cx.notify();
             }))
-            .children(shows.frame.as_ref().map(|frame| frame_around(frame, glass, screen)).unwrap_or_default())
-            .children(pieces.iter().filter(|piece| !piece.is_empty()).map(|piece| rect(*piece).bg(veil)));
+            .children(shows.frame.as_ref().map(|frame| frame_around(frame, glass, screen, scale)).unwrap_or_default())
+            .children(pieces.iter().filter(|piece| !piece.is_empty()).map(|piece| rect(*piece).bg(veil())));
         if let Some(clear) = clear.filter(|clear| !clear.is_empty()) {
-            root = root.child(rect(clear.dilate(OUTLINE)).border(OUTLINE).border_color(theme.primary));
+            root =
+                root.child(rect(on_pixels(clear, scale).dilate(OUTLINE)).border(OUTLINE).border_color(theme.primary));
         }
         let dragging = self.from.is_some();
         if let Some(region) = self.region.filter(|_| dragging) {
@@ -412,8 +413,8 @@ fn rect(at: Bounds<Pixels>) -> gpui::Div {
     div().absolute().left(at.origin.x).top(at.origin.y).w(at.size.width).h(at.size.height)
 }
 
-fn frame_around(frame: &Frame, glass: Bounds<Pixels>, screen: gpui::Size<Pixels>) -> Vec<AnyElement> {
-    around(glass, screen)
+fn frame_around(frame: &Frame, glass: Bounds<Pixels>, screen: gpui::Size<Pixels>, scale: f32) -> Vec<AnyElement> {
+    around(glass, screen, scale)
         .into_iter()
         .filter(|piece| !piece.is_empty())
         .map(|piece| {

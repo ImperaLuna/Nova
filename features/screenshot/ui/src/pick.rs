@@ -86,7 +86,20 @@ pub fn under_region(region: Bounds<Pixels>, item: Size<Pixels>, screen: Size<Pix
     point(x, y)
 }
 
-pub fn around(clear: Bounds<Pixels>, screen: Size<Pixels>) -> [Bounds<Pixels>; 4] {
+// GPUI rounds a box's top and height to device pixels separately, so boxes meeting on a fractional edge overlap:
+// https://github.com/ImperaLuna/zed/blob/2033650502b1d0ec524b8913bf5a01b9463bed5d/crates/gpui/src/taffy.rs#L304-L306
+pub fn on_pixels(region: Bounds<Pixels>, scale: f32) -> Bounds<Pixels> {
+    let edge = |value: Pixels, round: fn(f32) -> f32| px(round(f32::from(value) * scale) / scale);
+    let near = point(edge(region.origin.x, f32::floor), edge(region.origin.y, f32::floor));
+    let far = point(
+        edge(region.origin.x + region.size.width, f32::ceil),
+        edge(region.origin.y + region.size.height, f32::ceil),
+    );
+    Bounds::from_corners(near, far)
+}
+
+pub fn around(clear: Bounds<Pixels>, screen: Size<Pixels>, scale: f32) -> [Bounds<Pixels>; 4] {
+    let clear = if clear.is_empty() { clear } else { on_pixels(clear, scale) };
     let zero = px(0.0);
     let (top, bottom) = (clear.origin.y, clear.origin.y + clear.size.height);
     let (left, right) = (clear.origin.x, clear.origin.x + clear.size.width);
@@ -207,13 +220,31 @@ mod tests {
     #[test]
     fn the_veil_covers_all_but_the_clear_region() {
         let screen = size(px(100.0), px(80.0));
-        let [top, bottom, left, right] = around(rect(10.0, 20.0, 30.0, 40.0), screen);
+        let [top, bottom, left, right] = around(rect(10.0, 20.0, 30.0, 40.0), screen, 1.0);
         assert_eq!(top, rect(0.0, 0.0, 100.0, 20.0));
         assert_eq!(bottom, rect(0.0, 60.0, 100.0, 20.0));
         assert_eq!(left, rect(0.0, 20.0, 10.0, 40.0));
         assert_eq!(right, rect(40.0, 20.0, 60.0, 40.0));
-        let none = around(Bounds::default(), screen);
+        let none = around(Bounds::default(), screen, 1.0);
         assert_eq!(none[1], rect(0.0, 0.0, 100.0, 80.0));
+    }
+
+    #[test]
+    fn veil_pieces_meet_on_whole_device_pixels_at_a_fractional_scale() {
+        let scale = 1.25;
+        let screen = size(px(2048.0), px(1280.0));
+        let [top, bottom, left, right] = around(rect(100.3, 200.1, 968.9, 768.7), screen, scale);
+        let device = |value: Pixels| f32::from(value) * scale;
+        let whole = |value: Pixels| (device(value) - device(value).round()).abs() < 1e-3;
+        for piece in [top, bottom, left, right] {
+            assert!(whole(piece.origin.x) && whole(piece.origin.y), "{piece:?}");
+            assert!(whole(piece.size.width) && whole(piece.size.height), "{piece:?}");
+        }
+        assert_eq!(right.origin.y + right.size.height, bottom.origin.y);
+        assert_eq!(top.origin.y + top.size.height, right.origin.y);
+        let saved = to_pixels(rect(100.3, 200.1, 968.9, 768.7), scale, size(2560, 1600));
+        assert_eq!(device(bottom.origin.y).round() as u32, saved.y + saved.height);
+        assert_eq!(device(right.origin.x).round() as u32, saved.x + saved.width);
     }
 
     #[test]
