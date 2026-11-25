@@ -242,8 +242,15 @@ pub(super) fn lock_restore_in(answer: &str) -> Result<bool, String> {
 
 #[derive(Debug, Deserialize)]
 struct Monitor {
+    id: i64,
     name: String,
     focused: bool,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    scale: f64,
+    transform: u8,
     #[serde(rename = "activeWorkspace")]
     active_workspace: WorkspaceRef,
     #[serde(rename = "specialWorkspace", default)]
@@ -314,6 +321,9 @@ struct Client {
     title: String,
     workspace: WorkspaceRef,
     fullscreen: u8,
+    at: (f64, f64),
+    size: (f64, f64),
+    monitor: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -338,6 +348,18 @@ struct Window {
     title: String,
     workspace: WorkspaceId,
     fullscreen: bool,
+    middle: (f64, f64),
+    monitor: i64,
+}
+
+impl Monitor {
+    // A rotated output swaps its mode's width and height: https://wayland.app/protocols/wayland#wl_output:enum:transform
+    fn contains(&self, (x, y): (f64, f64)) -> bool {
+        let (width, height) =
+            if self.transform % 2 == 1 { (self.height, self.width) } else { (self.width, self.height) };
+        let scale = if self.scale > 0.0 { self.scale } else { 1.0 };
+        (self.x..self.x + width / scale).contains(&x) && (self.y..self.y + height / scale).contains(&y)
+    }
 }
 
 #[derive(Debug)]
@@ -433,6 +455,15 @@ impl State {
         }
     }
 
+    // The scrolling layout keeps fullscreen per column, so a fullscreen column can sit scrolled off its monitor:
+    // https://wiki.hypr.land/Configuring/Layouts/Scrolling-Layout/
+    fn on_its_monitor(&self, window: &Window) -> bool {
+        self.monitors
+            .iter()
+            .find(|monitor| monitor.id == window.monitor)
+            .is_none_or(|monitor| monitor.contains(window.middle))
+    }
+
     fn workspace_named(&self, name: &str) -> Option<WorkspaceId> {
         self.workspaces.iter().find(|workspace| workspace.address == name).map(|workspace| workspace.id)
     }
@@ -463,6 +494,8 @@ impl State {
                         title: client.title,
                         workspace: client.workspace.id,
                         fullscreen: client.fullscreen & FULLSCREEN_MODE != 0,
+                        middle: (client.at.0 + client.size.0 / 2.0, client.at.1 + client.size.1 / 2.0),
+                        monitor: client.monitor,
                     };
                     (strip_address(&client.address).to_owned(), window)
                 })
@@ -482,8 +515,12 @@ impl State {
         let urgent_workspaces: HashSet<WorkspaceId> =
             self.urgent.iter().filter_map(|address| self.windows.get(address)).map(|window| window.workspace).collect();
         let occupied: HashSet<WorkspaceId> = self.windows.values().map(|window| window.workspace).collect();
-        let fullscreen: HashSet<WorkspaceId> =
-            self.windows.values().filter(|window| window.fullscreen).map(|window| window.workspace).collect();
+        let fullscreen: HashSet<WorkspaceId> = self
+            .windows
+            .values()
+            .filter(|window| window.fullscreen && self.on_its_monitor(window))
+            .map(|window| window.workspace)
+            .collect();
         let mut special: Vec<(&Workspace, &str)> = self
             .workspaces
             .iter()
