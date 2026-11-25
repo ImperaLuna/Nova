@@ -340,7 +340,8 @@ impl Render for PickerWindow {
         let layout = Layout::of(shows.can_switch, shows.video, window);
         let (grown, shown) = (self.grown.value(now), self.faded.value(now));
         let (knob, sounds) = (self.knob.value(now), self.sounds.value(now));
-        let glass = layout.bounds(screen.width, grown, sounds);
+        let scale = window.scale_factor();
+        let glass = on_pixels(layout.bounds(screen.width, grown, sounds), scale);
         self.blur(glass, window);
         let moving = [&self.grown, &self.faded, &self.knob, &self.sounds].iter().any(|eased| !eased.settled(now));
         if moving {
@@ -356,7 +357,6 @@ impl Render for PickerWindow {
             (None, CaptureMode::Region) => self.region,
         };
         let theme = Theme::of(cx);
-        let scale = window.scale_factor();
         let pieces = around(clear.unwrap_or_default(), screen, scale);
         let mut root = div()
             .id("picker")
