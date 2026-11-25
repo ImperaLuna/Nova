@@ -268,6 +268,28 @@ fn hyprland_0_57_shows_its_special_workspace() {
 }
 
 #[test]
+fn a_hyprland_fullscreen_column_scrolled_off_its_monitor_is_not_fullscreen() {
+    let dir = recorded_dir().join("hyprland-0.57-special");
+    let mut ask = |request: &str| {
+        let query = request.strip_prefix("j/").unwrap();
+        let answer = std::fs::read_to_string(dir.join(format!("{query}.json"))).unwrap();
+        if query != "clients" {
+            return Ok(answer);
+        }
+        let mut clients: Vec<serde_json::Value> = serde_json::from_str(&answer).unwrap();
+        for client in clients.iter_mut().filter(|client| client["fullscreen"] != 0) {
+            let x = client["at"][0].as_f64().unwrap() + client["size"][0].as_f64().unwrap();
+            client["at"][0] = x.into();
+        }
+        Ok(serde_json::to_string(&clients).unwrap())
+    };
+    let desktop = hyprland::State::load(&mut ask).unwrap().desktop();
+    let magic = &desktop.outputs[0].workspaces[0];
+    assert!(magic.special && magic.active && !magic.empty, "{magic:#?}");
+    assert!(!magic.fullscreen, "its fullscreen column sits beside the monitor");
+}
+
+#[test]
 fn the_compositor_comes_from_its_variables() {
     fn env(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
         move |name| vars.iter().find(|(var, _)| *var == name).map(|(_, value)| OsString::from(value))

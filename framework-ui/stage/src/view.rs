@@ -361,6 +361,12 @@ impl StageView {
             let keyboard = if held.keyboard { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
             window.set_keyboard_interactivity(keyboard);
         }
+        let released = self.panels.update(cx, |panels, _| panels.take_keyboard_released(id));
+        if !released.is_empty() {
+            window.on_next_frame(move |window, _| {
+                window.on_next_frame(move |_, cx| released.into_iter().for_each(|then| then(cx)));
+            });
+        }
         // Hyprland 0.57 drops a layer change committed before a surface's first frame; once it keeps one, drop `again`:
         // https://github.com/hyprwm/Hyprland/blob/v0.57.2/src/desktop/view/LayerSurface.cpp#L315-L326
         let again = self.aside.new_reason_over_fullscreen(any_open, fullscreen);
