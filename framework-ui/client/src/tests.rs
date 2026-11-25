@@ -1,5 +1,3 @@
-//! The link against the fake novad, over a real socket.
-
 use crate::fake::{FakeDaemon, Recorded, VERSION};
 use crate::link::{Incoming, Link, Refusal};
 use nova_carrier::Topic;
@@ -14,8 +12,6 @@ const WAIT: Duration = Duration::from_secs(5);
 const WEATHER: Topic = Topic::named("weather");
 const TIDE: Topic = Topic::named("tide");
 
-/// Two topics as `nova ipc subscribe` prints them: weather changes twice,
-/// the tide never.
 fn recorded() -> Recorded {
     let weather = r#"{"event":"weather","data":{"sky":"rain"}}
 {"event":"weather","data":{"sky":"sun"}}
@@ -28,7 +24,6 @@ fn recorded() -> Recorded {
     recorded
 }
 
-/// A link to `socket` and what it tells its sink.
 fn link(socket: &Path) -> (Link, Receiver<Incoming>) {
     let (sender, incoming) = mpsc::channel();
     let link = Link::open(socket.to_path_buf(), move |message| {
@@ -49,7 +44,6 @@ fn connected() -> Incoming {
     Incoming::Connected { daemon: VERSION.into() }
 }
 
-/// What novad answers `command` with.
 fn answer(link: &Link, command: Command) -> Result<Value, Refusal> {
     let (sender, answer) = mpsc::channel();
     link.request(command, move |result| {
@@ -72,7 +66,6 @@ fn a_topic_sends_its_state_then_its_changes() {
     assert_eq!(next(&incoming), event("weather", json!({"sky": "rain"})));
     assert_eq!(next(&incoming), event("weather", json!({"sky": "sun"})));
     assert_eq!(next(&incoming), event("storm", Value::Null));
-    // A topic asked for once connected is subscribed to right away.
     link.subscribe(TIDE);
     assert_eq!(next(&incoming), event("tide", json!({"high": true})));
     assert!(incoming.recv_timeout(Duration::from_millis(100)).is_err());
@@ -96,8 +89,6 @@ fn a_request_without_novad_is_refused_at_once() {
     assert_eq!(answer(&link, Command::Ping), Err(Refusal::NotConnected));
 }
 
-/// novad starts after the UI, goes away and comes back: each time the link
-/// connects by itself and the topics send their state again.
 #[test]
 fn it_connects_again_when_novad_restarts() {
     let dir = TempDir::new("client-restart");
@@ -114,7 +105,6 @@ fn it_connects_again_when_novad_restarts() {
     }
 }
 
-/// A novad that hangs up before it answers: the request is told so.
 #[test]
 fn a_request_novad_never_answers_is_told_it_went_away() {
     use std::io::{BufRead, BufReader, Write};
@@ -123,7 +113,6 @@ fn a_request_novad_never_answers_is_told_it_went_away() {
     let novad = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         stream.write_all(b"{\"v\":2,\"event\":\"hello\",\"data\":{\"daemon\":\"silent\"}}\n").unwrap();
-        // Hangs up once the request has arrived.
         let mut request = String::new();
         BufReader::new(stream.try_clone().unwrap()).read_line(&mut request).unwrap();
         request
@@ -134,7 +123,6 @@ fn a_request_novad_never_answers_is_told_it_went_away() {
     assert_eq!(novad.join().unwrap().trim(), r#"{"v":2,"id":1,"cmd":"ping"}"#);
 }
 
-/// A novad that speaks another protocol version is not talked to.
 #[test]
 fn another_protocol_version_is_no_connection() {
     use std::io::Write;
@@ -166,8 +154,6 @@ fn recordings_are_read_from_a_folder() {
     assert!(problem.contains("weather.jsonl: line 1: not an event"), "{problem}");
 }
 
-/// A view that starts later asks for a topic already subscribed to, and
-/// gets its state like the first did.
 #[test]
 fn asking_for_a_topic_again_sends_its_state_again() {
     let dir = TempDir::new("client-again");
@@ -180,7 +166,6 @@ fn asking_for_a_topic_again_sends_its_state_again() {
     }
 }
 
-/// A line without an end is not read for ever.
 #[test]
 fn a_line_over_the_limit_is_an_error() {
     use crate::link::read_line;
@@ -192,7 +177,6 @@ fn a_line_over_the_limit_is_an_error() {
     assert!(!read_line(&mut "".as_bytes(), 8, &mut line).unwrap());
 }
 
-/// A topic nobody asks for any more is left out of the next connection.
 #[test]
 fn a_topic_nobody_asks_for_is_dropped_on_the_next_connection() {
     let dir = TempDir::new("client-unsubscribe");
@@ -204,13 +188,10 @@ fn a_topic_nobody_asks_for_is_dropped_on_the_next_connection() {
     link.unsubscribe(TIDE);
     let _novad = FakeDaemon::start(&socket(&dir), recorded()).unwrap();
     assert_eq!(next(&incoming), connected());
-    // The tide still has one asker; the weather has none.
     assert_eq!(next(&incoming), event("tide", json!({"high": true})));
     assert!(incoming.recv_timeout(Duration::from_millis(100)).is_err());
 }
 
-/// Lines with fields novad never sends, or that are neither an event nor an
-/// answer, are no messages.
 #[test]
 fn odd_lines_are_ignored() {
     use std::io::{BufRead, BufReader, Write};
@@ -228,7 +209,6 @@ fn odd_lines_are_ignored() {
             r#"{"v":2,"event":"tide"}"#,
             r#"{"v":2,"id":1,"result":null}"#,
         ];
-        // Sent once the request has arrived, so its id is waited for.
         let mut request = String::new();
         stream.write_all(format!("{}\n", lines[0]).as_bytes()).unwrap();
         BufReader::new(stream.try_clone().unwrap()).read_line(&mut request).unwrap();
@@ -240,4 +220,78 @@ fn odd_lines_are_ignored() {
     assert_eq!(answer(&link, Command::Ping), Ok(Value::Null));
     assert_eq!(next(&incoming), event("tide", Value::Null));
     assert!(incoming.try_recv().is_err());
+}
+
+#[test]
+fn a_call_given_up_on_is_forgotten() {
+    use std::io::{BufRead, BufReader, Write};
+    let dir = TempDir::new("client-forget");
+    let listener = std::os::unix::net::UnixListener::bind(socket(&dir)).unwrap();
+    let (asked_sender, asked_seen) = mpsc::channel::<()>();
+    let (answer_sender, answer_wait) = mpsc::channel::<()>();
+    let novad = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.write_all(b"{\"v\":2,\"event\":\"hello\",\"data\":{\"daemon\":\"slow\"}}\n").unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut request = String::new();
+        reader.read_line(&mut request).unwrap();
+        asked_sender.send(()).unwrap();
+        answer_wait.recv_timeout(WAIT).unwrap();
+        reader.read_line(&mut request).unwrap();
+        stream.write_all(b"{\"v\":2,\"id\":1,\"result\":\"late\"}\n{\"v\":2,\"id\":2,\"result\":\"pong\"}\n").unwrap();
+        let _ = reader.read_line(&mut request);
+    });
+    let (link, incoming) = link(&socket(&dir));
+    assert_eq!(next(&incoming), Incoming::Connected { daemon: "slow".into() });
+    let (replied, reply) = mpsc::channel();
+    let asked = link.request(Command::Ping, move |result| {
+        let _ = replied.send(result);
+    });
+    asked_seen.recv_timeout(WAIT).unwrap();
+    assert_eq!(link.waiting(), 1);
+    link.forget(asked.expect("the request was sent"));
+    assert_eq!(link.waiting(), 0, "the caller gave up, so nothing waits for its answer");
+    answer_sender.send(()).unwrap();
+    assert_eq!(answer(&link, Command::Ping), Ok("pong".into()), "the late answer came first");
+    assert_eq!(reply.try_recv(), Err(mpsc::TryRecvError::Disconnected), "and reached nobody");
+    drop(link);
+    novad.join().unwrap();
+}
+
+#[test]
+fn a_late_listener_gets_the_event_playback_is_at() {
+    let dir = TempDir::new("client-late");
+    let mut recorded = recorded();
+    recorded.pace = Duration::from_millis(400);
+    let _novad = FakeDaemon::start(&socket(&dir), recorded).unwrap();
+    let (first, first_incoming) = link(&socket(&dir));
+    first.subscribe(WEATHER);
+    assert_eq!(next(&first_incoming), connected());
+    assert_eq!(next(&first_incoming), event("weather", json!({"sky": "rain"})));
+    assert_eq!(next(&first_incoming), event("weather", json!({"sky": "sun"})));
+    let (second, second_incoming) = link(&socket(&dir));
+    second.subscribe(WEATHER);
+    assert_eq!(next(&second_incoming), connected());
+    assert_eq!(next(&second_incoming), event("weather", json!({"sky": "sun"})));
+    assert_eq!(next(&second_incoming), event("storm", Value::Null));
+    assert_eq!(next(&first_incoming), event("storm", Value::Null));
+}
+
+#[test]
+fn playback_follows_the_clock_from_the_first_listener() {
+    use crate::fake::playback;
+    let pace = Duration::from_millis(100);
+    assert_eq!(playback(Duration::ZERO, pace, 3), Some((0, pace)));
+    assert_eq!(playback(Duration::from_millis(130), pace, 3), Some((1, Duration::from_millis(70))));
+    assert_eq!(playback(Duration::from_secs(9), pace, 3).map(|(at, _)| at), Some(2), "it stays at the last event");
+    assert_eq!(playback(Duration::ZERO, pace, 0), None);
+    assert_eq!(playback(Duration::from_secs(9), Duration::ZERO, 3), Some((0, Duration::ZERO)), "no pace plays it all");
+}
+
+#[test]
+fn a_late_listener_gets_the_latest_event_of_each_kind() {
+    use crate::fake::current_events;
+    let played =
+        [json!({"event": "weather", "data": 1}), json!({"event": "storm"}), json!({"event": "weather", "data": 2})];
+    assert_eq!(current_events(&played), [&played[1], &played[2]]);
 }

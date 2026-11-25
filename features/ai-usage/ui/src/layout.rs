@@ -1,7 +1,3 @@
-//! How tall the panel is for what it shows: `contentHeight` in
-//! `ui/ai_usage/AiUsage.qml`, from the same tokens. No drawing; the one
-//! thing only drawing knows, how many lines a hint wraps to, comes in.
-
 use crate::usage::Summary;
 use gpui::{Pixels, px};
 use nova_look::tokens::{
@@ -9,7 +5,6 @@ use nova_look::tokens::{
     METER_HEIGHT_SMALL, PANEL_PAD_BOTTOM, ROW_HEIGHT, SECTION_GAP,
 };
 
-/// One line of small text, and of body text.
 pub fn caption_line() -> Pixels {
     FONT_SIZE_SMALL * LINE_HEIGHT
 }
@@ -18,22 +13,16 @@ pub fn body_line() -> Pixels {
     FONT_SIZE * LINE_HEIGHT
 }
 
-/// Things stacked `GAP` apart, as a QML Column lays them: empty ones take
-/// no room and no gap.
 fn stacked(heights: &[Pixels], gap: Pixels) -> Pixels {
     let shown: Vec<Pixels> = heights.iter().copied().filter(|height| *height > px(0.0)).collect();
     let gaps = gap * shown.len().saturating_sub(1) as f32;
     shown.into_iter().fold(gaps, |sum, height| sum + height)
 }
 
-/// The panel's height for `summary` with `others` other tools listed, the
-/// hint wrapping to `message_lines`.
 pub fn panel_height(summary: &Summary, others: usize, message_lines: usize) -> Pixels {
     let caption = caption_line();
     let main = summary.main.as_ref();
     let lone_reset = main.filter(|main| summary.second.is_none() && !main.reset.is_empty());
-    // Qt's wrapped line height is a share of the face's own line, not of
-    // the size.
     let message = if summary.message.is_empty() {
         px(0.0)
     } else {
@@ -53,7 +42,6 @@ pub fn panel_height(summary: &Summary, others: usize, message_lines: usize) -> P
         stacked(&[body_line(), METER_HEIGHT_SMALL, reset], GAP)
     });
     let details = stacked(&[primary, second], SECTION_GAP);
-    // The line over the other tools, and a row for each.
     let others = px(1.0) + (GAP + ROW_HEIGHT) * others as f32;
     BAR_HEIGHT + GAP + LINE_HEIGHT_HERO + details + SECTION_GAP + others + PANEL_PAD_BOTTOM
 }

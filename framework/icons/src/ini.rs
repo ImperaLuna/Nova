@@ -1,14 +1,7 @@
-//! The INI-style files icon themes are described and chosen in: an icon
-//! theme's `index.theme`, GTK's `settings.ini`, qt6ct's config and KDE's
-//! `kdeglobals`. `[Group]` lines, `key=value` lines, and `#` or `;` comments.
-//! A key seen twice in one group keeps its first value.
-
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 
-/// These files are a few kilobytes (Papirus's `index.theme` is the biggest
-/// at about 40); anything far bigger isn't one.
 const MAX_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Default)]
@@ -34,19 +27,16 @@ impl Ini {
         ini
     }
 
-    /// `file` parsed, or `None` when it can't be read.
     pub fn read(file: &Path) -> Option<Self> {
         let mut text = String::new();
         std::fs::File::open(file).ok()?.take(MAX_BYTES).read_to_string(&mut text).ok()?;
         Some(Self::parse(&text))
     }
 
-    /// `key`'s value in `group`; an empty one is none.
     pub fn get(&self, group: &str, key: &str) -> Option<&str> {
         self.groups.get(group)?.get(key).map(String::as_str).filter(|value| !value.is_empty())
     }
 
-    /// `key`'s comma-separated list in `group`, without empty items.
     pub fn list(&self, group: &str, key: &str) -> Vec<&str> {
         self.get(group, key)
             .map(|value| value.split(',').map(str::trim).filter(|item| !item.is_empty()).collect())

@@ -1,16 +1,3 @@
-//! A stand-in for hidraw nodes in tests, answering from
-//! `recorded/hidpp*.json` and `recorded/keychron*.json`: what a real
-//! receiver or dongle (and its devices) answered to each request, and
-//! said by itself, captured on the desktop. Its `/sys` entry is made as
-//! the kernel makes it (`class/hidraw/<node>/device` leading to the HID
-//! device, with its `driver` link, `uevent` and `report_descriptor`), and
-//! opening the node gives one end of a `SOCK_SEQPACKET` pair, which keeps
-//! reports apart as hidraw does: each write is one report, each read one.
-//!
-//! A request nobody recorded is answered as the recording says: as a
-//! Logitech receiver answers one for an empty slot (HID++ 1.0's error
-//! `0x09`), or not at all, as a Keychron dongle.
-
 use super::hidraw::Opener;
 use nova_base::lock;
 use serde::Deserialize;
@@ -21,50 +8,37 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// HID++ 1.0's error for a slot with no device in it.
 const NO_DEVICE: u8 = 0x09;
 
-/// A `recorded/hidpp*.json`.
 #[derive(Deserialize)]
 pub struct Recording {
-    /// The hidraw node, `hidraw17`.
     pub node: String,
-    /// Its HID device's folder, `0003:046D:C547.0007`.
     pub hid: String,
     pub driver: String,
-    /// Its HID device's name, in its `uevent`.
     #[serde(default)]
     pub hid_name: Option<String>,
-    /// Its report descriptor, in hex.
     pub descriptor: String,
     #[serde(default)]
     pub exchanges: Vec<Exchange>,
-    /// How a request nobody recorded is answered.
     #[serde(default)]
     pub unrecorded: Unrecorded,
-    /// Reports its devices sent by themselves, by what happened.
     #[serde(default)]
     pub notices: HashMap<String, String>,
-    /// Reports its devices sent by themselves, in the order they came.
     #[serde(default)]
     pub pushes: Vec<String>,
 }
 
-/// How a node answers a request nobody recorded.
 #[derive(Deserialize, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Unrecorded {
-    /// As a Logitech receiver for an empty slot.
     #[default]
     HidppNoDevice,
-    /// It doesn't.
     Silent,
 }
 
 #[derive(Deserialize, Clone)]
 pub struct Exchange {
     pub request: String,
-    /// Everything the node said until the answer, the answer last.
     pub replies: Vec<String>,
 }
 
@@ -72,29 +46,22 @@ pub fn hex(text: &str) -> Vec<u8> {
     (0..text.len()).step_by(2).map(|at| u8::from_str_radix(&text[at..at + 2], 16).unwrap()).collect()
 }
 
-/// Each request's replies.
 type Answers = HashMap<Vec<u8>, Vec<Vec<u8>>>;
 
-/// One fake node.
 struct Node {
     answers: Answers,
     unrecorded: Unrecorded,
-    /// Its open ends.
     ends: Vec<std::fs::File>,
-    /// The requests written to it, in order.
     requests: Vec<Vec<u8>>,
 }
 
-/// The fake nodes, by their file, and the answers they give.
 #[derive(Clone, Default)]
 pub struct FakeHidraw {
     nodes: Arc<Mutex<HashMap<PathBuf, Node>>>,
-    /// The nodes opened, in order.
     pub opened: Arc<Mutex<Vec<PathBuf>>>,
 }
 
 impl FakeHidraw {
-    /// Makes `recording`'s node under `sys` and `dev`.
     pub fn add(&self, sys: &Path, dev: &Path, recording: &Recording) {
         let device = sys.join("devices/pci0000:00/usb1/1-1/1-1:1.2").join(&recording.hid);
         let driver = sys.join("bus/hid/drivers").join(&recording.driver);
@@ -120,14 +87,12 @@ impl FakeHidraw {
             .insert(node, Node { answers, unrecorded: recording.unrecorded, ends: Vec::new(), requests: Vec::new() });
     }
 
-    /// From now on, `request` is answered with `replies` on every node.
     pub fn answer(&self, request: &str, replies: &[&str]) {
         for node in lock(&self.nodes).values_mut() {
             node.answers.insert(hex(request), replies.iter().map(|reply| hex(reply)).collect());
         }
     }
 
-    /// Every open node says `report` by itself.
     pub fn say(&self, report: &str) {
         for node in lock(&self.nodes).values_mut() {
             for end in &mut node.ends {
@@ -136,19 +101,16 @@ impl FakeHidraw {
         }
     }
 
-    /// Node `path`, if open, says `report` by itself.
     pub fn say_on(&self, path: &Path, report: &str) {
         for end in lock(&self.nodes).get_mut(path).map(|node| node.ends.as_mut_slice()).unwrap_or_default() {
             let _ = end.write_all(&hex(report));
         }
     }
 
-    /// The requests written to node `path` so far.
     pub fn requests(&self, path: &Path) -> Vec<Vec<u8>> {
         lock(&self.nodes).get(path).map(|node| node.requests.clone()).unwrap_or_default()
     }
 
-    /// Node `path` hangs up, as hidraw does when its device is unplugged.
     pub fn hang_up(&self, path: &Path) {
         let ends: Vec<std::fs::File> =
             lock(&self.nodes).get_mut(path).map(|node| std::mem::take(&mut node.ends)).unwrap_or_default();
@@ -158,8 +120,6 @@ impl FakeHidraw {
         }
     }
 
-    /// Every open node hangs up, as hidraw does when its device is
-    /// unplugged.
     pub fn unplug(&self) {
         let paths: Vec<PathBuf> = lock(&self.nodes).keys().cloned().collect();
         for path in paths {
@@ -167,7 +127,6 @@ impl FakeHidraw {
         }
     }
 
-    /// Opens the fake nodes; any other path isn't there.
     pub fn opener(&self) -> Opener {
         let fake = self.clone();
         Arc::new(move |path: &Path| fake.open(path))
@@ -195,8 +154,6 @@ impl FakeHidraw {
     }
 }
 
-/// Answers what node `path`'s reader sends through `served`, as recorded,
-/// until either end hangs up.
 fn serve(served: &mut std::fs::File, nodes: &Mutex<HashMap<PathBuf, Node>>, path: &Path) {
     let mut request = [0u8; 64];
     while let Ok(read) = served.read(&mut request) {
@@ -212,8 +169,6 @@ fn serve(served: &mut std::fs::File, nodes: &Mutex<HashMap<PathBuf, Node>>, path
     }
 }
 
-/// Node `path`'s replies to `request`, noting it was asked; none once the
-/// node is gone.
 fn answers(nodes: &Mutex<HashMap<PathBuf, Node>>, path: &Path, request: &[u8]) -> Option<Vec<Vec<u8>>> {
     let mut nodes = lock(nodes);
     let node = nodes.get_mut(path)?;
@@ -225,7 +180,6 @@ fn answers(nodes: &Mutex<HashMap<PathBuf, Node>>, path: &Path, request: &[u8]) -
     })
 }
 
-/// A receiver's answer to a request for an empty slot.
 fn no_device(request: &[u8]) -> Vec<u8> {
     vec![0x10, request[1], 0x8F, request[2], request[3], NO_DEVICE, 0]
 }

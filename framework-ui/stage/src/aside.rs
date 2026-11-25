@@ -1,37 +1,16 @@
-//! The bar stepping aside for a fullscreen window, on one screen: while the
-//! workspace it shows has a window over the whole screen, the pills slide
-//! up out of sight, then the bar's room is given back, so the windows
-//! beside the fullscreen one get the full height. When that ends the room
-//! comes back first, then the pills, so they never land on a window.
-//! Meanwhile the pointer touching the top edge brings the pills back over
-//! the window (they stay a moment after it leaves), and they stay while a
-//! panel is open on the screen. `Bar.qml` in today's shell.
-//!
-//! Plain state over time, tested alone: the stage tells it what happened
-//! and when, asks it where the pills are, and wakes it at
-//! [`Aside::next_wake`].
-
 use nova_look::motion::Eased;
 use nova_look::tokens::{DURATION_PANEL, DURATION_PEEK_LINGER};
 use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Aside {
-    /// The shown workspace has a fullscreen window, and the bar has pills.
     fullscreen: bool,
-    /// A panel is open on the screen.
     held: bool,
-    /// The pointer is on the strip along the top edge or on a pill.
     hovered: bool,
-    /// The pills stay until then after the pointer left.
     linger_until: Option<Instant>,
-    /// The bar keeps its room at the top of the screen.
     room_kept: bool,
-    /// The room goes then, once the pills have slid away.
     room_goes_at: Option<Instant>,
-    /// Tucked pills wait for the room to come back until then.
     waiting_until: Option<Instant>,
-    /// 0 in place, 1 out of sight above the screen.
     slide: Eased,
 }
 
@@ -57,18 +36,14 @@ impl Aside {
         self.waiting_until.is_some_and(|until| now < until)
     }
 
-    /// Brought back over the fullscreen window by the pointer.
     fn peeking(&self, now: Instant) -> bool {
         self.fullscreen && (self.hovered || self.lingering(now))
     }
 
-    /// Out of sight, or on the way there.
     pub fn tucked(&self, now: Instant) -> bool {
         (self.fullscreen || self.waiting(now)) && !self.peeking(now) && !self.held
     }
 
-    /// Whether the shown workspace has a fullscreen window: the strip along
-    /// the top edge takes the pointer meanwhile.
     pub fn fullscreen(&self) -> bool {
         self.fullscreen
     }
@@ -84,12 +59,15 @@ impl Aside {
             self.room_goes_at = Some(now + DURATION_PANEL);
         } else {
             self.room_goes_at = None;
-            // Only pills that were out of sight wait; shown ones stay put.
             let waits = !self.held && !self.hovered && !self.lingering(now);
             self.waiting_until = waits.then_some(now + DURATION_PANEL);
             self.room_kept = true;
         }
         self.settle(now);
+    }
+
+    pub fn new_reason_over_fullscreen(&self, held: bool, fullscreen: bool) -> bool {
+        (held && !self.held) || (fullscreen && !self.fullscreen)
     }
 
     pub fn set_held(&mut self, held: bool, now: Instant) {
@@ -108,14 +86,10 @@ impl Aside {
         }
         self.advance(now);
         self.hovered = hovered;
-        // Only over a fullscreen window: elsewhere it would wake the stage
-        // for nothing.
         self.linger_until = (!hovered && self.fullscreen).then_some(now + DURATION_PEEK_LINGER);
         self.settle(now);
     }
 
-    /// Runs what was due by `now`. Returns whether the room changed, for
-    /// the stage to tell the compositor.
     pub fn advance(&mut self, now: Instant) -> bool {
         let before = self.room_kept;
         if self.room_goes_at.is_some_and(|at| now >= at) {
@@ -136,7 +110,6 @@ impl Aside {
         self.slide.set_target(if self.tucked(now) { 1.0 } else { 0.0 }, now);
     }
 
-    /// When something is due next: the stage wakes it then.
     pub fn next_wake(&self) -> Option<Instant> {
         [self.room_goes_at, self.waiting_until, self.linger_until].into_iter().flatten().min()
     }
@@ -145,12 +118,10 @@ impl Aside {
         self.room_kept
     }
 
-    /// How far the pills have slid out of sight (0..1).
     pub fn slid(&self, now: Instant) -> f32 {
         self.slide.value(now)
     }
 
-    /// Out of sight and at rest: nothing of the bar is drawn.
     pub fn gone(&self, now: Instant) -> bool {
         self.slide.target() == 1.0 && self.slide.settled(now)
     }
@@ -168,6 +139,23 @@ mod tests {
         let now = start + by;
         aside.advance(now);
         now
+    }
+
+    #[test]
+    fn a_panel_opening_or_a_fullscreen_window_is_a_new_reason_to_be_over_fullscreen() {
+        let now = Instant::now();
+        let mut aside = Aside::new(now);
+        assert!(!aside.new_reason_over_fullscreen(false, false));
+        assert!(aside.new_reason_over_fullscreen(true, false), "a panel opens");
+        assert!(aside.new_reason_over_fullscreen(false, true), "a fullscreen window shows");
+        aside.set_fullscreen(true, now);
+        assert!(!aside.new_reason_over_fullscreen(false, true), "the same fullscreen window");
+        assert!(aside.new_reason_over_fullscreen(true, true), "a panel opens over it");
+        aside.set_held(true, now);
+        assert!(!aside.new_reason_over_fullscreen(true, true), "the same panel");
+        aside.set_held(false, now);
+        aside.set_fullscreen(false, now);
+        assert!(aside.new_reason_over_fullscreen(true, false), "the next panel");
     }
 
     #[test]

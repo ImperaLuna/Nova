@@ -115,10 +115,10 @@ publish = false
 # and makes NVIDIA's driver load CUDA. `version` picks Zed's real gpui: the
 # repo also holds a test fixture crate named gpui. Move both pins together,
 # and the hashes in packaging/nix/nova-ui.nix with them.
-gpui = { git = "https://github.com/ImperaLuna/zed", rev = "6fab5ba6d9562f331e9c581696432f52ec260429", version = "0.2.2" }
+gpui = { git = "https://github.com/ImperaLuna/zed", rev = "2033650502b1d0ec524b8913bf5a01b9463bed5d", version = "0.2.2" }
 # The platform half of GPUI (windows, input, the renderer). Wayland is off
 # by default; without it the program runs but never opens a window.
-gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "6fab5ba6d9562f331e9c581696432f52ec260429", version = "0.1.0", features = ["wayland"] }
+gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "2033650502b1d0ec524b8913bf5a01b9463bed5d", version = "0.1.0", features = ["wayland"] }
 # The versions GPUI's own tree already holds.
 futures = "0.3"
 # What GPUI reports its own errors through: nova-ui prints them, so a lost
@@ -137,8 +137,16 @@ yeslogic-fontconfig-sys = "6.0"
 # The local time, for the clock: chrono, which GPUI uses, is unmaintained
 # (RUSTSEC-2026-0543). The system's time zone from TZ or /etc/localtime.
 jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
+# Words and order in the system's language from CLDR, as Qt uses them (the
+# clock's day name, the launcher's app order). ICU4X's locale and data crates are already here through GPUI.
+icu_calendar = "2.1"
+icu_collator = "2.1"
+icu_datetime = "2.1"
+icu_locale_core = "2.1"
+writeable = "0.6"
 
 # The UI side's shared parts (framework-ui/).
+nova-locale = { path = "../framework-ui/locale" }
 nova-look = { path = "../framework-ui/look" }
 nova-stage = { path = "../framework-ui/stage" }
 nova-ui-client = { path = "../framework-ui/client" }

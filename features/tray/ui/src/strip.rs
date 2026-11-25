@@ -1,13 +1,3 @@
-//! The tray in the right pill (view `tray.strip`, host `right-pill.tray`),
-//! ported from `ui/bar/RightPill.qml`: a chevron while some app sits in the
-//! tray, which opens it in place. The pill grows to the left and the apps'
-//! icons pop in, at most `TRAY_VISIBLE` of them, the rest a wheel scroll
-//! away with a "+N" on each side for those out of sight.
-//!
-//! Opening the tray is opening the panel `tray` (view `tray.panel`, drawn
-//! here, in place): the stage closes it on Esc, a click outside or another
-//! panel opening, as it does any panel.
-
 use crate::menu;
 use crate::model::{self, Entry};
 use crate::tokens::{REVEAL_PILL_COUNT, TRAY_DOT_RING, TRAY_DOT_SIZE, TRAY_ICON_SIZE, TRAY_STAGGER, TRAY_VISIBLE};
@@ -30,10 +20,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-/// The panel the open tray is, as today's shell calls it.
 pub const TRAY: &str = "tray";
 
-/// A button's top in the bar, so it sits in the middle.
 fn button_top() -> Pixels {
     (BAR_HEIGHT - PILL_BUTTON_SIZE) / 2.0
 }
@@ -45,26 +33,17 @@ pub struct Strip {
     apps: Vec<Entry>,
     attention: bool,
     open: bool,
-    /// When it last opened or closed: the icons pop in one after another
-    /// from then, and the counts wait for the pill to have grown.
     toggled: Instant,
-    /// Shut 0, open 1.
     morph: Eased,
-    /// How far the strip is scrolled, in pixels.
     scroll: Eased,
     wheel: Wheel,
-    /// The chevron's attention dot, and each icon's.
     dot: Eased,
     dots: HashMap<String, Eased>,
     counts: [Count; 2],
-    /// Each icon's middle across the screen, as last laid out: a menu
-    /// drops below it.
     middles: Rc<RefCell<HashMap<String, Pixels>>>,
     _follow: [Option<Subscription>; 2],
 }
 
-/// A "+N": it fades out with none out of sight but keeps its room, and
-/// shows the last number while it does.
 struct Count {
     last: usize,
     shows: Eased,
@@ -110,12 +89,10 @@ impl Strip {
         strip
     }
 
-    /// Takes novad's latest tray.
     fn read(&mut self, cx: &mut Context<Self>) {
         let all = self.tray.read(cx).get().map(model::entries).unwrap_or_default();
         self.attention = model::any_attention(&all);
         self.apps = model::shown(&all);
-        // The stage and the right pill redraw when this shows or hides it.
         self.shown.set(!self.apps.is_empty(), cx);
         let now = Instant::now();
         for app in &self.apps {
@@ -125,14 +102,12 @@ impl Strip {
         let keys: Vec<&String> = self.apps.iter().map(|app| &app.key).collect();
         self.dots.retain(|key, _| keys.contains(&key));
         if self.apps.is_empty() {
-            // Never open with nothing to show.
             let screen = self.screen.id;
             cx.defer(move |cx| Stage::close(TRAY, screen, cx));
         }
         cx.notify();
     }
 
-    /// The stage opened or closed the tray.
     fn follow_open(&mut self, cx: &mut Context<Self>) {
         let open = Stage::is_open(TRAY, self.screen.id, cx);
         if open == self.open {
@@ -157,8 +132,6 @@ impl Strip {
         model::row_width(self.visible())
     }
 
-    /// Scrolls whole icons, counting from where a scroll still running is
-    /// going, so quick turns add up.
     fn scrolled(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) {
         let notches = self.wheel.notches(event);
         if notches == 0 {
@@ -169,9 +142,6 @@ impl Strip {
         cx.notify();
     }
 
-    /// A click on `app`'s icon: left acts and closes the tray (an app with
-    /// only a menu shows it), right shows its menu, middle is its
-    /// secondary action.
     fn clicked(&mut self, app: &Entry, button: MouseButton, cx: &mut Context<Self>) {
         let screen = self.screen.id;
         match button {
@@ -192,8 +162,6 @@ impl Strip {
         }
     }
 
-    /// How far the icons have popped in, 0 to 1, as scale and opacity:
-    /// opening, each a little after the one before; closing, all at once.
     fn pop(&self, index: usize, now: Instant) -> (f32, f32) {
         let since = now.saturating_duration_since(self.toggled);
         let wait = if self.open { TRAY_STAGGER * (index as u32 + 2) } else { Duration::ZERO };
@@ -203,8 +171,6 @@ impl Strip {
         if self.open { (grow, fade) } else { (1.0 - grow, 1.0 - fade) }
     }
 
-    /// How much the "+N"s show: they wait for the pill to have grown most
-    /// of the way, then fade in; closing, they go with the pill.
     fn counts_reveal(&self, now: Instant) -> f32 {
         if !self.open {
             return self.morph.value(now);
@@ -236,9 +202,10 @@ impl Strip {
         )
         .absolute()
         .inset_0();
-        // Drawn smaller to pop in: GPUI scales no element but a picture.
-        let picture =
-            AppIcon::new(app.key.clone(), app.name.clone()).icon(app.icon.clone()).size(TRAY_ICON_SIZE * look.scale);
+        let picture = AppIcon::new(app.key.clone(), app.name.clone())
+            .icon(app.icon.clone())
+            .size(TRAY_ICON_SIZE * look.scale)
+            .resting_size(TRAY_ICON_SIZE);
         let (left, right, middle) = (app.clone(), app.clone(), app.clone());
         div()
             .id(SharedString::from(format!("tray-{}", app.key)))
@@ -278,7 +245,6 @@ impl Strip {
     }
 }
 
-/// What one icon looks like this frame.
 #[derive(Clone, Copy)]
 struct IconLook {
     now: Instant,
@@ -291,8 +257,6 @@ fn fraction(elapsed: Duration, over: Duration) -> f32 {
     if over.is_zero() { 1.0 } else { (elapsed.as_secs_f32() / over.as_secs_f32()).min(1.0) }
 }
 
-/// The dot of an app asking for attention, on an icon's top right, ringed
-/// in the background color; `grown` is its scale.
 pub(crate) fn attention_dot(grown: f32, cx: &App) -> impl IntoElement {
     let theme = Theme::of(cx);
     let size = TRAY_DOT_SIZE * grown;
@@ -309,8 +273,6 @@ pub(crate) fn attention_dot(grown: f32, cx: &App) -> impl IntoElement {
 }
 
 impl Strip {
-    /// The icons, scrolling sideways, their ends fading out where more are
-    /// out of sight. Nothing while the tray is shut.
     fn strip(&self, now: Instant, scroll: Pixels, strip_right: Pixels, cx: &mut Context<Self>) -> Stateful<Div> {
         let strip_width = self.strip_width();
         let morph = self.morph.value(now);
@@ -344,7 +306,6 @@ impl Strip {
             .on_scroll(cx.listener(|strip, event: &ScrollEvent, _, cx| strip.scrolled(event, cx)))
     }
 
-    /// The tray's chevron, pointing at where it opens; it turns as it does.
     fn chevron(&self, morph: f32, now: Instant, cx: &mut Context<Self>) -> Stateful<Div> {
         let theme = Theme::of(cx);
         let (fg, hover) = (theme.fg, theme.hover());
@@ -374,7 +335,6 @@ impl Render for Strip {
         let fg_dim = Theme::of(cx).fg_dim();
         let total = self.apps.len();
         let strip_width = self.strip_width();
-        // Hidden apps or apps gone: keep the scroll inside the row.
         let furthest = f32::from((model::row_width(total) - strip_width).max(px(0.0)));
         if self.scroll.target() > furthest {
             self.scroll.set_target(furthest, now);
@@ -389,7 +349,6 @@ impl Render for Strip {
             window.request_animation_frame();
         }
 
-        // With more than fit, a "+N" on each side keeps its room.
         let has_more = total > TRAY_VISIBLE;
         let count_width = if has_more { count_width(total - TRAY_VISIBLE, window) } else { px(0.0) };
         let more = if has_more { count_width + PILL_BUTTON_GAP } else { px(0.0) };
@@ -434,8 +393,6 @@ impl Render for Strip {
     }
 }
 
-/// How wide a "+N" is: as wide as the most there can be on a side, so it
-/// keeps its room as the number changes. The face's digits are all as wide.
 fn count_width(most: usize, window: &Window) -> Pixels {
     let text = window.text_system();
     let id = text.resolve_font(&font(FONT_MONO));

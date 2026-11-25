@@ -1,12 +1,3 @@
-//! `resources.page`: CPU and memory over the last minutes, and the apps
-//! using the most memory now (each with all its processes), from novad's
-//! resources events. A search narrows the apps by name; an app's row can
-//! end it, after asking under the row. `ResourcesPage.qml` in today's
-//! shell.
-//!
-//! The card watches the machine while this page shows, so the page only
-//! follows the events.
-
 use crate::graph::Graph;
 use crate::logic::{self, DASH};
 use crate::tokens::{
@@ -23,7 +14,7 @@ use nova_look::tokens::{
     CHIP_HEIGHT, CONFIRM_BUTTON_HEIGHT, FONT_MONO, FONT_SIZE_MICRO, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE_SMALL,
     PAD, QUICK_SETTINGS_GAP, RADIUS_CARD, RADIUS_SEGMENT, SEGMENT_PAD, WEIGHT_BODY, WEIGHT_TITLE,
 };
-use nova_look::{CardTitle, FieldEvent, Glyph, Icon, LookStyled, PageHeader, TextField, Theme};
+use nova_look::{CardTitle, FieldEvent, Glyph, Icon, LookStyled, PageHeader, TextField, Theme, wheel_list};
 use nova_resources_api::{AppUsage, Command, Event, Resources, TOPIC};
 use nova_stage::Screen;
 use nova_ui_client::{Daemon, Live};
@@ -32,11 +23,8 @@ pub struct Page {
     screen: Screen,
     resources: Entity<Live<Resources>>,
     search: Entity<TextField>,
-    /// What the search holds, trimmed.
     query: String,
-    /// The app whose End asks to confirm, by key.
     asked: Option<String>,
-    /// The row under the pointer, and the End button under it, by key.
     hovered: Option<String>,
     on_end: Option<String>,
     _followed: Vec<Subscription>,
@@ -70,8 +58,6 @@ impl Page {
         }
     }
 
-    /// Esc clears the search first; with none, it goes on to the stage,
-    /// which closes the drawer.
     fn key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         if event.keystroke.key == "escape" && !self.search.read(cx).text().is_empty() {
             self.search.update(cx, |search, cx| search.set_text("", cx));
@@ -105,7 +91,7 @@ impl Page {
 }
 
 impl Render for Page {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let screen = self.screen.id;
         let reading = self.resources.read(cx).get().cloned();
         div()
@@ -119,11 +105,10 @@ impl Render for Page {
                 nova_stage::Stage::show_page(QUICK_SETTINGS, screen, None, cx)
             }))
             .child(graph_card(reading.as_ref(), cx))
-            .child(self.apps(reading.as_ref(), cx))
+            .child(self.apps(reading.as_ref(), window, cx))
     }
 }
 
-/// The graph with its legend above and its time span below.
 fn graph_card(reading: Option<&Resources>, cx: &App) -> impl IntoElement + use<> {
     let theme = Theme::of(cx);
     let share = |value: Option<f32>| value.map_or_else(|| DASH.to_owned(), logic::percent);
@@ -154,7 +139,6 @@ fn graph_card(reading: Option<&Resources>, cx: &App) -> impl IntoElement + use<>
         .child(div().flex().justify_between().child(span("−3 min")).child(span("now")))
 }
 
-/// A legend's dot in `color` and its line.
 fn legend(color: Hsla, text: String) -> impl IntoElement {
     div()
         .flex()
@@ -164,15 +148,17 @@ fn legend(color: Hsla, text: String) -> impl IntoElement {
         .child(CardTitle::new(text))
 }
 
-/// One number on a row, or a column's head, right-aligned in its column.
 fn cell() -> Div {
     div().flex_none().w(PROCESS_NUMBER_WIDTH).flex().justify_end().text_size(FONT_SIZE_SMALL)
 }
 
 impl Page {
-    /// The search, the columns' heads and the apps under them, scrolling
-    /// when there are more.
-    fn apps(&self, reading: Option<&Resources>, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn apps(
+        &self,
+        reading: Option<&Resources>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let theme = Theme::of(cx);
         let all = reading.map_or(&[][..], |now| now.apps.as_slice());
         let shown = matching(all, &self.query);
@@ -216,11 +202,9 @@ impl Page {
             .flex_col()
             .child(search)
             .child(heads)
-            .child(div().id("apps").flex_1().min_h_0().overflow_y_scroll().children(none).children(rows))
+            .child(wheel_list("apps", window, cx).flex_1().min_h_0().children(none).children(rows))
     }
 
-    /// An app's row: its name and how many processes, its CPU and memory,
-    /// and End (✕) while hovered; asking, the question under it.
     fn row(&self, app: &AppUsage, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
         let key = app.key.clone();
@@ -286,7 +270,6 @@ impl Page {
         div().flex().flex_col().child(line).children(confirm).into_any_element()
     }
 
-    /// Asks before ending: the app is asked to close.
     fn confirm(&self, app: &AppUsage, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let key = app.key.clone();
         div()
@@ -315,7 +298,6 @@ impl Page {
     }
 }
 
-/// Cancel, or End in the second accent.
 fn confirm_button(id: &'static str, label: &'static str, accent: bool, theme: &Theme) -> gpui::Stateful<Div> {
     let hover = theme.hover();
     div()

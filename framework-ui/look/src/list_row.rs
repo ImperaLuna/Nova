@@ -1,7 +1,3 @@
-//! A list row in a quick settings page: an icon, a name with a line under
-//! it, and a status at its end ("In use"), quietly filled while selected.
-//! `ui/quick_settings/ListRow.qml` in today's shell.
-
 use crate::tokens::{FONT_SIZE, FONT_SIZE_SMALL, GAP, ICON_SIZE_MENU, LIST_ROW_HEIGHT, PAD, RADIUS_ROW, WEIGHT_LABEL};
 use crate::{Glyph, Icon, Theme};
 use gpui::prelude::FluentBuilder as _;
@@ -13,7 +9,6 @@ use std::rc::Rc;
 
 type Clicked = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
-/// A list row (see the module).
 #[derive(IntoElement)]
 pub struct ListRow {
     id: ElementId,
@@ -38,13 +33,11 @@ impl ListRow {
         }
     }
 
-    /// The line under the name; none when empty.
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = subtitle.into();
         self
     }
 
-    /// The word at its end, in the accent while selected.
     pub fn status(mut self, status: impl Into<SharedString>) -> Self {
         self.status = status.into();
         self

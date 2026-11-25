@@ -1,31 +1,19 @@
-//! `peripherals.card`: the wireless mice, keyboards, headsets and
-//! controllers connected now, each with how it connects and its battery.
-//! novad leaves out whatever isn't connected, and the card is shown only
-//! while it lists one. A device that comes fades in, and a battery that
-//! changes eases to its new level. A few rows, then it scrolls, so many
-//! devices never push the cards below off the drawer. `DevicesCard.qml` in
-//! today's shell.
-
 use crate::logic::{self, Tone};
 use crate::tokens::{
     DEVICE_CHIP_GAP, DEVICE_CHIP_HEIGHT, DEVICE_CHIP_PAD, DEVICE_ICON_SIZE, DEVICE_LEVEL_WIDTH, DEVICE_LINK_ICON_SIZE,
     DEVICE_LIST_MAX_ROWS, DEVICE_ROW_HEIGHT,
 };
-use gpui::{
-    AnyElement, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement,
-    Styled, Subscription, Window, div,
-};
+use gpui::{AnyElement, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window, div};
 use nova_look::motion::Eased;
 use nova_look::tokens::{
     DURATION_FILL, DURATION_PANEL, FONT_SIZE, FONT_SIZE_MICRO, FONT_SIZE_SMALL, GAP, MENU_PAD, RADIUS_CARD,
 };
-use nova_look::{CardTitle, DeviceBattery, Icon, Theme};
+use nova_look::{CardTitle, DeviceBattery, Icon, Theme, wheel_list};
 use nova_peripherals_api::{Event, Peripheral, Peripherals, TOPIC};
 use nova_stage::Shown;
 use nova_ui_client::Live;
 use std::time::Instant;
 
-/// A row's own motion: when its device came, and its battery's level.
 struct Row {
     id: String,
     came: Instant,
@@ -48,8 +36,6 @@ impl Card {
         card
     }
 
-    /// A new list: keeps the rows whose device stays, easing a battery that
-    /// changed, and fades in the new ones.
     fn follow(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
         let devices = self.devices(cx).to_vec();
@@ -95,18 +81,12 @@ impl Render for Card {
             .collect();
         div().w_full().flex().flex_col().gap(GAP).child(CardTitle::new("Devices")).child(
             div().p(MENU_PAD).rounded(RADIUS_CARD).bg(theme.surface_raised()).child(
-                div()
-                    .id("devices")
-                    .max_h(DEVICE_ROW_HEIGHT * DEVICE_LIST_MAX_ROWS as f32)
-                    .overflow_y_scroll()
-                    .children(rows),
+                wheel_list("devices", window, cx).max_h(DEVICE_ROW_HEIGHT * DEVICE_LIST_MAX_ROWS as f32).children(rows),
             ),
         )
     }
 }
 
-/// One device: its icon and name, how it connects, its battery and the
-/// level beside it.
 fn device_row(device: &Peripheral, fill: f32, opacity: f32, cx: &gpui::App) -> AnyElement {
     let theme = Theme::of(cx);
     let low = logic::low(device.battery, device.charging);

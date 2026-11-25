@@ -1,7 +1,3 @@
-//! One resource ring: a track, an arc from twelve o'clock filled to its
-//! value, the reading inside and its name under it. `Ring.qml` in today's
-//! shell.
-
 use crate::tokens::{RING_SIZE, RING_STROKE};
 use gpui::{
     App, Bounds, Hsla, IntoElement, ParentElement, PathBuilder, Pixels, Point, RenderOnce, SharedString, Styled,
@@ -24,10 +20,7 @@ impl Ring {
     }
 }
 
-/// The points along the circle round `center` from twelve o'clock,
-/// clockwise, `sweep` of a turn.
 fn arc(center: Point<Pixels>, radius: Pixels, sweep: f32) -> Vec<Point<Pixels>> {
-    // A point every few degrees: smooth at a ring's size.
     const STEPS_PER_TURN: f32 = 120.0;
     let steps = (sweep * STEPS_PER_TURN).ceil().max(1.0) as usize;
     (0..=steps)
@@ -46,7 +39,6 @@ fn stroke(points: &[Point<Pixels>], color: Hsla, window: &mut Window) {
     }
 }
 
-/// A round end on the arc at `at`.
 fn cap(at: Point<Pixels>, color: Hsla, window: &mut Window) {
     let dot = Bounds::centered_at(at, size(RING_STROKE, RING_STROKE));
     window.paint_quad(fill(dot, color).corner_radii(RING_STROKE / 2.0));

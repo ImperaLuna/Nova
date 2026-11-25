@@ -1,13 +1,3 @@
-//! The launcher (feature `launcher`, its messages in `nova-launcher-api`):
-//! searching the installed apps (from the shared app index, `nova-apps`),
-//! starting them, and the user's pinned and recent ones, which survive
-//! restarts. It publishes the apps again each time the index reads them.
-//!
-//! novad runs it as a module (its wiring adapts [`Launcher`] to novad's
-//! `Module` trait), routes the feature's commands to it, and fills its
-//! ports: the apps in the tray ([`TrayApps`]) and the other features'
-//! providers (`providers`).
-
 pub mod autostart;
 pub mod providers;
 mod rank;
@@ -32,40 +22,22 @@ use std::time::Duration;
 
 pub const FEATURE_ID: &str = "launcher";
 const LOG_SOURCE: &str = "launcher";
-/// Apps that can be pinned at once.
 const MAX_PINNED: usize = 32;
-/// Recent apps sent, the latest first.
 const MAX_RECENT: usize = 8;
-/// Apps whose launches are remembered (for recent and for ranking); the
-/// least recently launched are forgotten first.
 const MAX_REMEMBERED: usize = 200;
-/// How long novad waits to focus the window an app was just asked to show
-/// (from its tray icon or menu, or a click on its notification), and how
-/// often it looks.
 pub const SHOWN_WINDOW_WAIT: Duration =
     if cfg!(any(test, feature = "test-support")) { Duration::from_secs(1) } else { Duration::from_secs(3) };
 const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
-/// How long it waits for the window of an app in the tray that it started
-/// again: the new process first starts up, then hands over to the running
-/// one.
 pub const STARTED_WINDOW_WAIT: Duration =
     if cfg!(any(test, feature = "test-support")) { Duration::from_secs(2) } else { Duration::from_secs(10) };
 
-/// The apps in the system tray (feature `tray`), as [`focus_open`] uses
-/// them: a port novad's wiring fills with the tray's module, so the
-/// launcher never names the tray's code.
 pub trait TrayApps: Send + Sync {
-    /// Whether an icon in the tray belongs to the app `app_id`.
     fn in_tray(&self, app_id: &str) -> bool;
-    /// Asks the app `app_id`'s tray icon to show its window (`Activate`):
-    /// `false` when it has no icon that can.
     fn activate_in_tray(&self, app_id: &str) -> Result<bool, String>;
 }
 
-/// Where the module keeps things, and how it starts apps.
 #[derive(Clone)]
 pub struct Paths {
-    /// Pinned apps and launch counts.
     pub state_file: PathBuf,
     pub runner: Runner,
 }
@@ -82,22 +54,17 @@ pub struct Launcher {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     paths: Paths,
-    /// Where programs are looked for, and the `PATH` apps get.
     path_var: String,
-    /// Set by `stop`.
     stopped: AtomicBool,
 }
 
 struct State {
     saved: Saved,
-    /// The last event published, so an unchanged list isn't sent again.
     sent: Option<nova_launcher_api::Launcher>,
 }
 
-/// What survives a restart.
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 struct Saved {
-    /// Ids in the user's order. Apps that are gone stay, in case they come back.
     #[serde(default)]
     pinned: Vec<String>,
     #[serde(default)]
@@ -107,13 +74,10 @@ struct Saved {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 struct Launches {
     count: u32,
-    /// The last one, in milliseconds since 1970.
     last: i64,
 }
 
 impl Launcher {
-    /// Loads the saved state, and publishes the apps whenever `apps` reads
-    /// them (now, if it already has).
     pub fn start(paths: Paths, apps: Arc<AppIndex>, path_var: &str, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let saved = match std::fs::read_to_string(&paths.state_file) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
@@ -136,7 +100,6 @@ impl Launcher {
         launcher
     }
 
-    /// Publishes nothing more.
     pub fn stop(&self) {
         let _state = lock(&self.state);
         self.stopped.store(true, Ordering::SeqCst);
@@ -146,7 +109,6 @@ impl Launcher {
         self.stopped.load(Ordering::SeqCst)
     }
 
-    /// Publishes the apps once the index has read them.
     fn apps_changed(&self) {
         let mut state = lock(&self.state);
         if !self.stopped() && self.apps.read().scanned() {
@@ -154,15 +116,11 @@ impl Launcher {
         }
     }
 
-    /// Sends a new subscriber, client `id`, the apps as they are, under the lock that publishing
-    /// takes, so a newer state published meanwhile can't arrive before it.
     pub fn send_state(&self, id: nova_hub::ClientId) {
         let state = lock(&self.state);
         self.hub.send_to(id, &Event::Launcher(snapshot(&state, &self.apps.read())));
     }
 
-    /// The apps matching `query`, best first, as the apps provider's items
-    /// (`providers`). A blank query matches nothing.
     pub fn search_apps(&self, query: &str) -> Vec<LauncherItem> {
         let query = query.trim().to_lowercase();
         if query.is_empty() {
@@ -202,9 +160,6 @@ impl Launcher {
             .collect()
     }
 
-    /// Focuses a window the app `id` already has, through `focus` (given the
-    /// app ids its windows may have, none for a terminal app; `false` when
-    /// none is open), or else starts the app; either counts it as launched.
     pub fn launch(&self, id: &str, focus: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
         let ids = self.window_ids(id).ok_or_else(|| format!("no app {id:?}"))?;
         if self.stopped() {
@@ -215,7 +170,6 @@ impl Launcher {
             false
         });
         if !focused {
-            // Focusing may have taken a while; `start_app` checks for a stop.
             self.start_app(id)?;
         }
         let now = jiff::Timestamp::now().as_millisecond();
@@ -235,8 +189,6 @@ impl Launcher {
         })
     }
 
-    /// Starts the app `id`, without counting it as launched (`launch`
-    /// does that).
     pub fn start_app(&self, id: &str) -> Result<(), String> {
         let entry = self.apps.entry(id).ok_or_else(|| format!("no app {id:?}"))?;
         if self.stopped() {
@@ -246,13 +198,10 @@ impl Launcher {
             .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))
     }
 
-    /// The app ids the windows of the installed app `id` may have; `None`
-    /// when no such app is installed.
     pub fn window_ids(&self, id: &str) -> Option<Vec<String>> {
         self.apps.window_ids(id)
     }
 
-    /// Pins the app `id` at the end, or unpins it.
     pub fn pin(&self, id: &str, pinned: bool) -> Result<(), String> {
         if pinned && !self.apps.read().entries().contains_key(id) {
             return Err(format!("no app {id:?}"));
@@ -276,7 +225,6 @@ impl Launcher {
         })
     }
 
-    /// Applies `change` to the saved state, then saves and publishes it.
     fn update(&self, change: impl FnOnce(&mut Saved) -> Result<(), String>) -> Result<(), String> {
         let mut state = lock(&self.state);
         if self.stopped() {
@@ -287,7 +235,6 @@ impl Launcher {
         if state.saved == before {
             return Ok(());
         }
-        // Under the lock, so changes reach the file in the order they were made.
         if let Err(e) = state_file::save(&self.paths.state_file, &state.saved) {
             self.logger.warn(LOG_SOURCE, &format!("can't save {}: {e}", self.paths.state_file.display()));
         }
@@ -304,15 +251,12 @@ impl Launcher {
     }
 }
 
-/// The event for `state` and `apps`: apps by name, and the pinned and
-/// recent ones that are installed (recent leaves the pinned ones out).
 fn snapshot(state: &State, apps: &nova_apps::State) -> nova_launcher_api::Launcher {
     let installed = apps.entries();
     let mut listed: Vec<App> = installed.values().map(|entry| apps.app_of(entry)).collect();
     listed.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
     let is_installed = |id: &&String| installed.contains_key(*id);
     let pinned = state.saved.pinned.iter().filter(is_installed).cloned().collect();
-    // A pinned app already shows among the pins.
     let mut launched: Vec<(&String, &Launches)> = state
         .saved
         .launches
@@ -323,18 +267,6 @@ fn snapshot(state: &State, apps: &nova_apps::State) -> nova_launcher_api::Launch
     let recent = launched.into_iter().take(MAX_RECENT).map(|(id, _)| id.clone()).collect();
     nova_launcher_api::Launcher { apps: listed, pinned, recent }
 }
-/// The focus step of [`Launcher::launch`] for app `id`, whose windows may
-/// have the app ids `ids` (none, and no `how.tray`, when a new window is
-/// asked for): an open window takes focus where it is; a new one opens on
-/// `how.output` (the launcher's screen), which the compositor puts it on once
-/// focused. An app that only sits in the tray shows its window from there,
-/// as starting it again may just quit (Discord). One whose icon can't show it (Claude
-/// Desktop ignores `Activate`, libayatana's icons have only a menu) is
-/// started again with `start`: a running app then shows its window, which
-/// gets no focus from the compositor either (the activation token went to
-/// the process that handed over), so it takes focus here once it shows.
-/// `how.underway` hears when only waiting for that window is left.
-/// `true` when nothing (more) needs starting.
 pub fn focus_open(
     id: &str,
     ids: &[String],
@@ -370,19 +302,14 @@ pub fn focus_open(
     Ok(true)
 }
 
-/// An app, and the app ids its windows may have.
 #[derive(Debug, Clone, Copy)]
 pub struct AppWindows<'a> {
     pub id: &'a str,
     pub ids: &'a [String],
 }
 
-/// Focuses the window of `app` that it was just asked to show (by its tray
-/// icon, its menu, a click on its notification, or starting it again while
-/// it runs), once it shows: niri gives it no focus, as none of those hands the app an activation token.
-/// Gives up (logged) after `wait`.
-/// `false` when no window showed; `true` also when that can't be told (an
-/// app in a terminal, the compositor failing).
+// niri focuses a window only with an activation token, which a tray icon, a menu or a notification never hands over:
+// https://wayland.app/protocols/xdg-activation-v1
 pub fn focus_shown(
     app: AppWindows,
     compositor: &Compositor,

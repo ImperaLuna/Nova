@@ -1,6 +1,3 @@
-//! The notification server against a real bus: a private `dbus-daemon` per
-//! test, with apps that send notifications the way libnotify does.
-
 use super::*;
 use futures_core::Stream;
 use nova_hub::{ClientQueue, Outgoing};
@@ -13,7 +10,6 @@ use std::pin::Pin;
 use std::sync::mpsc::Receiver;
 use zbus::{MatchRule, MessageStream};
 
-/// How long a test waits for something the bus should do at once.
 const WAIT: Duration = Duration::from_secs(5);
 
 struct Fixture {
@@ -39,7 +35,6 @@ impl Fixture {
         Self { dir, bus, hub, logger, ui, client: id, _ui_stream: ui_stream }
     }
 
-    /// Puts icon `name` where the server finds icons, and returns its file.
     fn install_icon(&self, name: &str) -> String {
         let path = self.dir.join("share/pixmaps").join(format!("{name}.png"));
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -51,7 +46,6 @@ impl Fixture {
         self.server_with(None)
     }
 
-    /// A server naming apps from `apps`, or none.
     fn server_with(&self, apps: Option<Arc<AppIndex>>) -> Arc<Notifications> {
         let sources = Sources {
             bus: Bus::Address(self.bus.address.clone()),
@@ -83,8 +77,6 @@ impl Fixture {
         App { connection, signals }
     }
 
-    /// An index of the apps installed under `share/applications`
-    /// (`entries`: file name and contents); lookups wait for its first read.
     fn apps(&self, entries: &[(&str, &str)]) -> Arc<AppIndex> {
         let share = self.dir.join("share");
         std::fs::create_dir_all(share.join("applications")).unwrap();
@@ -98,12 +90,10 @@ impl Fixture {
         AppIndex::of(Some(&share), &self.logger)
     }
 
-    /// The next event called `name`, skipping others.
     fn next(&self, name: &str) -> Value {
         nova_hub::next_named(&self.ui, name, WAIT)
     }
 
-    /// Who owns the server's name on the bus, if anyone.
     fn name_owner(&self) -> String {
         let connection = self.bus.connect();
         let reply = zbus::block_on(connection.call_method(
@@ -116,7 +106,6 @@ impl Fixture {
         reply.and_then(|reply| reply.body().deserialize::<String>()).unwrap_or_default()
     }
 
-    /// No event called `name` is waiting.
     fn none_waiting(&self, name: &str) {
         while let Ok(Outgoing::Line(line)) = self.ui.try_recv() {
             let event: Value = serde_json::from_str(&line).unwrap();
@@ -125,11 +114,8 @@ impl Fixture {
     }
 }
 
-/// `Notify`'s arguments: app name, the id it replaces, app icon, summary,
-/// body, actions, hints and timeout.
 type Notify<'a> = (&'a str, u32, &'a str, &'a str, &'a str, Vec<&'a str>, HashMap<&'a str, Variant<'a>>, i32);
 
-/// An app on the bus, hearing the server's signals.
 struct App {
     connection: Connection,
     signals: Receiver<(String, Value)>,
@@ -143,7 +129,6 @@ impl App {
         reply.body().deserialize().unwrap()
     }
 
-    /// A plain notification from `app`.
     fn simple(&self, app: &str, summary: &str) -> u32 {
         self.notify((app, 0, "", summary, "", vec![], HashMap::new(), -1))
     }
@@ -206,7 +191,6 @@ fn replacing_keeps_the_id_and_moves_it_to_the_top() {
     let second = app.simple("Discord", "Mara");
     let replaced = app.notify(("Steam", first, "", "Downloaded", "", vec![], HashMap::new(), -1));
     assert_eq!(replaced, first);
-    // An id that isn't there any more gets a new one.
     let fresh = app.notify(("Steam", 999, "", "Again", "", vec![], HashMap::new(), -1));
     assert!(![0, 999, first, second].contains(&fresh));
     let mut list = fixture.next("notifications");
@@ -228,14 +212,12 @@ fn muted_apps_are_hidden_and_do_not_disturb_holds_back_pop_ups() {
     let app = fixture.app();
     let first = app.simple("Discord", "first");
     fixture.next("notification_popup");
-    // Only an app that sent one can be muted.
     assert!(server.mute("Slack", true).is_err());
     server.mute("Discord", true).unwrap();
     let list = fixture.next("notifications");
     assert_eq!(list["muted"], json!(["Discord"]));
     assert_eq!(list["items"], json!([]), "muting hides its notifications");
 
-    // New ones aren't kept, and clearing leaves the hidden ones.
     app.simple("Discord", "muted");
     server.clear(None);
     server.mute("Discord", false).unwrap();
@@ -298,7 +280,6 @@ fn clicks_reach_the_app_and_keep_the_notification_read() {
     assert_eq!(list["items"][0]["id"], id, "still listed");
     assert_eq!(list["items"][0].get("live"), None, "its app is done with it");
     assert!(server.action(id, None).is_err(), "a click on it again opens the app instead (`click`)");
-    // Many apps close it on a click too: it stays.
     zbus::block_on(app.connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "CloseNotification", &(id,)))
         .unwrap();
     app.simple("Mail", "later");
@@ -310,7 +291,6 @@ fn clicks_reach_the_app_and_keep_the_notification_read() {
     };
     assert_eq!(list["items"][1]["id"], id, "closing it again leaves it listed");
 
-    // A resident one stays when a button is clicked, and goes on a click.
     let resident = HashMap::from([("resident", Variant::Bool(true))]);
     let id = app.notify(("Player", 0, "", "Song", "", actions, resident, -1));
     server.action(id, Some("reply")).unwrap();
@@ -342,8 +322,6 @@ fn closing_dismissing_and_clearing_tell_the_app_why() {
     }
 }
 
-// Chat apps (a web notification's tag in Electron) close the last
-// message's notification as they send the next one: both stay listed.
 #[test]
 fn an_app_closing_its_notification_leaves_it_listed() {
     let fixture = Fixture::new("closed-by-app");
@@ -378,12 +356,10 @@ fn transient_notifications_only_pop_up() {
     assert_eq!(list["items"], json!([]));
     assert_eq!(list["apps"][0]["name"], "Volume");
     assert_eq!(list["transient"][0]["id"], id, "listed apart, so its pop-up knows it's open");
-    // Its pop-up's click still reaches the app.
     server.action(id, None).unwrap();
     assert_eq!(app.signal(), ("ActionInvoked".into(), json!([id, "default"])));
     assert_eq!(fixture.next("notifications").get("transient"), None, "gone, so its pop-up goes");
 
-    // Closed by its app, it goes too.
     let transient = HashMap::from([("transient", Variant::Bool(true))]);
     let id = app.notify(("Volume", 0, "", "60%", "", vec![], transient, 0));
     assert_eq!(fixture.next("notifications")["transient"][0]["id"], id);
@@ -404,7 +380,6 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     assert_eq!(image.parent(), Some(fixture.dir.join("images").as_path()));
     assert_eq!(fixture.next("notification_popup")["image"], image.display().to_string());
     assert!(image.exists());
-    // New pixels get a path of their own, so the UI doesn't show the old ones.
     let hints = HashMap::from([("image-data", Variant::from(zbus::wire::Structure::from(pixels.clone())))]);
     app.notify(("Chat", id, "", "Mara", "", vec![], hints, -1));
     fixture.next("notification_popup");
@@ -417,14 +392,12 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
     assert_eq!(fixture.next("notification_popup")["image"], "/tmp/mara.png");
 
-    // A reference too long to be a path is dropped, as an image or an app icon.
     let long = format!("/{}", "a".repeat(4 * 1024 * 1024));
     let hints = HashMap::from([("image-path", Variant::from(long.as_str()))]);
     app.notify(("Chat", 0, &long, "Mara", "", vec![], hints, -1));
     let popup = fixture.next("notification_popup");
     assert!(popup.get("image").is_none() && popup.get("icon").is_none(), "{}", popup.to_string().len());
 
-    // A file an app names is never deleted, even one that reads as ours.
     let victim = fixture.dir.join("victim");
     std::fs::write(&victim, "keep").unwrap();
     let named = format!("{}/../victim", fixture.dir.join("images").display());
@@ -433,7 +406,6 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     server.dismiss(id);
     assert!(victim.exists());
 
-    // Replaced by one without a picture, its picture goes.
     let hints = HashMap::from([("image-data", Variant::from(zbus::wire::Structure::from(pixels.clone())))]);
     let id = app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
     let image = image_of(&server, id);
@@ -441,7 +413,6 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     app.notify(("Chat", id, "", "Mara", "", vec![], HashMap::new(), -1));
     assert!(!image.exists());
 
-    // So do transient ones' pictures, once newer ones push them out.
     let transient = || {
         HashMap::from([
             ("transient", Variant::Bool(true)),
@@ -457,7 +428,6 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     assert!(!image.exists());
 }
 
-/// The picture novad has for notification `id`.
 fn image_of(server: &Notifications, id: u32) -> PathBuf {
     let state = lock(&server.shared.state);
     PathBuf::from(find(&state, id).and_then(|kept| kept.image.clone()).expect("a picture"))
@@ -484,7 +454,6 @@ fn pictures_no_notification_keeps_are_deleted_at_start() {
 fn an_app_that_quits_leaves_its_notifications_unclickable() {
     let fixture = Fixture::new("quit");
     let server = fixture.server();
-    // Like notify-send: connects, sends one and leaves.
     let connection = fixture.bus.connect();
     let sent: Notify<'_> = ("Chat", 0, "", "Mara", "", vec!["default", "Open"], HashMap::new(), -1);
     let reply = zbus::block_on(connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "Notify", &sent)).unwrap();
@@ -514,21 +483,17 @@ fn an_installed_desktop_entry_names_the_app_before_the_sender_does() {
     let _server = fixture.server_with(Some(apps));
     let app = fixture.app();
 
-    // The entry the sender names is installed: its name and icon win over
-    // what the sender calls itself and the icon it gives.
     let hints = HashMap::from([("desktop-entry", Variant::from("discord"))]);
     app.notify(("discord-canary", 0, "vesktop", "Mara", "hi", vec![], hints, -1));
     let popup = fixture.next("notification_popup");
     assert_eq!((&popup["app"], &popup["icon"]), (&json!("Discord"), &json!(patched)));
     assert_eq!(popup["app_id"], "discord.desktop");
 
-    // Not installed: the sender's own name and icon.
     let hints = HashMap::from([("desktop-entry", Variant::from("vesktop"))]);
     app.notify(("Vesktop", 0, "vesktop", "Mara", "hi", vec![], hints, -1));
     let popup = fixture.next("notification_popup");
     assert_eq!((&popup["app"], &popup["icon"]), (&json!("Vesktop"), &json!(theme)));
 
-    // No entry named: the sender's name.
     app.simple("Chat", "hello");
     assert_eq!(fixture.next("notification_popup")["app"], "Chat");
 }
@@ -557,9 +522,6 @@ fn the_list_and_settings_survive_a_restart() {
     let id = app.simple("Chat", "kept");
     server.set_do_not_disturb(true);
     server.stop();
-    // Let go of the name before the next one claims it: the bus frees it
-    // only once the old connection has closed, after `serve` returns, and
-    // an app calling before then reaches the closing server and gets no reply.
     wait_until(WAIT, "the server to let go of its name", || fixture.name_owner().is_empty());
     drop(server);
     while fixture.ui.try_recv().is_ok() {}
@@ -632,7 +594,6 @@ fn quick_updates_are_saved_at_most_once_a_second_ending_with_the_last() {
     let saved = |summary: &str| std::fs::read_to_string(&file).is_ok_and(|text| text.contains(summary));
     let id = app.simple("Firefox", "step 0");
     wait_until(WAIT, "the first change to be saved at once", || saved("step 0"));
-    // A download's progress, every 50 ms for 1.5 s; every write seen.
     let mut writes = HashSet::new();
     let updates = 30;
     for step in 1..=updates {

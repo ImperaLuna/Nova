@@ -73,7 +73,7 @@ pub enum Capability {
     SpecialWorkspaces,
 }
 
-/// A monitor, by its connector name (`DP-1`), as Quickshell's `screen.name`.
+/// A monitor, by its connector name (`DP-1`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Output {
     pub name: String,

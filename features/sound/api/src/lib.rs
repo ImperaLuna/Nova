@@ -20,8 +20,7 @@ pub const TOPIC: Topic = Topic::named("sound");
 pub const VOLUME_MAX: f32 = 1.0;
 
 /// How far one volume key (`nova volume up` or `down`) moves the output in
-/// use, while novad does the keys (the GPUI UI). `Tokens.volumeStep` in
-/// today's shell.
+/// use.
 pub const VOLUME_STEP: f32 = 0.05;
 
 /// Sent by the UI. Arguments with unknown fields are refused.
@@ -33,7 +32,7 @@ pub enum Command {
     /// unmutes too.
     SetSoundVolume { of: Kind, id: u32, volume: f32 },
     /// Sets a volume as [`Command::SetSoundVolume`] does but leaves mute as
-    /// it is: a click or drag on the volume capsule, as in today's shell.
+    /// it is: a click or drag on the volume capsule.
     SetSoundLevel { of: Kind, id: u32, volume: f32 },
     /// Mutes or unmutes an output, an input or an app (all its streams).
     SetSoundMuted { of: Kind, id: u32, muted: bool },
@@ -142,6 +141,13 @@ pub struct App {
     /// What a [`Command`] names it by: its first stream's id.
     pub id: u32,
     pub name: String,
+    /// Its first stream's `application.icon-name`, often its app's id, or
+    /// empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon_name: String,
+    /// Its first stream's `application.process.binary`, or empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub program: String,
     /// Its loudest stream's volume. 1 is 100%.
     pub volume: f32,
     /// Muted only while all its streams are.
@@ -165,7 +171,14 @@ mod tests {
                 current: true,
             }],
             inputs: Vec::new(),
-            apps: vec![App { id: 77, name: "Firefox".into(), volume: 1.0, muted: false }],
+            apps: vec![App {
+                id: 77,
+                name: "Firefox".into(),
+                icon_name: "firefox".into(),
+                program: String::new(),
+                volume: 1.0,
+                muted: false,
+            }],
             recorders: vec!["Discord".into()],
         }
     }

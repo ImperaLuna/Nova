@@ -1,15 +1,3 @@
-//! Quick settings' notifications (`notifications.list`): a heading with how
-//! many there are, Clear all, the do not disturb bell and the settings
-//! gear; then the notifications grouped by app, the app with the newest
-//! first. An app with two or more is a stack (its newest, with the edges of
-//! the rest under it and "+N"), which a click opens in place, with Show
-//! less and Clear. With none, "All caught up".
-//! `ui/quick_settings/NotificationList.qml` and `ui/notifications/
-//! NotificationRow.qml` in today's shell.
-//!
-//! Quick settings draws it (port 17 onwards); until then `nova-ui --demo`
-//! shows it in a panel of its own.
-
 use crate::logic::{Group, ago, groups};
 use crate::model::{self, Model};
 use crate::pieces::{battery_amount, who};
@@ -27,25 +15,20 @@ use nova_look::tokens::{
     ICON_GAP, ICON_SIZE_SMALL, LABEL_NUDGE, PAD, RADIUS_CARD, RADIUS_CONTROL, RADIUS_SEGMENT, ROW_INSET, WEIGHT_LABEL,
     WEIGHT_TITLE,
 };
-use nova_look::{Glyph, Icon, LookStyled, RoundButton, Theme};
+use nova_look::{Glyph, Icon, LookStyled, RoundButton, Theme, wheel_list};
 use nova_notifications_api::Notification;
 use nova_stage::{Screen, Stage};
 use std::collections::HashSet;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// Quick settings' panel, which opening a notification closes.
 const QUICK_SETTINGS: &str = "quick-settings";
-/// "5m" moves on.
 const CLOCK_TICK: Duration = Duration::from_secs(60);
-/// How many edges a closed stack shows under its top one at most.
 const PEEKS: usize = 2;
 
 pub struct List {
     screen: Screen,
     model: Entity<Model>,
-    /// The apps whose stacks are open.
     expanded: HashSet<String>,
-    /// The notification whose ⋯ menu is open, and the one under the pointer.
     menu_for: Option<u32>,
     hovered: Option<u32>,
 }
@@ -126,7 +109,6 @@ impl List {
         }
         let theme = Theme::of(cx);
         let peeks = rest.len().min(PEEKS);
-        // Each edge shows under the one above it: the nearest a deeper tone.
         let edges = (1..=peeks).rev().map(|level| {
             let tone = if level == 1 { theme.selected() } else { theme.surface_raised() };
             div()
@@ -199,11 +181,6 @@ impl List {
         div().flex().flex_col().gap(LIST_GAP).child(heading).children(rows)
     }
 
-    /// A notification's row: its icon, "App · summary", how long ago, and
-    /// the body in two lines; a dot while it's unread. A low battery alert
-    /// is one line: the device's name, then its battery and percent. A click
-    /// opens it (or its app's stack); ⋯ on hover offers muting its app and
-    /// dismissing it.
     fn row(&self, notification: &Notification, shown: Shown, now: i64, cx: &Context<Self>) -> Div {
         let theme = Theme::of(cx);
         let id = notification.id;
@@ -271,9 +248,6 @@ impl List {
         div().child(row.children(more).children(menu))
     }
 
-    /// "App · summary" (or the summary alone), how long ago or room for ⋯,
-    /// and the body in two lines; a battery and percent instead for a low
-    /// battery alert.
     fn row_lines(notification: &Notification, shown: &Shown, pointed: bool, now: i64, cx: &App) -> Div {
         let theme = Theme::of(cx);
         let battery = notification.device.map(|device| device.battery);
@@ -291,7 +265,6 @@ impl List {
             .children(battery.map(|battery| battery_amount(notification, battery, cx)))
             .map(|end| {
                 if pointed {
-                    // ⋯ takes the time's place.
                     end.child(div().w(CLOSE_SIZE))
                 } else {
                     end.child(
@@ -322,7 +295,6 @@ impl List {
         div().flex_1().min_w_0().flex().flex_col().child(title_line).children(body)
     }
 
-    /// The ⋯ menu: mute its app, dismiss it. Drawn over the rows below.
     fn menu(&self, notification: &Notification, cx: &Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx);
         let (id, app) = (notification.id, notification.app.clone());
@@ -370,22 +342,17 @@ impl List {
     }
 }
 
-/// How a row shows its notification.
 struct Shown {
-    /// Its app's name before the summary: not in an open stack, whose
-    /// heading names the app.
     app: bool,
-    /// A closed stack's top row: a click opens that app's stack.
     stack_of: Option<String>,
 }
 
 impl Render for List {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let model = self.model.read(cx);
         let items = model.items(cx).to_vec();
         let do_not_disturb = model.do_not_disturb(cx);
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64);
-        // Gone from the list, or down to one: its stack and its menu with it.
         self.expanded.retain(|app| items.iter().filter(|item| &item.app == app).count() > 1);
         self.menu_for = self.menu_for.filter(|id| items.iter().any(|item| item.id == *id));
         let heading = self.heading(items.len(), do_not_disturb, cx);
@@ -396,25 +363,15 @@ impl Render for List {
         let found = groups(&items);
         let rows: Vec<AnyElement> = found.iter().map(|group| self.group(group, now, cx)).collect();
         list.child(
-            div()
-                .id("notifications")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .flex()
-                .flex_col()
-                .gap(LIST_GAP)
-                .children(rows),
+            wheel_list("notifications", window, cx).flex_1().min_h_0().flex().flex_col().gap(LIST_GAP).children(rows),
         )
     }
 }
 
-/// A card's title: small, in capitals, soft.
 fn card_title(text: &str, cx: &App) -> Div {
     div().text_size(FONT_SIZE_SMALL).text_color(Theme::of(cx).fg_soft()).child(text.to_uppercase())
 }
 
-/// A quiet text button, like Clear all.
 fn text_button(id: impl Into<ElementId>, label: &'static str, cx: &App) -> gpui::Stateful<Div> {
     let hover = Theme::of(cx).hover();
     div()
@@ -431,7 +388,6 @@ fn text_button(id: impl Into<ElementId>, label: &'static str, cx: &App) -> gpui:
         .child(label)
 }
 
-/// A number for an app's name, for the ids of its stack's buttons.
 fn hash(app: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();

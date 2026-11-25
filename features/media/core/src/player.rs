@@ -1,10 +1,3 @@
-//! What novad reads from one MPRIS player: the properties of its
-//! `org.mpris.MediaPlayer2` and `org.mpris.MediaPlayer2.Player` interfaces,
-//! read whole with `GetAll`, turned into plain values. Players differ in
-//! the types they send (an artist as a string or a list, a length as any
-//! integer), so each value is read loosely, and a missing or odd one is its
-//! default. Text is cut to [`MAX_TEXT_CHARS`].
-
 use nova_media_api::PlaybackStatus;
 use std::collections::HashMap;
 use zbus::Connection;
@@ -14,28 +7,21 @@ pub const PATH: &str = "/org/mpris/MediaPlayer2";
 pub const ROOT_INTERFACE: &str = "org.mpris.MediaPlayer2";
 pub const PLAYER_INTERFACE: &str = "org.mpris.MediaPlayer2.Player";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
-/// Titles, artists, albums and names are cut to this many characters:
-/// more than the panel's two lines can show.
 pub const MAX_TEXT_CHARS: usize = 300;
-/// The longest art URL kept, in bytes; longer ones (a data URL) mean no cover.
 const MAX_ART_URL_BYTES: usize = 16 * 1024;
 
 type Properties = HashMap<String, OwnedVariant>;
 
-/// One read of a player.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Read {
     pub identity: String,
-    /// Its desktop entry's id without `.desktop`, as it says.
     pub desktop_entry: Option<String>,
     pub can_raise: bool,
     pub status: PlaybackStatus,
     pub title: String,
     pub artist: String,
     pub album: String,
-    /// `mpris:artUrl`, unchecked.
     pub art_url: Option<String>,
-    /// `mpris:trackid`, which `SetPosition` needs.
     pub track_id: Option<OwnedObjectPath>,
     pub length_us: i64,
     pub position_us: i64,
@@ -47,7 +33,6 @@ pub struct Read {
     pub can_seek: bool,
 }
 
-/// Reads the player on the bus name `bus`.
 pub async fn read(connection: &Connection, bus: &str) -> zbus::Result<Read> {
     let root = get_all(connection, bus, ROOT_INTERFACE).await?;
     let player = get_all(connection, bus, PLAYER_INTERFACE).await?;
@@ -59,7 +44,6 @@ async fn get_all(connection: &Connection, bus: &str, interface: &str) -> zbus::R
     reply.body().deserialize()
 }
 
-/// A read from the two interfaces' properties.
 pub fn from_properties(root: &Properties, player: &Properties) -> Read {
     let metadata: Properties = player
         .get("Metadata")
@@ -103,12 +87,10 @@ pub fn from_properties(root: &Properties, player: &Properties) -> Read {
     }
 }
 
-/// A string value, cut to [`MAX_TEXT_CHARS`].
 fn text(value: &OwnedVariant) -> Option<String> {
     <&str>::try_from(value).ok().map(cut)
 }
 
-/// A list of strings, or one string, each cut.
 fn texts(value: &OwnedVariant) -> Vec<String> {
     if let Some(one) = text(value) {
         return vec![one];
@@ -116,7 +98,6 @@ fn texts(value: &OwnedVariant) -> Vec<String> {
     let Ok(Variant::Array(array)) = Variant::try_from(value) else { return vec![] };
     let items: Vec<String> =
         array.iter().filter_map(|item| <&str>::try_from(item).ok()).filter(|item| !item.is_empty()).map(cut).collect();
-    // Joined, the list is cut again.
     vec![cut(&items.join(", "))]
 }
 
@@ -124,7 +105,6 @@ fn cut(text: &str) -> String {
     text.chars().take(MAX_TEXT_CHARS).collect()
 }
 
-/// Any integer type players send for microseconds.
 fn integer(value: &OwnedVariant) -> Option<i64> {
     i64::try_from(value)
         .ok()
@@ -133,11 +113,8 @@ fn integer(value: &OwnedVariant) -> Option<i64> {
         .or_else(|| u32::try_from(value).ok().map(i64::from))
 }
 
-/// The track id MPRIS reserves for "no track", which `SetPosition` ignores.
 const NO_TRACK: &str = "/org/mpris/MediaPlayer2/TrackList/NoTrack";
 
-/// `mpris:trackid`: an object path, though some players send a string.
-/// None for no track.
 fn track_id(value: &OwnedVariant) -> Option<OwnedObjectPath> {
     let path = match <&zbus::wire::ObjectPath>::try_from(value) {
         Ok(path) => path.clone().into(),

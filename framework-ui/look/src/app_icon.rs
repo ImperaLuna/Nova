@@ -1,39 +1,29 @@
-//! An app's icon: the image file novad found for it, else the app's first
-//! letter on a swatch picked by its id, so a missing icon still looks
-//! deliberate. The launcher's rows and tiles and a notification's card
-//! draw it.
-//!
-//! novad looks icon names up in the icon theme and sends an absolute path
-//! (`nova_app_info::App::icon`). GPUI reads and decodes the file off the
-//! main thread and keeps the picture, so an icon costs its file once; the
-//! letter shows until then, and stays when the file can't be read.
-
 use crate::Theme;
 use crate::tokens::{APP_ICON_SIZE, LETTER_SCALE, LETTER_TILE_RADIUS, WEIGHT_TITLE};
 use gpui::{
-    AnyElement, App, Hsla, IntoElement, ObjectFit, ParentElement, Pixels, RenderOnce, SharedString, Styled,
-    StyledImage, Window, div, img,
+    AnyElement, App, Asset, AssetLogger, DevicePixels, Hsla, ImageCacheError, ImageSource, IntoElement, ObjectFit,
+    ParentElement, Pixels, RenderImage, RenderOnce, SharedString, Styled, StyledImage, SvgRenderer, SvgSize, Window,
+    div, img, size,
 };
-use std::path::PathBuf;
+use image::imageops::FilterType;
+use image::{DynamicImage, Frame};
+use std::future::Future;
+use std::sync::Arc;
 
-/// An app's icon, square (see the module).
 #[derive(Debug, Clone, IntoElement)]
 pub struct AppIcon {
     id: SharedString,
     name: SharedString,
     icon: Option<SharedString>,
     size: Pixels,
+    resting: Option<Pixels>,
 }
 
 impl AppIcon {
-    /// The icon of the app `id` (its desktop file id, or whatever names it
-    /// for good) called `name`.
     pub fn new(id: impl Into<SharedString>, name: impl Into<SharedString>) -> Self {
-        Self { id: id.into(), name: name.into(), icon: None, size: APP_ICON_SIZE }
+        Self { id: id.into(), name: name.into(), icon: None, size: APP_ICON_SIZE, resting: None }
     }
 
-    /// The absolute path of its image, as novad sends it. Anything else,
-    /// like an icon's name, draws the letter.
     pub fn icon(mut self, icon: Option<impl Into<SharedString>>) -> Self {
         self.icon = icon.map(Into::into).filter(|icon| icon.starts_with('/'));
         self
@@ -41,6 +31,11 @@ impl AppIcon {
 
     pub fn size(mut self, size: Pixels) -> Self {
         self.size = size;
+        self
+    }
+
+    pub fn resting_size(mut self, size: Pixels) -> Self {
+        self.resting = Some(size);
         self
     }
 }
@@ -58,7 +53,12 @@ impl RenderOnce for AppIcon {
             return tile.build();
         };
         let (loading, missing) = (tile.clone(), tile);
-        img(PathBuf::from(icon.as_ref()))
+        let logical = self.resting.unwrap_or(self.size);
+        let source = ImageSource::Custom(Arc::new(move |window: &mut Window, cx: &mut App| {
+            let side = device_side(logical, window.scale_factor());
+            window.use_asset::<AssetLogger<SizedIcon>>(&(icon.clone(), side), cx)
+        }));
+        img(source)
             .size(self.size)
             .flex_none()
             .object_fit(ObjectFit::Contain)
@@ -68,7 +68,6 @@ impl RenderOnce for AppIcon {
     }
 }
 
-/// An app's letter on its swatch.
 #[derive(Clone)]
 struct LetterTile {
     letter: SharedString,
@@ -79,7 +78,6 @@ struct LetterTile {
 
 impl LetterTile {
     fn build(self) -> AnyElement {
-        // As round as a row's icon is, at any size.
         let radius = LETTER_TILE_RADIUS * (self.size / APP_ICON_SIZE);
         div()
             .size(self.size)
@@ -97,18 +95,52 @@ impl LetterTile {
     }
 }
 
-/// The letter an app without an icon shows: its name's first letter or
-/// digit.
+enum SizedIcon {}
+
+impl Asset for SizedIcon {
+    type Source = (SharedString, u32);
+    type Output = Result<Arc<RenderImage>, ImageCacheError>;
+
+    fn load((path, side): Self::Source, cx: &mut App) -> impl Future<Output = Self::Output> + Send + 'static {
+        let svg = cx.svg_renderer();
+        async move { decode(&std::fs::read(path.as_ref())?, side, &svg) }
+    }
+}
+
+fn device_side(logical: Pixels, scale: f32) -> u32 {
+    (f32::from(logical) * scale).ceil().max(1.0) as u32
+}
+
+fn decode(bytes: &[u8], side: u32, svg: &SvgRenderer) -> Result<Arc<RenderImage>, ImageCacheError> {
+    let Ok(format) = image::guess_format(bytes) else {
+        let side = DevicePixels(i32::try_from(side).unwrap_or(i32::MAX));
+        return Ok(svg.render_parsed(&svg.parse_svg(bytes)?, SvgSize::Size(size(side, side)))?);
+    };
+    let picture = image::load_from_memory_with_format(bytes, format)?;
+    Ok(Arc::new(RenderImage::new(vec![Frame::new(to_bgra(fit(picture, side)))])))
+}
+
+fn fit(picture: DynamicImage, side: u32) -> DynamicImage {
+    if picture.width() <= side && picture.height() <= side {
+        return picture;
+    }
+    picture.resize(side, side, FilterType::Triangle)
+}
+
+fn to_bgra(picture: DynamicImage) -> image::RgbaImage {
+    let mut pixels = picture.into_rgba8();
+    for pixel in pixels.pixels_mut() {
+        pixel.0.swap(0, 2);
+    }
+    pixels
+}
+
 fn letter(name: &str) -> String {
     let first = name.chars().find(|character| character.is_alphanumeric());
     first.map_or_else(|| "?".into(), |character| character.to_uppercase().collect())
 }
 
-/// Which of `swatches` swatches an app's letter sits on: the same for the
-/// same id every time, and the one today's shell picks
-/// (`ui/launcher/launcher.js`).
 fn swatch(id: &str, swatches: usize) -> usize {
-    // JavaScript's `(hash * 31 + code) | 0` over UTF-16 code units.
     let hash = id.encode_utf16().fold(0i32, |hash, unit| hash.wrapping_mul(31).wrapping_add(i32::from(unit)));
     hash.unsigned_abs() as usize % swatches.max(1)
 }
@@ -116,6 +148,7 @@ fn swatch(id: &str, swatches: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::px;
 
     #[test]
     fn a_missing_icon_shows_the_name_s_first_letter_or_digit() {
@@ -126,11 +159,41 @@ mod tests {
     }
 
     #[test]
-    fn an_app_keeps_its_swatch_and_it_is_today_s() {
-        // launcher.js: swatch("a") is 2 and swatch("firefox.desktop") is 8, counted from 1.
+    fn an_app_keeps_its_swatch() {
         assert_eq!(swatch("a", 8), 1);
         assert_eq!(swatch("firefox.desktop", 8), 7);
         assert_eq!(swatch("", 8), 0);
+    }
+
+    #[test]
+    fn a_big_icon_is_kept_at_the_size_it_is_drawn() {
+        let big = DynamicImage::new_rgba8(512, 256);
+        let fitted = fit(big, device_side(px(30.0), 1.25));
+        assert_eq!((fitted.width(), fitted.height()), (38, 19));
+        let small = fit(DynamicImage::new_rgba8(16, 16), 38);
+        assert_eq!((small.width(), small.height()), (16, 16));
+    }
+
+    #[test]
+    fn a_picture_turns_to_the_order_the_renderer_reads() {
+        let mut red = image::RgbaImage::new(1, 1);
+        red.put_pixel(0, 0, image::Rgba([255, 0, 0, 128]));
+        assert_eq!(to_bgra(DynamicImage::ImageRgba8(red)).get_pixel(0, 0).0, [0, 0, 255, 128]);
+    }
+
+    #[test]
+    fn an_svg_and_a_png_are_both_decoded_at_the_drawn_side_in_renderer_order() {
+        let svg = SvgRenderer::new(Arc::new(()));
+        let square = br#"<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="red"/></svg>"#;
+        let mut png = Vec::new();
+        DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(512, 512, image::Rgba([255, 0, 0, 255])))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        for bytes in [&square[..], &png[..]] {
+            let picture = decode(bytes, 38, &svg).unwrap();
+            assert_eq!(picture.size(0), size(DevicePixels(38), DevicePixels(38)));
+            assert_eq!(&picture.as_bytes(0).unwrap()[..4], &[0, 0, 255, 255]);
+        }
     }
 
     #[test]

@@ -1,23 +1,3 @@
-//! Screen recording (feature `recording`): a whole output, or a region of
-//! the layout, into the recording folder, with the desktop's sound and the
-//! mic when asked.
-//!
-//! `nova record` asks the UI to open its region picker (`pick_recording`);
-//! the UI counts down and sends `start_recording`. The same key stops the
-//! recording, as does the bar's recording pill (`stop_recording`).
-//!
-//! gpu-screen-recorder records when it's installed (it encodes on the GPU,
-//! or the CPU when the GPU can't, and can pause), else wf-recorder. Either
-//! writes a hidden file in the recording folder, which is moved to its name
-//! once the recorder has
-//! finished it, so a name only ever shows a whole video. The recorder is
-//! novad's child: SIGINT tells it to finish the file, and it gets that too
-//! when novad goes away, so a crash doesn't leave it recording.
-//!
-//! Its messages are `nova-recording-api`'s, and its `[recording]` settings
-//! are [`RecordingConfig`]. Saved files are named, placed and acted on as
-//! screenshots are, through the [`SavedFiles`] port the app fills.
-
 mod mp4;
 
 use nova_base::lock;
@@ -34,60 +14,34 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-/// The feature's id in `features/`.
 pub const FEATURE_ID: &str = "recording";
-/// This feature's name in the log, which [`SavedFiles::act_on`] logs under.
 pub const LOG_SOURCE: &str = "recording";
 
-/// Records on the GPU (NVENC, VA-API) and can pause.
 const GPU_SCREEN_RECORDER: &str = "gpu-screen-recorder";
-/// Records through wlr-screencopy, without pausing.
 const WF_RECORDER: &str = "wf-recorder";
-/// How long a recorder that fails at once (a missing capture permission, a
-/// bad output) has to say so before the start counts as a success.
 const START_GRACE: Duration = Duration::from_millis(800);
-/// How long a stopped recorder may take to finish the file before it's
-/// killed.
 const FINISH_TIMEOUT: Duration = if cfg!(test) { Duration::from_secs(1) } else { Duration::from_secs(10) };
-/// What starts the line saying why, in either recorder's errors
-/// (`gsr error: …`, `wf-recorder: error: …`); the earlier lines are warnings
-/// and progress.
 const ERROR_MARK: &str = "error: ";
-/// Frames per second.
 const FPS: &str = "60";
-/// gpu-screen-recorder encodes on the CPU when the GPU can't (a driver
-/// whose NVENC API is older than its FFmpeg wants, or no hardware encoder),
-/// instead of exiting before it records anything.
 const GSR_CPU_FALLBACK: [&str; 2] = ["-fallback-cpu-encoding", "yes"];
-/// Saved recordings the card's buttons can still act on.
 const KEEP_SAVED: usize = 32;
-/// A saved recording's name, from the local time it started.
 const NAME_PREFIX: &str = "Recording ";
-/// The container both recorders pick from the file's extension.
 const EXTENSION: &str = "mp4";
-/// gpu-screen-recorder's names for the default output's sound and the
-/// default input; `|` mixes sources into one track.
 const GSR_DESKTOP: &str = "default_output";
 const GSR_MIC: &str = "default_input";
-/// PulseAudio's (and pipewire-pulse's) name for the default output's
-/// monitor, for wf-recorder; without a name it records the default input.
 const WF_DESKTOP: &str = "@DEFAULT_MONITOR@";
-/// The wf-recorder audio backend those names and that default are
-/// PulseAudio's for: its PipeWire one records the desktop by default.
+// wf-recorder's PipeWire backend records the desktop by default; the default monitor's name is the pulse backend's:
+// https://github.com/ammen99/wf-recorder
 const WF_AUDIO_BACKEND: &str = "pulse";
 
-/// `[recording]` in config.toml.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct RecordingConfig {
-    /// Where recordings are saved: an absolute path, or one starting with
-    /// `~/`. By default `Recordings` in the user's videos folder.
     #[serde(default)]
     pub folder: Option<String>,
 }
 
 impl RecordingConfig {
-    /// The folder recordings go in (see [`nova_settings::folder`]).
     pub fn folder(&self) -> Result<PathBuf, String> {
         nova_settings::folder("recording", self.folder.as_deref(), || {
             nova_paths::user_dir("VIDEOS", "Videos").join(DEFAULT_FOLDER)
@@ -95,20 +49,11 @@ impl RecordingConfig {
     }
 }
 
-/// The recording folder's name inside the videos folder.
 const DEFAULT_FOLDER: &str = "Recordings";
 
-/// How saved files are named, placed and acted on: the screenshot
-/// feature's helpers, a port the app fills so this feature doesn't use the
-/// screenshot feature's code.
 pub trait SavedFiles: Send + Sync + 'static {
-    /// The local time, for a saved file's name.
     fn time_stamp(&self) -> String;
-    /// Moves the finished `temporary` file to `<stem>.<extension>`, or
-    /// `<stem> (2).<extension>` and so on: never over an existing file.
     fn place(&self, temporary: &Path, stem: &Path, extension: &str) -> Result<PathBuf, String>;
-    /// Opens a saved file, its folder, or deletes it, logging under
-    /// [`LOG_SOURCE`].
     fn act_on(&self, path: &Path, action: ScreenshotAction, path_var: &str, logger: &Arc<Logger>)
     -> Result<(), String>;
 }
@@ -120,7 +65,6 @@ enum Recorder {
 }
 
 pub struct Recordings {
-    /// Where the recorders are looked for.
     path_var: String,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
@@ -130,13 +74,10 @@ pub struct Recordings {
 
 #[derive(Default)]
 struct State {
-    /// The feature is on: starts are refused while it isn't.
     allowed: bool,
     active: Option<Active>,
-    /// The latest saved recordings, oldest first.
     saved: VecDeque<SavedRecording>,
     next_id: u64,
-    /// Tells a finished recorder apart from a newer one.
     runs: u64,
 }
 
@@ -147,16 +88,12 @@ struct Active {
     output: String,
     region: Option<LayoutRect>,
     audio: RecordAudio,
-    /// The file the recorder writes, and the name it gets once finished.
     file: PathBuf,
     stem: PathBuf,
     started: Instant,
-    /// Since when it's paused, and for how long it was before.
     paused_since: Option<Instant>,
     paused_for: Duration,
-    /// Asked to finish.
     stopping: bool,
-    /// Resolved by its keeper once the recorder exits.
     exited: Arc<Slot<()>>,
 }
 
@@ -177,9 +114,6 @@ impl Active {
         }
     }
 
-    /// Sends the recorder `signal`. Only while it's `active`: its keeper
-    /// clears that under the same lock before reaping it, so the pid is
-    /// still the recorder's.
     fn signal(&self, signal: libc::c_int) {
         // SAFETY: kill takes no pointers.
         unsafe { libc::kill(self.pid, signal) };
@@ -191,8 +125,6 @@ impl Recordings {
         Self { path_var, hub, logger, files, state: Arc::default() }
     }
 
-    /// `nova record`: stops the recording, or asks the UI to open the
-    /// picker for one.
     pub fn record(&self) -> Result<(), String> {
         if lock(&self.state).active.is_some() {
             return self.stop();
@@ -203,8 +135,6 @@ impl Recordings {
         }
     }
 
-    /// Starts recording `output`, or `region` of the layout, into `folder`.
-    /// Answers once the recorder has had [`START_GRACE`] to fail.
     pub fn start(
         &self,
         output: &str,
@@ -227,8 +157,6 @@ impl Recordings {
         let stamp = self.files.time_stamp();
         let stem = folder.join(format!("{NAME_PREFIX}{stamp}"));
         let run = state.runs + 1;
-        // The run keeps two recordings started within a second apart while
-        // the first is still being placed.
         let file = folder.join(format!(".{NAME_PREFIX}{stamp}.{}-{run}.{EXTENSION}", std::process::id()));
         let args = match recorder {
             Recorder::Gpu => gsr_args(output, region, audio, &file),
@@ -246,11 +174,7 @@ impl Recordings {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        // Finishes the file and exits when novad goes away. The thread that
-        // spawns it is its keeper, which lives as long as it does.
         child::die_with_novad(&mut command, libc::SIGINT);
-        // Its own process group: a Ctrl+C on `nova daemon` in a terminal
-        // reaches novad, whose exit stops it the same way.
         command.process_group(0);
         let (started, start_result) = mpsc::channel();
         let exited = Arc::new(Slot::default());
@@ -263,8 +187,6 @@ impl Recordings {
             run,
         };
         std::thread::spawn(move || keeper.keep(command, recorder, started));
-        // The keeper's answer; `state` stays locked meanwhile, so the
-        // recorder can't be finished before it's active.
         let pid = start_result.recv().unwrap_or_else(|_| Err("the recorder's keeper went away".into())).inspect_err(
             |_| {
                 let _ = std::fs::remove_file(&file);
@@ -295,15 +217,10 @@ impl Recordings {
         Ok(())
     }
 
-    /// Asks the recorder to finish the file; it's saved once it has. One
-    /// that doesn't within [`FINISH_TIMEOUT`] is killed.
     pub fn stop(&self) -> Result<(), String> {
         self.stop_in(&mut lock(&self.state))
     }
 
-    /// Whether the feature is on, as settings say. Turning it off stops a
-    /// recording: the UI drops the pill that shows and stops it. Under the
-    /// same lock as `start`, so a start already asked for can't begin after.
     pub fn allow(&self, allowed: bool) {
         let mut state = lock(&self.state);
         state.allowed = allowed;
@@ -318,7 +235,6 @@ impl Recordings {
             return Ok(());
         }
         active.stopping = true;
-        // A paused gpu-screen-recorder finishes all the same.
         active.signal(libc::SIGINT);
         let run = active.run;
         let exited = Arc::clone(&active.exited);
@@ -334,7 +250,6 @@ impl Recordings {
         Ok(())
     }
 
-    /// Pauses or resumes the recording, when the recorder can.
     pub fn pause(&self, paused: bool) -> Result<(), String> {
         let mut state = lock(&self.state);
         let active = state.active.as_mut().ok_or("nothing is being recorded")?;
@@ -344,7 +259,6 @@ impl Recordings {
         if active.paused_since.is_some() == paused || active.stopping {
             return Ok(());
         }
-        // gpu-screen-recorder pauses and resumes on SIGUSR2.
         active.signal(libc::SIGUSR2);
         match active.paused_since.take() {
             Some(since) => active.paused_for += since.elapsed(),
@@ -354,18 +268,11 @@ impl Recordings {
         Ok(())
     }
 
-    /// Sends `client` what's being recorded.
     pub fn send_state(&self, client: ClientId) {
-        // Sent under the lock, so it can't overtake a newer state published
-        // meanwhile.
         let state = lock(&self.state);
         self.hub.send_to(client, &Event::Recording(state.active.as_ref().map(Active::event)));
     }
 
-    /// Saves what earlier novads left in `folder`: one that quit, was
-    /// stopped or crashed mid-recording took the keeper with it, and its
-    /// recorder finished the file (the parent-death SIGINT) under its hidden
-    /// name. A recorder still finishing one keeps writing to it once moved.
     pub fn recover(&self, folder: &Path) {
         let Ok(entries) = std::fs::read_dir(folder) else {
             return;
@@ -386,8 +293,6 @@ impl Recordings {
             let Ok(pid) = pid.parse::<libc::pid_t>() else {
                 continue;
             };
-            // Its own, or another novad's that's still running (one on
-            // another socket can share the folder).
             if pid == own || running(pid) {
                 continue;
             }
@@ -405,12 +310,10 @@ impl Recordings {
         }
     }
 
-    /// Opens nova.log (the card's Open log, after a recording didn't start).
     pub fn open_log(&self) -> Result<(), String> {
         nova_apps::open(&nova_paths::log_file(&self.logger.dir()), &self.path_var, &self.logger)
     }
 
-    /// Opens a saved recording, its folder, or deletes it.
     pub fn act(&self, id: u64, action: ScreenshotAction) -> Result<(), String> {
         let mut state = lock(&self.state);
         let index = state
@@ -426,7 +329,6 @@ impl Recordings {
         Ok(())
     }
 
-    /// gpu-screen-recorder when it's installed, else wf-recorder.
     fn recorder(&self) -> Result<(Recorder, PathBuf), String> {
         [Recorder::Gpu, Recorder::Wf]
             .into_iter()
@@ -446,12 +348,9 @@ impl Recorder {
     }
 }
 
-/// The thread a recorder is spawned from and lives with: the kernel sends
-/// the recorder PR_SET_PDEATHSIG's signal when that thread ends, not only
-/// when novad does. It says whether the recorder started, then waits for it
-/// to exit and finishes the recording.
+// The recorder's death signal comes when the thread that spawned it ends, so it is spawned from this thread:
+// https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html
 struct Keeper {
-    /// Resolved once the recorder exits.
     exited: Arc<Slot<()>>,
     state: Arc<Mutex<State>>,
     hub: Arc<Hub>,
@@ -487,12 +386,8 @@ impl Keeper {
         }
         let pid = child.id() as libc::pid_t;
         if started.send(Ok(pid)).is_err() {
-            // Nothing will stop it: it's not active.
             let _ = child.kill();
         }
-        // Not reaped yet, so the pid stays the recorder's until it's no
-        // longer active and nothing signals it any more.
-        // Only fails for a pid that isn't a child, which this one is.
         let _ = child::wait_for_exit(pid.cast_unsigned());
         self.exited.resolve(());
         let active = {
@@ -510,7 +405,6 @@ impl Keeper {
         }
     }
 
-    /// A recording's recorder exited: saves what it wrote.
     fn finish(
         &self,
         active: Active,
@@ -524,10 +418,6 @@ impl Keeper {
             self.logger
                 .error(LOG_SOURCE, &format!("{} stopped by itself ({status}): {message}", active.recorder.name()));
         }
-        // Something was recorded: kept even when the recorder didn't finish
-        // cleanly, as players read most of a cut-off file. A header with no
-        // frame after it (a recorder stalled waiting for sound, then
-        // killed) isn't a recording.
         let written = std::fs::metadata(&active.file).is_ok_and(|meta| meta.len() > 0);
         if !written || mp4::contents(&active.file) == mp4::Contents::NoFrames {
             let _ = std::fs::remove_file(&active.file);
@@ -537,7 +427,6 @@ impl Keeper {
                 format!("{} stopped before it recorded a frame", active.recorder.name())
             };
             self.logger.warn(LOG_SOURCE, &format!("nothing was recorded: {reason}"));
-            // Turning the feature off stops a recording too: no card then.
             if lock(&self.state).allowed {
                 self.hub.publish(&Event::RecordingFailed { reason });
             }
@@ -564,8 +453,6 @@ impl Keeper {
     }
 }
 
-/// What the recording card says when the recorder quit at once: its last
-/// error line, without the recorder's own prefix. All it said is in the log.
 fn why_not_started(recorder: Recorder, status: std::process::ExitStatus, errors: &str) -> String {
     let lines: Vec<&str> = errors.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
     let line = lines.iter().rev().find(|line| line.to_ascii_lowercase().contains(ERROR_MARK)).or(lines.last());
@@ -578,13 +465,11 @@ fn why_not_started(recorder: Recorder, status: std::process::ExitStatus, errors:
     }
 }
 
-/// Whether a process `pid` exists, someone else's included.
 fn running(pid: libc::pid_t) -> bool {
     // SAFETY: signal 0 only checks that the process exists.
     unsafe { libc::kill(pid, 0) == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) }
 }
 
-/// What's recorded, for the log.
 fn what(output: &str, region: Option<LayoutRect>) -> String {
     match region {
         Some(r) => format!("{}x{} at {},{} on {output}", r.width, r.height, r.x, r.y),
@@ -613,7 +498,6 @@ fn gsr_args(output: &str, region: Option<LayoutRect>, audio: RecordAudio, file: 
 }
 
 fn wf_args(output: &str, region: Option<LayoutRect>, audio: RecordAudio, file: &Path) -> Vec<String> {
-    // -y: the file is new, but wf-recorder would ask on a terminal otherwise.
     let mut args: Vec<String> = vec!["-y".into()];
     match region {
         Some(r) => args.extend(["-g".into(), format!("{},{} {}x{}", r.x, r.y, r.width, r.height)]),

@@ -1,14 +1,3 @@
-//! UPower's devices on the system bus: the batteries the kernel's drivers
-//! (Logitech's HID++, Sony's and others' controllers) and BlueZ report.
-//!
-//! Event-driven: `DeviceAdded` and `DeviceRemoved` say when one comes or
-//! goes, `PropertiesChanged` under UPower's devices path when one changes,
-//! and `NameOwnerChanged` when upowerd starts or stops (the list is read
-//! again, or emptied). Each device is read whole with `GetAll`. Kept are
-//! the peripherals (mice, keyboards, headsets, controllers and the like),
-//! not the machine's own batteries (`PowerSupply`), line power, UPS or the
-//! `DisplayDevice` that sums them up.
-
 use super::{Found, LOG_SOURCE, Report, Running, Source, name, sysfs};
 use futures_core::Stream;
 use nova_carrier::log::LogLevel;
@@ -27,19 +16,14 @@ use zbus::{Connection, MatchRule, MessageStream};
 pub const UPOWER: &str = "org.freedesktop.UPower";
 pub const UPOWER_PATH: &str = "/org/freedesktop/UPower";
 pub const DEVICE_INTERFACE: &str = "org.freedesktop.UPower.Device";
-/// Where UPower's device objects are.
 pub const DEVICES_PATH: &str = "/org/freedesktop/UPower/devices";
-/// The object that sums up the machine's own batteries, never a device.
 const DISPLAY_DEVICE: &str = "DisplayDevice";
 const DBUS_NAME: &str = "org.freedesktop.DBus";
 const DBUS_PATH: &str = "/org/freedesktop/DBus";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
-/// How long novad waits for the bus or upowerd to answer a call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
-/// The id a UPower device's comes after, before its object's name.
 const ID_PREFIX: &str = "upower/";
 
-/// `State`'s value while charging (`UP_DEVICE_STATE_CHARGING`).
 const STATE_CHARGING: u32 = 1;
 
 pub struct UPower {
@@ -62,7 +46,6 @@ impl Source for UPower {
         std::thread::spawn(move || {
             if let Err(e) = zbus::block_on(follow(&self, &report, &following)) {
                 report.logger().info(LOG_SOURCE, &format!("no batteries from UPower: {e}"));
-                // What it last said can't be trusted any more.
                 report.found(Vec::new());
             }
         });
@@ -70,16 +53,12 @@ impl Source for UPower {
     }
 }
 
-/// The streams of UPower's signals: its owner changing, devices coming
-/// and going, and devices' properties changing.
 async fn subscribe(connection: &Connection) -> zbus::Result<(MessageStream, MessageStream, MessageStream)> {
     let signal = |interface: &'static str, member: &'static str| {
         MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(interface).member(member)
     };
     let owner_rule = signal(DBUS_NAME, "NameOwnerChanged").sender(DBUS_NAME).arg(0, UPOWER).build()?;
     let owners = MessageStream::for_match_rule(owner_rule, connection, None).await?;
-    // DeviceAdded and DeviceRemoved in one stream, so a device unplugged
-    // and plugged back in while a call waits is handled in that order.
     let devices_rule =
         MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(UPOWER).path(UPOWER_PATH).build()?;
     let comings = MessageStream::for_match_rule(devices_rule, connection, None).await?;
@@ -88,17 +67,11 @@ async fn subscribe(connection: &Connection) -> zbus::Result<(MessageStream, Mess
     Ok((owners, comings, changes))
 }
 
-/// Follows UPower's devices on its bus until `stop` or the bus goes.
 async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<()> {
     let connection = upower.bus.builder().method_timeout(CALL_TIMEOUT).build().await?;
-    // Followed before the devices are listed, so none that comes or changes
-    // in between is missed.
     let (mut owners, mut comings, mut changes) = subscribe(&connection).await?;
 
-    // upowerd starts on demand (D-Bus activation), and Nova may be its
-    // only client: ask for it, or it may never run.
     start(&connection, report).await;
-    // upowerd's unique name while it runs: only its signals count.
     let mut owner = name_owner(&connection).await;
     let mut devices = match &owner {
         Some(_) => list(&connection, &upower.sys_root, report, stop).await,
@@ -183,8 +156,6 @@ enum Signal {
     Changed,
 }
 
-/// Asks the bus to start upowerd if it isn't running. Where it can't (no
-/// UPower installed), Nova follows it in case it's started later.
 async fn start(connection: &Connection, report: &Report) {
     if let Err(e) =
         connection.call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "StartServiceByName", &(UPOWER, 0u32)).await
@@ -193,16 +164,12 @@ async fn start(connection: &Connection, report: &Report) {
     }
 }
 
-/// upowerd's unique name, `None` while it doesn't run.
 async fn name_owner(connection: &Connection) -> Option<String> {
     let reply =
         connection.call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "GetNameOwner", &(UPOWER,)).await.ok()?;
     reply.body().deserialize().ok()
 }
 
-/// Every device UPower knows, each read (`None` for those that aren't
-/// peripherals, so changes to them are ignored). Stops asking once `stop`
-/// is used.
 async fn list(
     connection: &Connection,
     sys_root: &Path,
@@ -231,8 +198,6 @@ async fn list(
     devices
 }
 
-/// The device at `path`, if it's a peripheral; `None` too when it can't be
-/// read (it may have just gone).
 async fn read(connection: &Connection, path: &OwnedObjectPath, sys_root: &Path, report: &Report) -> Option<Found> {
     let reply = connection
         .call_method(Some(UPOWER), path.as_str(), Some(PROPERTIES), "GetAll", &(DEVICE_INTERFACE,))
@@ -247,22 +212,16 @@ async fn read(connection: &Connection, path: &OwnedObjectPath, sys_root: &Path, 
     }
 }
 
-/// The properties of `org.freedesktop.UPower.Device` that novad reads.
-/// Missing or odd ones are their defaults.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Properties {
     pub native_path: String,
     pub vendor: String,
     pub model: String,
     pub serial: String,
-    /// `UpDeviceKind`.
     pub kind: u32,
-    /// One of the machine's own batteries.
     pub power_supply: bool,
     pub percentage: f64,
-    /// `UpDeviceLevel`, for devices that only report a coarse level.
     pub battery_level: u32,
-    /// `UpDeviceState`.
     pub state: u32,
     pub is_present: bool,
 }
@@ -291,13 +250,8 @@ impl Properties {
     }
 }
 
-/// The device UPower's object `path` with `properties` is, if it's a
-/// peripheral that's there.
 pub fn found(path: &str, properties: &Properties, sys_root: &Path) -> Option<Found> {
     let object = path.rsplit('/').next().filter(|object| !object.is_empty() && *object != DISPLAY_DEVICE)?;
-    // Not the machine's own, and connected now: BlueZ and the kernel drop
-    // a device's battery once it disconnects, and `IsPresent` says the
-    // rest. (`Online` is line power's, false for every battery.)
     if properties.power_supply || !properties.is_present {
         return None;
     }
@@ -315,10 +269,6 @@ pub fn found(path: &str, properties: &Properties, sys_root: &Path) -> Option<Fou
     Some(Found { device, usb_ids: location.usb_ids, serial: name(&properties.serial) })
 }
 
-/// The peripheral a `UpDeviceKind` is, `None` for what isn't one (the
-/// machine's batteries, line power, UPS, monitors, phones, computers).
-/// A battery of a kind UPower can't tell that isn't the machine's own
-/// (`PowerSupply` false) belongs to some peripheral.
 fn kind(kind: u32) -> Option<PeripheralKind> {
     Some(match kind {
         0 | 2 => PeripheralKind::Other,
@@ -338,8 +288,6 @@ fn kind(kind: u32) -> Option<PeripheralKind> {
     })
 }
 
-/// The charge: a coarse level for devices that only report one
-/// (`BatteryLevel` other than unknown or none), else the percentage.
 fn battery(properties: &Properties) -> Option<Battery> {
     let level = match properties.battery_level {
         3 => Some(BatteryLevel::Low),
@@ -352,7 +300,6 @@ fn battery(properties: &Properties) -> Option<Battery> {
     if let Some(level) = level {
         return Some(Battery::Level(level));
     }
-    // Unknown level and no charge yet: the device hasn't said.
     let unknown = properties.battery_level == 0 && properties.percentage <= 0.0;
     (!unknown && properties.percentage.is_finite())
         .then(|| Battery::Percent(properties.percentage.clamp(0.0, 100.0).round() as u8))

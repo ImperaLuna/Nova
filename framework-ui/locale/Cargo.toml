@@ -1,0 +1,26 @@
+# nova-locale
+#
+# Which locale the user set for one kind of text (times, sorting), read
+# from the POSIX locale variables the way glibc reads them, as an ICU4X
+# locale the ui crates format and sort with.
+#
+# Allowed outside crates:
+# - icu_locale_core
+#
+# Allowed workspace crates: none
+
+[package]
+name = "nova-locale"
+description = "The user's locale for one kind of text, from the POSIX locale variables, for the GPUI program"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+workspace = "../../app-ui"
+
+[dependencies]
+icu_locale_core.workspace = true
+
+[lints]
+workspace = true

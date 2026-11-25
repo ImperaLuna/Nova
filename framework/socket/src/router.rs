@@ -1,10 +1,3 @@
-//! Routing requests by type. Each message type the app serves is one route:
-//! a `cmd`-tagged enum, whose names serde gives ([`nova_carrier::names`]),
-//! with what answers it and what it does once answered. A name only one
-//! route may claim, so no message has two owners, and a request for a name
-//! no route claims gets serde's own "unknown variant" error, listing every
-//! name served.
-
 use nova_carrier::{Outcome, RawRequest, Response, encode};
 use nova_hub::{ClientId, ClientQueue, Outgoing};
 use nova_log::Logger;
@@ -15,10 +8,8 @@ use std::sync::{Arc, mpsc};
 
 const LOG_SOURCE: &str = "server";
 
-/// A request's answer, worked out off the connection's thread.
 type SlowWork = Box<dyn FnOnce() -> Outcome + Send>;
 
-/// A request's answer, now or from work on another thread.
 pub enum Answer {
     Now(Outcome),
     Later(SlowWork),
@@ -30,12 +21,10 @@ impl Answer {
     }
 }
 
-/// An answer that's `null`, or its error.
 pub fn done(result: Result<(), String>) -> Outcome {
     value(result)
 }
 
-/// An answer with `result`'s value, or its error.
 pub fn value(result: Result<impl Serialize, String>) -> Outcome {
     match result.and_then(|value| serde_json::to_value(value).map_err(|e| e.to_string())) {
         Ok(value) => Outcome::Result(value),
@@ -43,10 +32,8 @@ pub fn value(result: Result<impl Serialize, String>) -> Outcome {
     }
 }
 
-/// The client a request came from.
 pub struct Caller {
     id: ClientId,
-    // The connecting process, from the kernel (SO_PEERCRED).
     peer_pid: Option<u32>,
     queue: ClientQueue,
     logger: Arc<Logger>,
@@ -57,17 +44,14 @@ impl Caller {
         Self { id, peer_pid, queue, logger }
     }
 
-    /// Its id in the hub.
     pub fn id(&self) -> ClientId {
         self.id
     }
 
-    /// The pid of the process at the other end, when the kernel says.
     pub fn peer_pid(&self) -> Option<u32> {
         self.peer_pid
     }
 
-    /// Queues `message` for it.
     pub fn send(&self, message: impl Serialize) {
         match encode(message) {
             Ok(line) => {
@@ -77,7 +61,6 @@ impl Caller {
         }
     }
 
-    /// Waits until everything queued so far is written.
     pub fn flush(&self) {
         let (done, flushed) = mpsc::sync_channel(1);
         if self.queue.push(Outgoing::Flushed(done)) {
@@ -85,7 +68,6 @@ impl Caller {
         }
     }
 
-    /// Answers request `id` (none: nobody waits for it) with `answer`.
     fn respond(&self, id: Option<u64>, answer: Answer) {
         match answer {
             Answer::Now(outcome) => {
@@ -93,14 +75,10 @@ impl Caller {
                     self.send(Response { id, outcome });
                 }
             }
-            // Asking logind can take seconds; answering on its own thread
-            // keeps this connection reading, so the UI's lock reports and
-            // other requests aren't stuck behind it.
             Answer::Later(work) => self.answer_later(id, work),
         }
     }
 
-    /// Runs `work` on its own thread and sends its answer when it's done.
     fn answer_later(&self, id: Option<u64>, work: SlowWork) {
         let queue = self.queue.clone();
         let logger = Arc::clone(&self.logger);
@@ -117,16 +95,11 @@ impl Caller {
     }
 }
 
-/// One route: reads a request as its type, answers it and acts on it.
 type Route<S> = Box<dyn Fn(&S, &Caller, RawRequest) -> Result<(), String> + Send + Sync>;
 
-/// The routes of the app `S`, built once at its start.
 pub struct Router<S> {
     routes: Vec<Route<S>>,
-    /// Each name served, to the index of its route.
     by_name: HashMap<&'static str, usize>,
-    /// Every name served, in the order the routes were added: the list an
-    /// unknown name's error gives.
     names: &'static [&'static str],
 }
 
@@ -141,13 +114,6 @@ impl<S: 'static> Router<S> {
         Self::default()
     }
 
-    /// Adds the route for the commands of type `C`: `answer` answers each
-    /// at once or with work for another thread, then `then` acts on it once
-    /// the answer is queued (subscribing, quitting). Some commands act as
-    /// they answer, so both run for requests without an `id` too.
-    ///
-    /// Panics when a name of `C` already has a route: a message has one
-    /// owner, and the app's router is built in its tests.
     #[expect(clippy::panic, reason = "two owners of one command is a build mistake the app's router test catches")]
     pub fn route<C: DeserializeOwned + 'static>(
         mut self,
@@ -163,7 +129,6 @@ impl<S: 'static> Router<S> {
         }
         self.names = match self.routes.is_empty() {
             true => names,
-            // Once per route, at start: the joined list lives as long as novad.
             false => Box::leak([self.names, names].concat().into_boxed_slice()),
         };
         self.routes.push(Box::new(move |service, caller, raw| {
@@ -175,24 +140,10 @@ impl<S: 'static> Router<S> {
         self
     }
 
-    /// Lists the names, in [`Router::names`] and an unknown name's error, in
-    /// the order `position` gives them (a stable sort), whatever order the
-    /// routes were added in. Call it once every route is added.
-    pub fn listed_by(mut self, position: impl Fn(&str) -> usize) -> Self {
-        let mut names = self.names.to_vec();
-        names.sort_by_key(|name| position(name));
-        // Once, at start: the list lives as long as the app.
-        self.names = Box::leak(names.into_boxed_slice());
-        self
-    }
-
-    /// Every command name a route takes.
     pub fn names(&self) -> &'static [&'static str] {
         self.names
     }
 
-    /// Hands `raw` to the route its `cmd` names. An error says why it
-    /// couldn't be read; nothing was answered then.
     pub(crate) fn handle(&self, service: &S, caller: &Caller, raw: RawRequest) -> Result<(), String> {
         let Some(&index) = self.by_name.get(raw.cmd.as_str()) else {
             return Err(<serde_json::Error as serde::de::Error>::unknown_variant(&raw.cmd, self.names).to_string());
@@ -237,20 +188,11 @@ mod tests {
     }
 
     #[test]
-    fn names_can_be_listed_in_another_order() {
-        let order = ["bye", "wave"];
-        let listed = router().listed_by(|name| order.iter().position(|each| *each == name).unwrap_or(usize::MAX));
-        assert_eq!(listed.names(), ["bye", "wave", "hello"]);
-    }
-
-    #[test]
     #[should_panic(expected = "two message types both take the command \"hello\"")]
     fn a_name_has_one_route() {
         let _ = router().route::<Clash>(|_, _, _| Answer::Now(done(Ok(()))), |_, _, _| {});
     }
 
-    /// The text serde gives for one enum with every name, as when the
-    /// commands were one enum.
     #[test]
     fn an_unknown_name_lists_every_name() {
         #[derive(Debug, Deserialize)]

@@ -2,8 +2,7 @@
 #
 # What the tray draws, with GPUI: the chevron and the icon strip it opens
 # in the right pill (view `tray.strip` in `right-pill.tray`), and an app's
-# menu under its icon (panel `tray-menu`). Ported from ui/tray and
-# ui/bar/RightPill.qml (IMP-439).
+# menu under its icon (panel `tray-menu`).
 #
 # Allowed outside crates:
 # - gpui

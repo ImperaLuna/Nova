@@ -1,20 +1,3 @@
-//! One screen's region picker: a screenshot's frozen frame, or the live
-//! screen when picking what to record, under a dim veil, and the toolbar
-//! at the top. In the Region mode a drag outlines a region; letting go
-//! takes a screenshot of it, or for a recording leaves it there with a
-//! Record button (or Enter) under it. In the Screen mode a click takes or
-//! records the whole screen, and the screen under the pointer is the one
-//! outlined. The count before a recording starts shows in the middle of
-//! what's recorded. Esc, a right click or close ends it.
-//! `ui/capture/CaptureWindow.qml` and `RegionPicker.qml` in today's shell.
-//!
-//! Its own window, on the overlay layer, so it covers fullscreen windows
-//! and the bar too (the frozen frame shows them as they were). While no
-//! pick is open it is one pixel big and takes no clicks and no keyboard;
-//! while one is, it covers the screen and takes the keyboard. The frame is
-//! cut out under the toolbar, so its glass blurs the live screen there,
-//! not the frame's copy of the pill it stands in for.
-
 use crate::capture::{Capture, Frame, Picking};
 use crate::pick::{around, is_click, region, size_label, to_layout, to_pixels, under_region};
 use crate::tokens::{
@@ -40,13 +23,9 @@ use nova_stage::{FrameLog, Screen, Stage};
 use std::sync::Arc;
 use std::time::Instant;
 
-/// The picker's layer surfaces, for the compositor's rules (niri blurs
-/// `^nova-`).
 const NAMESPACE: &str = "nova-capture";
-/// A window with no pick open: as small as the compositor takes.
 const RESTING: Pixels = px(1.0);
 
-/// What the picker shows this frame, out of the capture.
 struct Shows {
     frame: Option<Frame>,
     mode: CaptureMode,
@@ -79,26 +58,17 @@ pub struct PickerWindow {
     screen: Screen,
     capture: WeakEntity<Capture>,
     focus: FocusHandle,
-    /// It covers the screen now (what the window was last set to).
     shown: bool,
-    /// The toolbar growing in, and fading in; its switch's knob (1 under
-    /// the video) and its sound buttons sliding in.
     grown: Eased,
     faded: Eased,
     knob: Eased,
     sounds: Eased,
-    /// The region being dragged or picked, where the drag started, and
-    /// the mode it was dragged in.
     region: Option<Bounds<Pixels>>,
     from: Option<Point<Pixels>>,
     seen_mode: CaptureMode,
-    /// What this picker asked to record, counting down over it.
     recorded: Option<Bounds<Pixels>>,
-    /// Picking what to record (to know when that changes).
     video: bool,
-    /// The pointer is on this screen (the Screen mode outlines it).
     hovered: bool,
-    /// The toolbar's glass as the compositor last got it.
     sent: Option<Bounds<Pixels>>,
     frames: Option<FrameLog>,
     _followed: Option<Subscription>,
@@ -148,8 +118,6 @@ impl PickerWindow {
         }
     }
 
-    /// The screen changed size, scale or place: an open pick covers it
-    /// anew.
     pub fn set_screen(&mut self, screen: &Screen, window: &mut Window, cx: &mut Context<Self>) {
         if self.screen != *screen {
             if self.shown && self.screen.size != screen.size {
@@ -160,10 +128,6 @@ impl PickerWindow {
         }
     }
 
-    /// Covers the screen and takes the keyboard while a pick is open, and
-    /// gives both back after. A picker the toolbar's switch opened starts
-    /// grown in, as the other kind's toolbar was, and moves to its own
-    /// kind from there.
     fn show(&mut self, shows: Option<&Shows>, now: Instant, window: &mut Window, cx: &mut Context<Self>) {
         let Some(shows) = shows else {
             if self.shown {
@@ -196,7 +160,6 @@ impl PickerWindow {
             self.video = shows.video;
         }
         if shows.video != self.video {
-            // The switch, in an open picker: what was picked goes.
             self.video = shows.video;
             self.reset();
         }
@@ -222,7 +185,6 @@ impl PickerWindow {
         capture.read(cx).picking(&self.screen.name).map(Shows::from)
     }
 
-    /// Takes no picks while one is saved or counted down.
     fn takes_picks(&self, cx: &App) -> bool {
         self.recorded.is_none() && self.picking(cx).is_some_and(|shows| !shows.busy)
     }
@@ -276,7 +238,6 @@ impl PickerWindow {
     }
 
     fn release(&mut self, _event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
-        // A press this picker didn't take (a toolbar button) is no pick.
         if self.from.take().is_none() {
             return;
         }
@@ -285,8 +246,6 @@ impl PickerWindow {
             CaptureMode::Screen if self.video => self.start_recording(whole, cx),
             CaptureMode::Screen => self.take(whole, window, cx),
             CaptureMode::Region => {
-                // A click isn't a region: the picker stays for another try.
-                // A region to record stays for its Record button.
                 let picked = self.region.filter(|region| !is_click(*region, MIN_DRAG));
                 match picked {
                     Some(picked) if !self.video => {
@@ -301,7 +260,6 @@ impl PickerWindow {
         cx.notify();
     }
 
-    /// Sends `picked` as the frame's pixels.
     fn take(&mut self, picked: Bounds<Pixels>, _window: &mut Window, cx: &mut Context<Self>) {
         let output = self.screen.name.to_string();
         let width = f32::from(self.screen.size.width);
@@ -313,8 +271,6 @@ impl PickerWindow {
         });
     }
 
-    /// Counts down over `picked`, then records it: the whole screen in the
-    /// Screen mode, else that region of the layout.
     fn start_recording(&mut self, picked: Bounds<Pixels>, cx: &mut Context<Self>) {
         self.recorded = Some(picked);
         let whole = self.mode(cx) == CaptureMode::Screen;
@@ -329,7 +285,6 @@ impl PickerWindow {
             let _ = this.update(cx, |picker, cx| {
                 picker.from = None;
                 picker.with_capture(cx, |capture, cx| match ask {
-                    // The count has the region and sound it will record.
                     Ask::Mode(_) | Ask::DesktopAudio | Ask::MicAudio if capture.counting() => {}
                     Ask::Mode(mode) => capture.set_mode(mode, cx),
                     Ask::Video(video) => capture.switch_kind(video, cx),
@@ -352,8 +307,6 @@ impl PickerWindow {
         }
     }
 
-    /// Hands the toolbar's glass to the compositor when it moved: it blurs
-    /// behind it.
     fn blur(&mut self, glass: Bounds<Pixels>, window: &Window) {
         if self.sent != Some(glass) {
             set_blur_region(window, &[Shape::new(glass, glass.size.height / 2.0)]);
@@ -395,8 +348,6 @@ impl Render for PickerWindow {
         }
         self.log_frame(moving, now);
 
-        // What the veil leaves clear: what's counted down to, the region,
-        // or a hovered screen in the Screen mode.
         let whole = bounds(point(px(0.0), px(0.0)), screen);
         let clear = match (self.recorded, shows.mode) {
             (Some(recorded), _) => Some(recorded),
@@ -461,8 +412,6 @@ fn rect(at: Bounds<Pixels>) -> gpui::Div {
     div().absolute().left(at.origin.x).top(at.origin.y).w(at.size.width).h(at.size.height)
 }
 
-/// The frozen frame, but under the toolbar's glass: four pieces of it
-/// around that.
 fn frame_around(frame: &Frame, glass: Bounds<Pixels>, screen: gpui::Size<Pixels>) -> Vec<AnyElement> {
     around(glass, screen)
         .into_iter()
@@ -497,9 +446,6 @@ fn text_width(text: &str, family: nova_look::Family, weight: FontWeight, size: P
     window.text_system().shape_line(SharedString::from(text.to_owned()), size, &[run], None).width
 }
 
-/// The region's size under its bottom right corner (inside it when that is
-/// off the screen), while it is dragged: in the frame's pixels for a
-/// screenshot, in logical pixels made even for a recording.
 fn badge(
     frame: Option<&Frame>,
     region: Bounds<Pixels>,
@@ -535,8 +481,6 @@ fn badge(
         .into_any_element()
 }
 
-/// Under the picked region (inside it when that's off the screen): starts
-/// the recording.
 fn record_button(
     region: Bounds<Pixels>,
     screen: gpui::Size<Pixels>,
@@ -570,8 +514,6 @@ fn record_button(
         .child(div().font_family(FONT_MONO).text_size(FONT_SIZE_SMALL).text_color(theme.fg_dim()).child(enter))
 }
 
-/// The count to the start, big in the middle of what's recorded, outlined
-/// in the veil's color so it reads over anything.
 fn count(countdown: u32, recorded: Bounds<Pixels>, cx: &App) -> AnyElement {
     let theme = Theme::of(cx);
     let number = countdown.to_string();

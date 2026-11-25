@@ -1,15 +1,3 @@
-//! The carousel's preview on the screens it isn't open on: each such
-//! screen's pick over the whole screen, where it would change, and the
-//! mark while the deck picks for that screen alone. `WallpaperPreview.qml`
-//! and the `preview` that `WallpaperService.qml` shares.
-//!
-//! [`Previewed`] is what the open carousel previews, shared by every
-//! screen's carousel. It opens a window on each other screen once the
-//! carousel has finished opening (a new window holds every window's frames
-//! up for a moment: never at the start of a motion), on the overlay layer
-//! like the carousel, taking no clicks, keyboard or blur; and closes them
-//! once the carousel has faded out.
-
 use crate::deck::ByScreen;
 use crate::draw::{device_size, picking_mark};
 use crate::preview::Preview as Picture;
@@ -24,29 +12,19 @@ use nova_look::{LookStyled, ShellWindow, set_blur_region};
 use nova_stage::{FrameLog, Screen, Stage};
 use std::time::Instant;
 
-/// The preview windows' layer surfaces, for compositor rules.
 const NAMESPACE: &str = "nova-wallpaper-preview";
 
-/// What one screen's carousel previews on the others.
 pub struct Preview {
-    /// Their picks where they'd change, by name.
     pub paths: ByScreen,
-    /// The screen the deck picks for alone.
     pub choosing_for: Option<String>,
-    /// Whether the carousel is open: the previews fade as it closes.
     pub open: bool,
 }
 
-/// What the open carousel previews on the other screens.
 #[derive(Default)]
 pub struct Previewed {
-    /// The screen the carousel is on, while it is open or closing.
     pub from: Option<String>,
-    /// The other screens' picks where they'd change, by name.
     pub paths: ByScreen,
-    /// The screen the deck picks for alone.
     pub choosing_for: Option<String>,
-    /// Whether the carousel is open: the previews fade as it closes.
     pub shown: bool,
     windows: Vec<WindowHandle<PreviewWindow>>,
     opening: bool,
@@ -57,7 +35,6 @@ struct Shared(Entity<Previewed>);
 impl Global for Shared {}
 
 impl Previewed {
-    /// The one every screen's carousel shares.
     pub fn get(cx: &mut App) -> Entity<Self> {
         if let Some(shared) = cx.try_global::<Shared>() {
             return shared.0.clone();
@@ -67,17 +44,12 @@ impl Previewed {
         previewed
     }
 
-    /// The carousel on `here` previews `paths` on the other screens. Opening
-    /// it there closes it elsewhere, which may still be fading: an open
-    /// one's preview wins, and a closing one only changes its own.
     pub fn set(&mut self, here: &str, preview: Preview, cx: &mut Context<Self>) {
         let Preview { paths, choosing_for, open } = preview;
         let ours = self.from.as_deref() == Some(here);
         if !(open || ours || self.from.is_none()) {
             return;
         }
-        // Opened on another screen while the last one still fades: its
-        // windows were for the other screens of that one.
         if !ours {
             self.close_windows(cx);
         }
@@ -91,8 +63,6 @@ impl Previewed {
         cx.notify();
     }
 
-    /// The carousel on `here` has faded out: its preview goes, with the
-    /// windows.
     pub fn clear(&mut self, here: &str, cx: &mut Context<Self>) {
         if self.from.as_deref() != Some(here) {
             return;
@@ -111,8 +81,6 @@ impl Previewed {
         }
     }
 
-    /// Opens a window on every other screen, once the carousel's opening
-    /// has settled. Only with more than one screen.
     fn open_windows_once_settled(&mut self, cx: &mut Context<Self>) {
         if self.opening || !self.windows.is_empty() {
             return;
@@ -125,8 +93,6 @@ impl Previewed {
                 if previewed.shown { previewed.others(cx) } else { Vec::new() }
             });
             let (Ok(screens), Some(shared)) = (wanted, previewed.upgrade()) else { return };
-            // Outside the update: a new window draws its first frame,
-            // which reads what is previewed.
             for screen in screens {
                 let window = cx.update(|cx| PreviewWindow::open(&screen, shared.clone(), cx));
                 let _ = previewed.update(cx, |previewed, _| previewed.windows.extend(window));
@@ -135,7 +101,6 @@ impl Previewed {
         .detach();
     }
 
-    /// The screens the carousel isn't on.
     fn others(&self, cx: &App) -> Vec<Screen> {
         let Some(screens) = Stage::screens(cx) else { return Vec::new() };
         screens
@@ -148,12 +113,10 @@ impl Previewed {
     }
 }
 
-/// One other screen's preview window.
 pub struct PreviewWindow {
     screen: Screen,
     previewed: Entity<Previewed>,
     preview: Picture,
-    /// The preview's opacity, and the mark's.
     shown: Eased,
     picking: Eased,
     frames: Option<FrameLog>,
@@ -200,7 +163,6 @@ impl Render for PreviewWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
         if !self.blur_cleared {
-            // Nothing to blur behind, and no clicks: they reach the windows below.
             set_blur_region(window, &[]);
             window.set_input_region(Some(&[]));
             self.blur_cleared = true;

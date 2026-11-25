@@ -1,16 +1,7 @@
-//! Spans of time as people read them, for everything that shows one (the
-//! uptime in quick settings and the power menu, the time left on an AI
-//! usage limit): "3d 2h", "2h 14m", "45m". `ui/text/duration.js` in today's
-//! shell. Callers round to whole minutes their own way (a countdown up, an
-//! uptime down).
-
 const MINUTE_SECONDS: i64 = 60;
 const HOUR_MINUTES: i64 = 60;
-/// Minutes in a day.
 pub const DAY_MINUTES: i64 = 24 * HOUR_MINUTES;
 
-/// `minutes` (a whole number) as days and hours, or hours and minutes,
-/// leaving out a zero second part: "3d 2h", "2h 14m", "45m".
 pub fn minutes(minutes: i64) -> String {
     let (days, hours, rest) = (minutes / DAY_MINUTES, minutes % DAY_MINUTES / HOUR_MINUTES, minutes % HOUR_MINUTES);
     match (days, hours, rest) {
@@ -22,7 +13,6 @@ pub fn minutes(minutes: i64) -> String {
     }
 }
 
-/// "up 3h 12m" for `seconds` since boot, whole minutes rounded down.
 pub fn uptime(seconds: i64) -> String {
     format!("up {}", minutes(seconds.max(0) / MINUTE_SECONDS))
 }

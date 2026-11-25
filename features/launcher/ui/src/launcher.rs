@@ -1,18 +1,4 @@
-//! The launcher's panel on one screen: what it holds, and what a key, a
-//! click and novad's answers do to it. `draw.rs` renders it.
-//!
-//! A search field, the pinned apps as tiles, and a list: the recent apps
-//! and every other one, or what a search's providers find (apps first: the
-//! `launcher.providers` slot order). Up and Down move through the list,
-//! Enter runs the selected row (focusing an open app's window where it is;
-//! Shift+Enter opens another). With Nova Files on, tabs in the field
-//! switch to the Files mode (or Tab, or typing `~` or `/` first): files
-//! found by name, or a typed path's folder, whose completion shows dim and
-//! Tab takes.
-//!
-//! The stage owns the glass, the fade in, Esc and a click outside; this
-//! view only says how tall it wants to be ([`Stage::resize`]).
-
+use crate::order::AppOrder;
 use crate::rows::{Layout, Row, completion, rows, step, types_path};
 use crate::tokens::{
     EMPTY_HEIGHT, LABEL_HEIGHT, LAUNCHER_GAP, LAUNCHER_PAD, LAUNCHER_TOP, LAUNCHER_WIDTH, ROW_GAP, ROW_HEIGHT, ROWS,
@@ -33,18 +19,13 @@ use nova_stage::{Screen, Slots, Stage};
 use nova_ui_client::{Daemon, Live, Refusal};
 use std::time::Instant;
 
-/// The panel's name: the feature's id, which `nova toggle` uses.
 pub const NAME: &str = "launcher";
-/// The host of the launcher's providers, whose slots say which modes
-/// there are.
 const HOST_PROVIDERS: &str = "launcher.providers";
 
-/// How far down `screen` the launcher's top edge is.
 pub fn top(screen: &Screen) -> Pixels {
     (screen.size.height * LAUNCHER_TOP).round()
 }
 
-/// The row being run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Running {
     pub provider: String,
@@ -56,35 +37,21 @@ pub struct Launcher {
     pub(crate) field: Entity<TextField>,
     apps: Entity<Live<Apps>>,
     slots: Option<Entity<Slots>>,
-    /// In the Files mode, not the apps'.
     pub(crate) in_files: bool,
-    /// Typing a path switched to the Files mode, which clearing the field
-    /// undoes.
     path_switched: bool,
     pub(crate) query: String,
-    /// What novad's providers found, and the query they answer: until
-    /// novad answers the latest, they are the previous query's.
     matches: Vec<LauncherItem>,
     matches_for: String,
-    /// Enter pressed before novad answered the latest query: runs its
-    /// first match when it does, in a new window when `true`.
     enter_pending: Option<bool>,
     pub(crate) selected: usize,
     pub(crate) running: Option<Running>,
-    /// Why the last run failed.
     pub(crate) problem: String,
-    /// The recent apps the list shows: novad's latest, held while a row
-    /// runs and while the panel is closed, so a started app's move to the
-    /// top shows the next time it opens, not as the panel fades out.
     shown_recent: Vec<String>,
     pub(crate) rows: Vec<Row>,
     pub(crate) layout: Layout,
-    /// How far the list is scrolled.
     pub(crate) scroll: f32,
-    /// Where the selected row's highlight is, in the list's content.
     pub(crate) highlight: Eased,
     was_open: bool,
-    /// The search novad hasn't answered yet; a newer one drops it.
     search: Option<Task<()>>,
     _followed: Vec<Subscription>,
 }
@@ -92,7 +59,11 @@ pub struct Launcher {
 impl Launcher {
     pub fn new(screen: &Screen, cx: &mut Context<Self>) -> Self {
         let field = cx.new(|cx| TextField::new(cx).max_chars(LAUNCHER_SEARCH_MAX_CHARS));
-        let apps = Live::follow(TOPIC, cx, |Event::Launcher(apps)| Some(apps));
+        let order = AppOrder::of_system();
+        let apps = Live::follow(TOPIC, cx, move |Event::Launcher(mut apps)| {
+            order.sort(&mut apps.apps);
+            Some(apps)
+        });
         let slots = Stage::slots(cx);
         let mut followed = vec![
             cx.subscribe(&field, |launcher, _, _: &FieldEvent, cx| launcher.typed(cx)),
@@ -124,7 +95,6 @@ impl Launcher {
         }
     }
 
-    /// What gets the keyboard when the panel opens.
     pub fn focus(&self, cx: &gpui::App) -> FocusHandle {
         self.field.read(cx).focus_handle()
     }
@@ -133,13 +103,11 @@ impl Launcher {
         self.apps.read(cx).get()
     }
 
-    /// Nova Files runs: the Files mode is there.
     pub(crate) fn has_files(&self, cx: &gpui::App) -> bool {
         let providers = self.slots.as_ref().map(|slots| slots.read(cx).for_host(HOST_PROVIDERS, cx));
         providers.is_some_and(|providers| providers.iter().any(|view| view.as_ref() == PROVIDER_FILES))
     }
 
-    /// The pinned apps: as many as fit on one row.
     pub(crate) fn pinned<'a>(&self, cx: &'a gpui::App) -> Vec<&'a App> {
         let Some(data) = self.data(cx) else { return Vec::new() };
         let fit = ((content_width() + GAP) / (TILE_SIZE + GAP)).floor() as usize;
@@ -154,7 +122,6 @@ impl Launcher {
         self.data(cx).is_some_and(|data| data.pinned.iter().any(|pinned| pinned == id))
     }
 
-    /// Nothing matches what's typed.
     pub(crate) fn shows_empty(&self) -> bool {
         !self.query.trim().is_empty() && self.rows.is_empty()
     }
@@ -163,15 +130,10 @@ impl Launcher {
         self.running.as_ref().is_some_and(|running| running.provider == provider && running.id == id)
     }
 
-    /// Whether the selected row is the one running: a pinned tile's run
-    /// leaves the list as it is.
     pub(crate) fn running_selected(&self) -> bool {
         self.rows.get(self.selected).is_some_and(|row| self.is_running(&row.provider, &row.id))
     }
 
-    /// The tallest the list gets before it scrolls: [`ROWS`] rows and the
-    /// headings of the two groups they may span. On a short screen, fewer:
-    /// the panel ends a pad above the screen's edge.
     fn list_room(&self) -> f32 {
         let full = ROW_HEIGHT * ROWS as f32 + ROW_GAP * (ROWS - 1) as f32 + LABEL_HEIGHT * 2.0;
         let around =
@@ -180,12 +142,10 @@ impl Launcher {
         f32::from(full.min(fits).max(ROW_HEIGHT))
     }
 
-    /// How tall the list is drawn.
     pub(crate) fn list_height(&self) -> f32 {
         self.layout.height().min(self.list_room())
     }
 
-    /// The panel's size for what it shows now.
     pub fn size(&self, cx: &gpui::App) -> Size<Pixels> {
         let mut parts = vec![SEARCH_HEIGHT];
         if self.shows_pinned(cx) {
@@ -204,8 +164,6 @@ impl Launcher {
         size(LAUNCHER_WIDTH, parts.into_iter().fold(LAUNCHER_PAD * 2.0 + gaps, |height, part| height + part))
     }
 
-    /// Follows a change to what the list shows: the rows, the selection
-    /// within them, the grey completion and the panel's height.
     fn lay_out(&mut self, cx: &mut Context<Self>) {
         let apps = self.apps.read(cx).get().map(|data| data.apps.as_slice()).unwrap_or_default();
         self.rows = rows(&self.query, &self.matches, &self.shown_recent, apps, self.in_files);
@@ -213,11 +171,9 @@ impl Launcher {
         self.select(self.selected.min(self.rows.len().saturating_sub(1)), cx);
         let size = self.size(cx);
         let screen = self.screen.id;
-        // After this update: the stage reads this view to lay the panel out.
         cx.defer(move |cx| Stage::resize(NAME, screen, size, cx));
     }
 
-    /// Selects row `index`, scrolled into view.
     pub(crate) fn select(&mut self, index: usize, cx: &mut Context<Self>) {
         self.selected = index;
         self.scroll = self.layout.contain(index, self.scroll, self.list_height());
@@ -227,23 +183,18 @@ impl Launcher {
         cx.notify();
     }
 
-    /// The pointer moved over row `index`.
     pub(crate) fn pointed(&mut self, index: usize, cx: &mut Context<Self>) {
         if index != self.selected {
             self.select(index, cx);
         }
     }
 
-    /// The wheel turned `by` pixels over the list.
     pub(crate) fn scrolled(&mut self, by: f32, cx: &mut Context<Self>) {
         let furthest = self.layout.furthest(self.list_height());
         self.scroll = (self.scroll + by).clamp(0.0, furthest);
         cx.notify();
     }
 
-    /// What Tab adds to the query: the selected file's path, past what's
-    /// typed. Only once novad has answered what's typed: older rows
-    /// complete an older query.
     fn completion(&self) -> &str {
         if !self.in_files || self.matches_for != self.query {
             return "";
@@ -251,8 +202,6 @@ impl Launcher {
         completion(&self.query, self.rows.get(self.selected))
     }
 
-    /// Called from `render` with whether the stage has the panel open:
-    /// follows it opening and closing.
     pub(crate) fn follow_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         if open == self.was_open {
             return;
@@ -263,8 +212,6 @@ impl Launcher {
             cx.defer_in(window, |launcher, _, cx| launcher.reset(cx));
             return;
         }
-        // Once it has faded out, as it will open: the next time starts at
-        // that size instead of easing to it from this one.
         cx.spawn(async move |launcher, cx| {
             cx.background_executor().timer(DURATION_PANEL + DURATION_FADE).await;
             let _ = launcher.update(cx, |launcher, cx| {
@@ -276,7 +223,6 @@ impl Launcher {
         .detach();
     }
 
-    /// As it opens: the apps mode, an empty field, the first row.
     fn reset(&mut self, cx: &mut Context<Self>) {
         self.in_files = false;
         self.path_switched = false;
@@ -308,7 +254,6 @@ impl Launcher {
         self.lay_out(cx);
     }
 
-    /// Nova Files stopping takes its mode with it.
     fn modes_changed(&mut self, cx: &mut Context<Self>) {
         if self.in_files && !self.has_files(cx) {
             self.set_mode(false, cx);
@@ -316,13 +261,11 @@ impl Launcher {
         cx.notify();
     }
 
-    /// The field's text changed.
     fn typed(&mut self, cx: &mut Context<Self>) {
         let text = self.field.read(cx).text().to_owned();
         if text == self.query {
             return;
         }
-        // A path is typed: the Files mode completes it.
         if types_path(&text) && !self.in_files {
             self.set_mode(true, cx);
             self.path_switched = self.in_files;
@@ -342,7 +285,6 @@ impl Launcher {
         self.lay_out(cx);
     }
 
-    /// Switches to the Files mode or back, searching what's typed in it.
     pub(crate) fn set_mode(&mut self, files: bool, cx: &mut Context<Self>) {
         self.path_switched = false;
         if files == self.in_files || (files && !self.has_files(cx)) {
@@ -358,7 +300,6 @@ impl Launcher {
         self.lay_out(cx);
     }
 
-    /// Asks novad's providers for what's typed, in this mode.
     fn ask(&mut self, cx: &mut Context<Self>) {
         let (query, files) = (self.query.clone(), self.in_files);
         let mode = files.then(|| PROVIDER_FILES.to_owned());
@@ -372,8 +313,6 @@ impl Launcher {
         }));
     }
 
-    /// novad's matches for `query`; dropped when something else has been
-    /// typed or picked since.
     fn show_matches(&mut self, query: &str, files: bool, found: Vec<LauncherItem>, cx: &mut Context<Self>) {
         if query != self.query || files != self.in_files {
             return;
@@ -386,7 +325,6 @@ impl Launcher {
         }
     }
 
-    /// Runs row `index`, unless one is running already.
     pub(crate) fn run_row(&mut self, index: usize, new_window: bool, cx: &mut Context<Self>) {
         if let Some(row) = self.rows.get(index) {
             let running = Running { provider: row.provider.clone(), id: row.id.clone() };
@@ -394,10 +332,6 @@ impl Launcher {
         }
     }
 
-    /// Has novad run what `running` names: an app starts, or its open
-    /// window is focused where it is unless `new_window`; a file opens, or
-    /// with `new_window` is shown in its folder. The row shows the accent
-    /// for a moment, then the panel closes.
     pub(crate) fn run(&mut self, running: Running, new_window: bool, cx: &mut Context<Self>) {
         if self.running.is_some() {
             return;
@@ -421,7 +355,6 @@ impl Launcher {
         self.lay_out(cx);
     }
 
-    /// novad's answer to a run.
     fn ran(&mut self, failed: Option<Refusal>, cx: &mut Context<Self>) {
         let Some(refusal) = failed else { return };
         self.problem = match refusal {
@@ -437,24 +370,18 @@ impl Launcher {
         Daemon::send(Command::PinApp { id: id.to_owned(), pinned }, cx);
     }
 
-    /// A key the field left alone. Esc goes on to the stage, which closes
-    /// the panel.
     pub(crate) fn key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         match event.keystroke.key.as_str() {
             "up" => self.select(step(self.selected, self.rows.len(), -1), cx),
             "down" => self.select(step(self.selected, self.rows.len(), 1), cx),
             "enter" => {
-                // The list still shows the previous query's matches.
                 if !self.query.trim().is_empty() && self.matches_for != self.query {
                     self.enter_pending = Some(modifiers.shift);
                 } else {
                     self.run_row(self.selected, modifiers.shift, cx);
                 }
             }
-            // Tab stays in the field and switches modes (Shift+Tab and
-            // Ctrl+Tab too). While a path is typed, plain Tab completes it
-            // instead, as a shell's would.
             "tab" if !modifiers.shift && !modifiers.control && self.in_files && types_path(&self.query) => {
                 let full = self.rows.get(self.selected).and_then(|row| row.file.as_ref());
                 if let Some(full) = full.filter(|_| !self.completion().is_empty()).map(|file| file.completion.clone()) {
@@ -467,13 +394,11 @@ impl Launcher {
         cx.stop_propagation();
     }
 
-    /// The mode's key, as the tabs name it.
     pub(crate) fn mode(&self) -> &'static str {
         if self.in_files { PROVIDER_FILES } else { PROVIDER_APPS }
     }
 }
 
-/// The width inside the panel's padding.
 pub(crate) fn content_width() -> Pixels {
     LAUNCHER_WIDTH - LAUNCHER_PAD * 2.0
 }

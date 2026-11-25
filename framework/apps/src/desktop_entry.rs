@@ -1,60 +1,35 @@
-//! Desktop entries (`.desktop` files), as the freedesktop.org Desktop Entry
-//! Specification 1.5 describes them: the `[Desktop Entry]` group's keys in
-//! the user's language, whether the launcher lists the app at all, and its
-//! `Exec` line turned into a program and its arguments. The line is never
-//! handed to a shell.
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use nova_paths::find_program;
 
 const GROUP: &str = "[Desktop Entry]";
-/// Field codes that stand for files or URLs to open; the launcher opens
-/// none.
 const FILE_CODES: [char; 4] = ['f', 'F', 'u', 'U'];
-/// Field codes the spec deprecates, dropped like it says.
 const DEPRECATED_CODES: [char; 6] = ['d', 'D', 'n', 'N', 'v', 'm'];
-/// GNOME's switch for an autostart entry, which other desktops honor too.
 const AUTOSTART_ENABLED: &str = "X-GNOME-Autostart-enabled";
 
-/// An app the launcher lists.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
-    /// Its desktop file id, like `org.mozilla.firefox.desktop`.
     pub id: String,
     pub name: String,
     pub generic_name: Option<String>,
     pub comment: Option<String>,
     pub icon: Option<String>,
     pub keywords: Vec<String>,
-    /// The program and its arguments, field codes expanded.
     pub exec: Vec<String>,
-    /// Runs in a terminal.
     pub terminal: bool,
-    /// The folder to run it in.
     pub path: Option<PathBuf>,
-    /// The file and link types it opens (`MimeType=`).
     pub mime_types: Vec<String>,
-    /// Listed in the launcher: not `NoDisplay`. An unlisted app may still
-    /// be the one that opens some type of file.
     pub listed: bool,
-    /// The app id its windows get (`StartupWMClass=`), when it says.
     pub window_class: Option<String>,
-    /// What kind of app it is (`Categories=`), like `AudioVideo` or `WebBrowser`.
     pub categories: Vec<String>,
 }
 
 impl Entry {
-    /// Whether it opens files or links of some type: the entry the
-    /// system's defaults point at, when two start the same program.
     pub fn opens_types(&self) -> bool {
         !self.mime_types.is_empty()
     }
 
-    /// The app ids (lower case) a window of this app may have: the one it
-    /// names, its desktop file id, its program and its name. None for an
-    /// app in a terminal, whose window is the terminal's.
     pub fn window_ids(&self) -> Vec<String> {
         if self.terminal {
             return vec![];
@@ -71,41 +46,27 @@ impl Entry {
         ids
     }
 
-    /// Whether `id` (lower case) is the first word of its name, a loose
-    /// match (`zen` for "Zen Browser", `brave` for "Brave Web Browser").
-    /// Never for an app in a terminal, like `window_ids`.
     pub fn first_word_is(&self, id: &str) -> bool {
         !self.terminal && self.name.split_whitespace().next().is_some_and(|word| word.to_lowercase() == id)
     }
 
-    /// Whether `id` (lower case) is the app id it names for its windows or
-    /// its desktop file id, rather than just its program or name.
     pub fn is_named(&self, id: &str) -> bool {
         let desktop_id = self.id.strip_suffix(".desktop").unwrap_or(&self.id);
         [self.window_class.as_deref(), Some(desktop_id)].into_iter().flatten().any(|named| named.to_lowercase() == id)
     }
 }
 
-/// Why a file isn't an app the launcher lists.
 #[derive(Debug, PartialEq)]
 pub enum Skipped {
-    /// `Hidden=true`: deleted, which also hides the same id in folders
-    /// further down the search path.
     Hidden,
-    /// Not meant for the launcher (`NoDisplay`, not an application, not for
-    /// this desktop, its program not installed).
     NotShown,
-    /// Not a valid entry, and why.
     Invalid(String),
 }
 
-/// The user's language, as the keys a localized value may be under, the
-/// best match first (`de_AT@euro`, `de_AT`, `de@euro`, `de`).
 #[derive(Debug, Clone, Default)]
 pub struct Locale(Vec<String>);
 
 impl Locale {
-    /// From `LC_ALL`, `LC_MESSAGES` or `LANG`, whichever is set first.
     pub fn from_env() -> Self {
         let value = ["LC_ALL", "LC_MESSAGES", "LANG"]
             .into_iter()
@@ -114,7 +75,6 @@ impl Locale {
         value.map(|value| Self::parse(&value)).unwrap_or_default()
     }
 
-    /// From a POSIX locale name, `lang_COUNTRY.ENCODING@MODIFIER`.
     pub fn parse(name: &str) -> Self {
         let (rest, modifier) = match name.split_once('@') {
             Some((rest, modifier)) => (rest, Some(modifier)),
@@ -143,28 +103,17 @@ impl Locale {
     }
 }
 
-/// What decides whether an entry shows here.
 pub struct Context<'a> {
     pub locale: &'a Locale,
-    /// `XDG_CURRENT_DESKTOP`'s names, like `niri`.
     pub desktops: &'a [String],
-    /// Where `TryExec` programs are looked for.
     pub path_var: &'a str,
-    /// Read for starting at login (XDG autostart), not for the launcher:
-    /// `NoDisplay` doesn't matter, and `X-GNOME-Autostart-enabled=false`
-    /// turns the entry off like `Hidden`.
     pub autostart: bool,
 }
 
-/// The `[Desktop Entry]` group's keys: `key` or `key[locale]` to its raw value.
 fn group(text: &str) -> HashMap<&str, &str> {
     keys_of(text, GROUP)
 }
 
-/// The keys of the first group headed `header` (like `[Desktop Entry]`):
-/// `key` or `key[locale]` to its raw value; reading stops at the group
-/// after it. Other files in the same format (thumbnailers) read theirs
-/// with it too.
 pub fn keys_of<'a>(text: &'a str, header: &str) -> HashMap<&'a str, &'a str> {
     let mut keys = HashMap::new();
     let mut inside = false;
@@ -174,7 +123,6 @@ pub fn keys_of<'a>(text: &'a str, header: &str) -> HashMap<&'a str, &'a str> {
             continue;
         }
         if line.starts_with('[') {
-            // Only the first group counts; later groups are actions and such.
             if inside {
                 break;
             }
@@ -185,14 +133,12 @@ pub fn keys_of<'a>(text: &'a str, header: &str) -> HashMap<&'a str, &'a str> {
             continue;
         }
         if let Some((key, value)) = line.split_once('=') {
-            // The first of a repeated key wins, like GLib.
             keys.entry(key.trim_end()).or_insert(value.trim_start());
         }
     }
     keys
 }
 
-/// Parses the desktop file `id` read from `file`.
 pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Entry, Skipped> {
     let keys = group(text);
     if keys.is_empty() {
@@ -214,8 +160,6 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
     if flag("Hidden") || (context.autostart && raw(AUTOSTART_ENABLED).map(str::trim) == Some("false")) {
         return Err(Skipped::Hidden);
     }
-    // Kept unlisted only to open files; one that opens none is skipped
-    // before the work below.
     let opens_none = raw("MimeType").is_none_or(|types| types.trim().is_empty());
     if raw("Type").map(str::trim) != Some("Application") || (flag("NoDisplay") && !context.autostart && opens_none) {
         return Err(Skipped::NotShown);
@@ -264,7 +208,6 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
     })
 }
 
-/// A string value with its escapes (`\s`, `\n`, `\t`, `\r`, `\\`) undone.
 pub fn unescape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut chars = value.chars();
@@ -279,7 +222,6 @@ pub fn unescape(value: &str) -> String {
             Some('t') => out.push('\t'),
             Some('r') => out.push('\r'),
             Some('\\') => out.push('\\'),
-            // Not an escape strings have (`\;` in lists): kept for the next step.
             Some(other) => {
                 out.push('\\');
                 out.push(other);
@@ -290,7 +232,6 @@ pub fn unescape(value: &str) -> String {
     out
 }
 
-/// A list value (`a;b;c;`), each item unescaped, empty ones dropped.
 pub fn list(value: &str) -> Vec<String> {
     let mut items = Vec::new();
     let mut item = String::new();
@@ -313,10 +254,6 @@ pub fn list(value: &str) -> Vec<String> {
     items.into_iter().map(|item| unescape(item.trim())).filter(|item| !item.is_empty()).collect()
 }
 
-/// An `Exec` line (its string escapes already undone) split into its
-/// arguments, each with whether it was quoted, where field codes don't
-/// apply: split at spaces outside double quotes, with `\"`, `` \` ``, `\$`
-/// and `\\` inside them. Thumbnailers' `Exec` lines split the same way.
 pub fn exec_words(line: &str) -> Result<Vec<(String, bool)>, String> {
     let mut words: Vec<(String, bool)> = Vec::new();
     let mut chars = line.chars();
@@ -351,10 +288,6 @@ pub fn exec_words(line: &str) -> Result<Vec<(String, bool)>, String> {
     Ok(words)
 }
 
-/// An `Exec` line, its string escapes already undone, as a program and its
-/// arguments ([`exec_words`]), field codes expanded. `%i` is the icon,
-/// `%c` the name and `%k` the file; file and URL codes are dropped, since the
-/// launcher opens the app without any.
 fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<Vec<String>, String> {
     let words = exec_words(line)?;
     let mut argv = Vec::new();
@@ -389,7 +322,6 @@ fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<
                 Some('%') => expanded.push('%'),
                 Some('c') => expanded.push_str(name),
                 Some('k') => expanded.push_str(&file.to_string_lossy()),
-                // Inside a word: dropped, like a code on its own.
                 Some(code) if FILE_CODES.contains(&code) || DEPRECATED_CODES.contains(&code) || code == 'i' => {}
                 Some(code) => return Err(format!("unknown field code %{code} in Exec")),
                 None => return Err("a lone % at the end of Exec".into()),
@@ -464,7 +396,6 @@ mod tests {
             assert_eq!(entry(&format!("{base}{extra}")), Err(Skipped::NotShown), "{extra}");
         }
         assert!(entry(&format!("{base}OnlyShowIn=niri;\nTryExec=sh\n")).is_ok());
-        // Kept unlisted when it opens files, else skipped.
         assert_eq!(entry(&format!("{base}NoDisplay=true\n")), Err(Skipped::NotShown));
         assert!(!entry(&format!("{base}NoDisplay=true\nMimeType=text/plain;\n")).unwrap().listed);
         assert!(entry(base).unwrap().listed);
@@ -472,7 +403,6 @@ mod tests {
         assert!(matches!(entry("[Desktop Entry]\nType=Application\nName=X\n"), Err(Skipped::Invalid(_))));
         assert!(matches!(entry("[Desktop Entry]\nType=Application\nExec=x\n"), Err(Skipped::Invalid(_))));
         assert!(matches!(entry("Name=X\n"), Err(Skipped::Invalid(_))));
-        // Only [Desktop Entry] counts, even when another group comes first.
         assert!(matches!(entry("[Other]\nType=Application\nName=X\nExec=x\n"), Err(Skipped::Invalid(_))));
     }
 
@@ -481,8 +411,6 @@ mod tests {
         assert_eq!(exec("foot").unwrap(), ["foot"]);
         assert_eq!(exec("  foot   -e  htop ").unwrap(), ["foot", "-e", "htop"]);
         assert_eq!(exec(r#"sh -c "echo \"hi\" \$HOME; rm x" %u"#).unwrap(), ["sh", "-c", r#"echo "hi" $HOME; rm x"#]);
-        // Escapes for strings come first: a file's `\\\\` is one backslash
-        // inside quotes, and `\s` a space, which splits like one.
         assert_eq!(exec(r#""C:\\\\dir" a\sb"#).unwrap(), [r"C:\dir", "a", "b"]);
         assert_eq!(exec("app --name=%c %k").unwrap(), ["app", "--name=My App", "/apps/my app.desktop"]);
         assert_eq!(exec("app %i %F %d").unwrap(), ["app", "--icon", "my-icon"]);
@@ -493,7 +421,6 @@ mod tests {
         assert!(exec("app \"unclosed").is_err());
         assert!(exec("app %z").is_err());
         assert!(exec("app %").is_err());
-        // Shell syntax is just text: nothing runs it.
         assert_eq!(exec("app ; rm -rf ~ && $(boom) `boom` | x > y").unwrap().len(), 12);
     }
 

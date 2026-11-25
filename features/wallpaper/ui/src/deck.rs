@@ -1,31 +1,15 @@
-//! The carousel's deck without any drawing: which image is picked, where
-//! every card sits around it, what each screen would show, and the
-//! `set_wallpaper` calls that keep the picks. Today's `carousel.js` and the
-//! state `WallpaperCarousel.qml` keeps, tested alone.
-//!
-//! The deck loops: past the last image comes the first again. Its position
-//! is a number that runs on without wrapping (each step adds or takes one),
-//! so a step across the ends moves like any other; which image that is, and
-//! where each card sits around it, wrap.
-
 use nova_wallpaper_api::{WallpaperFolder, Wallpapers};
 use std::collections::BTreeMap;
 
-/// What each screen shows or would show, by output name ("" for none).
 pub type ByScreen = BTreeMap<String, String>;
 
-/// `index` as one of `count` images (0 to count - 1), however far it went.
 pub fn wrap(index: i64, count: usize) -> usize {
     let count = count.max(1) as i64;
     index.rem_euclid(count) as usize
 }
 
-/// How many cards image `index` sits right (positive) or left (negative)
-/// of the one at `position`, the short way round: never more than half the
-/// images either way.
 pub fn offset(index: usize, position: f32, count: usize) -> f32 {
     let count = count.max(1) as f32;
-    // JavaScript's `%`: the sign of the dividend.
     let mut away = (index as f32 - position) % count;
     if away > count / 2.0 {
         away -= count;
@@ -35,11 +19,6 @@ pub fn offset(index: usize, position: f32, count: usize) -> f32 {
     away
 }
 
-/// How much of a card `away` from the middle shows (0 to 1): `sides` cards
-/// show either side, and each image once. One fades out before it would
-/// pass halfway round, where it jumps to the other side, so none flies
-/// across; in an even loop the one at rest exactly halfway shows on the
-/// right (where [`offset`] puts it), so two images show both.
 pub fn shown(away: f32, count: usize, sides: usize) -> f32 {
     let half = count as f32 / 2.0;
     let near = (sides as f32 + 0.5 - away.abs()) * 2.0;
@@ -48,13 +27,10 @@ pub fn shown(away: f32, count: usize, sides: usize) -> f32 {
     near.min(before_halfway).clamp(0.0, 1.0)
 }
 
-/// A path's file name.
 pub fn file_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-/// What each of `names` shows now, from novad's `wallpapers` answer: its
-/// own image, else every screen's, else "".
 pub fn showing(names: &[String], shown: &Wallpapers) -> ByScreen {
     names
         .iter()
@@ -65,26 +41,18 @@ pub fn showing(names: &[String], shown: &Wallpapers) -> ByScreen {
         .collect()
 }
 
-/// The screen picked for after `choosing_for` (`None` for every screen),
-/// `by` one forward or back through every screen and then `names`, round
-/// past either end.
 pub fn next_screen(choosing_for: Option<&str>, names: &[String], by: i64) -> Option<String> {
     let at = choosing_for.and_then(|name| names.iter().position(|each| each == name)).map_or(0, |at| at + 1);
     let next = wrap(at as i64 + by, names.len() + 1);
     next.checked_sub(1).map(|index| names[index].clone())
 }
 
-/// One `set_wallpaper` call: `path` on `output`, or on every screen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     pub path: String,
     pub output: Option<String>,
 }
 
-/// The calls that keep `picks` over what `showing` shows: one for every
-/// screen when they all get the same image, which also drops screens' own
-/// images; otherwise one for each screen that changes. None when nothing
-/// does.
 pub fn requests(picks: &ByScreen, showing: &ByScreen) -> Vec<Request> {
     let changed: Vec<&String> = picks
         .iter()
@@ -103,27 +71,19 @@ pub fn requests(picks: &ByScreen, showing: &ByScreen) -> Vec<Request> {
     changed.into_iter().map(|name| Request { path: picks[name].clone(), output: Some(name.clone()) }).collect()
 }
 
-/// The deck on one screen: the folder's images, what every screen shows
-/// and would show, which screen it picks for, and where the picked card is.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Deck {
-    /// This screen's output name.
     pub here: String,
-    /// Every screen's name, left to right; never empty (this one alone
-    /// when no screen is known).
     pub screens: Vec<String>,
     pub images: Vec<String>,
     pub folder: String,
     pub showing: ByScreen,
     pub picks: ByScreen,
-    /// The screen picked for, `None` for every one.
     pub choosing_for: Option<String>,
-    /// Where the picked card is, counted without wrapping.
     pub target: i64,
 }
 
 impl Deck {
-    /// An empty deck for `here`, among `screens` (left to right).
     pub fn new(here: &str, screens: Vec<String>) -> Self {
         let mut deck = Self { here: here.to_owned(), ..Self::default() };
         deck.set_screens(screens);
@@ -141,7 +101,6 @@ impl Deck {
         self.images.len()
     }
 
-    /// The screens moving the deck picks for.
     pub fn covered(&self) -> Vec<&str> {
         match &self.choosing_for {
             Some(name) => vec![name.as_str()],
@@ -149,7 +108,6 @@ impl Deck {
         }
     }
 
-    /// The picked image's index, while there are images.
     pub fn picked(&self) -> Option<usize> {
         (!self.images.is_empty()).then(|| wrap(self.target, self.count()))
     }
@@ -158,13 +116,10 @@ impl Deck {
         self.picked().map_or("", |index| &self.images[index])
     }
 
-    /// What this screen shows now.
     pub fn current(&self) -> &str {
         self.showing.get(&self.here).map_or("", String::as_str)
     }
 
-    /// Opened: the folder's listing and what is shown now. The deck starts
-    /// on this screen's image when it is in the folder, else the first.
     pub fn load(&mut self, listing: WallpaperFolder, shown: &Wallpapers) {
         self.folder = listing.folder;
         self.showing = showing(&self.screens, shown);
@@ -174,7 +129,6 @@ impl Deck {
         self.picks = self.showing.clone();
     }
 
-    /// Closed and faded: its images go.
     pub fn clear(&mut self) {
         self.images.clear();
         self.showing.clear();
@@ -182,8 +136,6 @@ impl Deck {
         self.choosing_for = None;
     }
 
-    /// What Enter would keep: the picks, and the middle card on a screen it
-    /// picks for that shows nothing from the folder yet.
     pub fn kept(&self) -> ByScreen {
         let mut kept = self.picks.clone();
         let picked = self.picked_path();
@@ -198,13 +150,10 @@ impl Deck {
         kept
     }
 
-    /// What this screen previews: its pick, or its own image until the
-    /// folder is listed.
     pub fn preview_path(&self) -> String {
         self.kept().get(&self.here).filter(|path| !path.is_empty()).cloned().unwrap_or_else(|| self.current().into())
     }
 
-    /// What the other screens preview, where it would change.
     pub fn previews(&self) -> ByScreen {
         let showing = &self.showing;
         self.kept()
@@ -213,8 +162,6 @@ impl Deck {
             .collect()
     }
 
-    /// Moves the deck `by` cards, round past either end. Returns whether
-    /// it moved.
     pub fn step(&mut self, by: i64) -> bool {
         if by == 0 || self.images.is_empty() {
             return false;
@@ -227,8 +174,6 @@ impl Deck {
         true
     }
 
-    /// Picks for screen `name` from now on, `None` for every one: the deck
-    /// moves round to what it would show. Returns whether it changed.
     pub fn choose_for(&mut self, name: Option<String>) -> bool {
         if self.screens.len() < 2 || name.as_ref().is_some_and(|name| !self.screens.contains(name)) {
             return false;
@@ -242,7 +187,6 @@ impl Deck {
         true
     }
 
-    /// `done` were set: the screens they name show them now.
     pub fn shown_now(&mut self, done: &[Request]) {
         for request in done {
             match &request.output {
@@ -254,8 +198,6 @@ impl Deck {
         }
     }
 
-    /// The screens other than the ones the deck picks for that pick the
-    /// image `path`: their names show on its card.
     pub fn marks(&self, path: &str) -> Vec<&str> {
         let covered = self.covered();
         self.screens
@@ -265,8 +207,6 @@ impl Deck {
             .collect()
     }
 
-    /// Whether `path` is what the first screen the deck picks for shows
-    /// now: its card says so.
     pub fn is_now(&self, path: &str) -> bool {
         self.covered().first().and_then(|name| self.showing.get(*name)).is_some_and(|shown| shown == path)
     }
@@ -306,7 +246,6 @@ mod tests {
         assert_eq!(offset(4, 0.0, 5), -1.0);
         assert_eq!(offset(1, 0.0, 5), 1.0);
         assert_eq!(offset(0, 4.5, 5), 0.5);
-        // In an even loop the one exactly halfway sits on the right.
         assert_eq!(offset(2, 0.0, 4), 2.0);
         assert_eq!(offset(0, 2.0, 4), 2.0);
     }
@@ -317,7 +256,6 @@ mod tests {
         assert_eq!(shown(3.0, 20, 3), 1.0);
         assert_eq!(shown(3.25, 20, 3), 0.5);
         assert_eq!(shown(4.0, 20, 3), 0.0);
-        // Of four, the one halfway round shows on one side only.
         assert_eq!(shown(2.0, 4, 3), 1.0);
         assert_eq!(shown(1.75, 4, 3), 0.5);
         assert_eq!(shown(-1.75, 4, 3), 0.5);
@@ -329,7 +267,6 @@ mod tests {
         assert_eq!(deck.picked_path(), "/w/b.png");
         let elsewhere = self::deck(&["DP-1"], &["/w/a.png", "/w/b.png"], everywhere("/other.png"));
         assert_eq!(elsewhere.picked_path(), "/w/a.png");
-        // Its own image until it moves: the folder doesn't hold it.
         assert_eq!(elsewhere.preview_path(), "/w/a.png");
     }
 
@@ -358,7 +295,6 @@ mod tests {
             requests(&deck.kept(), &deck.showing),
             vec![Request { path: "/w/b".into(), output: Some("DP-2".into()) }]
         );
-        // Back to every screen: the deck goes round to DP-1's pick.
         assert!(deck.choose_for(None));
         assert_eq!(deck.picked_path(), "/w/a");
     }

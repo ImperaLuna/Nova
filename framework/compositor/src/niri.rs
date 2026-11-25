@@ -1,21 +1,3 @@
-//! niri, through the socket in `$NIRI_SOCKET`. One connection asks for the
-//! event stream and then reads it: niri first sends its whole state as
-//! events, then each change. Actions are one request per connection. Both
-//! are JSON lines in niri-ipc's format.
-//!
-//! niri says nothing about fullscreen, so a workspace counts as fullscreen
-//! when a tiled window on it is as big as its output: niri gives fullscreen
-//! (and maximized-to-edges) windows the whole output, over the bar's space.
-//! Its width counts too: once the bar gives its space up, an ordinary
-//! column can be as tall as the output (with no gaps), and taking that for
-//! fullscreen would keep the bar away for good.
-//! Output sizes aren't in the event stream, so novad asks for them again
-//! after workspace or window layout changes (an output's size changing
-//! resizes such windows too).
-//!
-//! Only the fields and events novad uses are read. Other events, and fields
-//! newer niri releases add, are ignored, so those releases keep working.
-
 use super::Backend;
 use nova_desktop_info::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
 use serde::Deserialize;
@@ -36,14 +18,10 @@ const CAPABILITIES: &[Capability] = &[
     Capability::LogOut,
     Capability::Fullscreen,
 ];
-/// The request that turns a connection into the event stream.
 const EVENT_STREAM_REQUEST: &str = r#""EventStream""#;
-/// The request for every window.
 const WINDOWS_REQUEST: &str = r#""Windows""#;
-/// The request for every output, and the key its answer comes under.
 const OUTPUTS_REQUEST: &str = r#""Outputs""#;
 const OUTPUTS_ANSWER: &str = "Outputs";
-/// How long niri may take to answer a request.
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct Niri {
@@ -55,8 +33,6 @@ impl Niri {
         Self { socket }
     }
 
-    /// A window whose app id is one of `app_ids` (lower case), one on
-    /// `here` first.
     fn app_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<Window>, String> {
         let here = u64::try_from(here.id).ok();
         let mut matching: Vec<Window> = self
@@ -68,7 +44,6 @@ impl Niri {
         Ok(matching.into_iter().next())
     }
 
-    /// Every window, as niri answers now.
     fn windows(&self) -> Result<Vec<Window>, String> {
         let reply = self.request(WINDOWS_REQUEST)?;
         serde_json::from_value(reply["Windows"].clone()).map_err(|e| format!("niri sent odd windows ({e})"))
@@ -78,7 +53,6 @@ impl Niri {
         UnixStream::connect(&self.socket).map_err(|e| format!("can't reach niri at {}: {e}", self.socket.display()))
     }
 
-    /// Sends one request on its own connection and returns niri's answer.
     fn request(&self, request: &str) -> Result<serde_json::Value, String> {
         let mut stream = self.connect()?;
         stream.set_read_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
@@ -92,7 +66,6 @@ impl Backend for Niri {
         NAME
     }
 
-    /// niri refuses a new lock only while the one holding it still runs.
     fn restores_session_lock(&self) -> Result<bool, String> {
         Ok(true)
     }
@@ -103,7 +76,6 @@ impl Backend for Niri {
 
     fn watch(&self, report: &mut dyn FnMut(Desktop)) -> Result<(), String> {
         let mut stream = self.connect()?;
-        // Only the answer to the request has a deadline; events come when they come.
         stream.set_read_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
         writeln!(stream, "{EVENT_STREAM_REQUEST}").map_err(|e| format!("can't send to niri: {e}"))?;
         let mut reader = BufReader::new(stream);
@@ -124,7 +96,6 @@ impl Backend for Niri {
                 return Ok(());
             }
             state.apply(&line)?;
-            // niri sends what one change causes together: report once it's all in.
             if reader.buffer().is_empty() {
                 state.catch_up(&mut ask)?;
                 report(state.desktop());
@@ -147,7 +118,6 @@ impl Backend for Niri {
 
     fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
         let Some(window) = self.app_window(app_ids, here)? else { return Ok(false) };
-        // niri shows the window's workspace and output for it.
         let action = json!({"Action": {"FocusWindow": {"id": window.id}}});
         self.request(&action.to_string()).map(|_| true)
     }
@@ -158,13 +128,11 @@ impl Backend for Niri {
     }
 
     fn log_out(&self) -> Result<(), String> {
-        // The power menu already asked.
         let action = json!({"Action": {"Quit": {"skip_confirmation": true}}});
         self.request(&action.to_string()).map(drop)
     }
 }
 
-/// niri's answer to a request: `{"Ok": ...}` or `{"Err": "why"}`.
 fn read_reply(reader: &mut impl BufRead) -> Result<serde_json::Value, String> {
     #[derive(Deserialize)]
     enum Reply {
@@ -181,11 +149,9 @@ fn read_reply(reader: &mut impl BufRead) -> Result<serde_json::Value, String> {
 
 #[derive(Debug, Deserialize)]
 enum Event {
-    /// Replaces every workspace.
     WorkspacesChanged {
         workspaces: Vec<Workspace>,
     },
-    /// `id` is now active on its output, and the focused one if `focused`.
     WorkspaceActivated {
         id: u64,
         focused: bool,
@@ -198,7 +164,6 @@ enum Event {
         workspace_id: u64,
         active_window_id: Option<u64>,
     },
-    /// Replaces every window.
     WindowsChanged {
         windows: Vec<Window>,
     },
@@ -211,7 +176,6 @@ enum Event {
     WindowFocusChanged {
         id: Option<u64>,
     },
-    /// New layouts for some windows, as (id, layout) pairs.
     WindowLayoutsChanged {
         changes: Vec<(u64, Layout)>,
     },
@@ -221,7 +185,6 @@ enum Event {
     KeyboardLayoutSwitched {
         idx: usize,
     },
-    /// Everything else niri sends, now or in later releases.
     #[serde(untagged)]
     Other(serde::de::IgnoredAny),
 }
@@ -229,14 +192,12 @@ enum Event {
 #[derive(Debug, Clone, Deserialize)]
 struct Workspace {
     id: u64,
-    /// Its position on its output, from 1.
     idx: u8,
     name: Option<String>,
     output: Option<String>,
     is_urgent: bool,
     is_active: bool,
     is_focused: bool,
-    /// The window its view follows, focused or not.
     active_window_id: Option<u64>,
 }
 
@@ -244,26 +205,20 @@ struct Workspace {
 struct Window {
     id: u64,
     title: Option<String>,
-    /// None while it's being opened, before niri places it.
     workspace_id: Option<u64>,
     app_id: Option<String>,
     is_focused: bool,
-    /// Missing before niri 25.05.
     layout: Option<Layout>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct Layout {
-    /// None while it floats.
     pos_in_scrolling_layout: Option<(usize, usize)>,
-    /// Width and height in logical pixels, borders included.
     tile_size: (f64, f64),
 }
 
-/// One output in niri's answer to `Outputs`.
 #[derive(Debug, Deserialize)]
 struct NiriOutput {
-    /// None while it's off.
     logical: Option<LogicalSize>,
 }
 
@@ -279,23 +234,18 @@ struct KeyboardLayouts {
     current_idx: usize,
 }
 
-/// What the events so far add up to.
 #[derive(Debug, Default)]
 pub(super) struct State {
     workspaces: BTreeMap<u64, Workspace>,
     windows: HashMap<u64, Window>,
     focused_window: Option<u64>,
     layouts: Option<KeyboardLayouts>,
-    /// Each output's width and height in logical pixels, by name.
     output_sizes: HashMap<String, (f64, f64)>,
-    /// Whether `output_sizes` is up to date; asked for in `catch_up`.
     outputs_known: bool,
-    /// Each output's `layout`, by name: how often windows on it moved.
     moved: HashMap<String, u64>,
 }
 
 impl State {
-    /// Applies one line of the event stream.
     pub(super) fn apply(&mut self, line: &str) -> Result<(), String> {
         let event = serde_json::from_str(line).map_err(|e| format!("niri sent an odd event ({e}): {}", line.trim()))?;
         match event {
@@ -365,8 +315,6 @@ impl State {
         Ok(())
     }
 
-    /// Asks for the output sizes when they may have changed: `ask` answers
-    /// what niri answers `Outputs` with.
     pub(super) fn catch_up(
         &mut self,
         ask: &mut impl FnMut() -> Result<serde_json::Value, String>,
@@ -387,11 +335,8 @@ impl State {
         Ok(())
     }
 
-    /// Whether a tiled window on `workspace` that may be on screen is as big
-    /// as its output. niri doesn't say where its view is, only which column
-    /// it follows (the active window's): a column as wide as the output
-    /// shares the screen with that one only right beside it, so one further
-    /// away is scrolled out of view (IMP-112).
+    // niri's IPC has no fullscreen flag; a fullscreen window is one as big as its output:
+    // https://docs.rs/niri-ipc/latest/niri_ipc/struct.Window.html
     fn has_fullscreen(&self, workspace: &Workspace) -> bool {
         let Some((width, height)) = workspace.output.as_ref().and_then(|output| self.output_sizes.get(output)) else {
             return false;
@@ -411,8 +356,6 @@ impl State {
     pub(super) fn desktop(&self) -> Desktop {
         let occupied: HashSet<u64> = self.windows.values().filter_map(|window| window.workspace_id).collect();
         let mut outputs: BTreeMap<&str, Vec<&Workspace>> = BTreeMap::new();
-        // A workspace without an output belongs to one that was unplugged;
-        // niri moves it back when the output returns.
         for workspace in self.workspaces.values() {
             if let Some(output) = &workspace.output {
                 outputs.entry(output).or_default().push(workspace);
@@ -429,8 +372,6 @@ impl State {
                     workspaces: workspaces
                         .into_iter()
                         .map(|workspace| NovaWorkspace {
-                            // niri counts ids up from 1; one past i64 would
-                            // take billions of years of new workspaces.
                             id: workspace.id.try_into().unwrap_or(WorkspaceId::MAX),
                             name: workspace.name.clone().unwrap_or_else(|| workspace.idx.to_string()),
                             active: workspace.is_active,

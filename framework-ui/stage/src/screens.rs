@@ -1,31 +1,14 @@
-//! The screens there are right now. GPUI has no event for a screen that
-//! comes or goes, so [`Screens`] looks once in a while, on a timer that
-//! asks for no frame, and notifies when the list changed. The stage opens
-//! and closes its windows by it, and a feature with windows of its own (a
-//! pop-up, the volume capsule) observes it instead of looking itself.
-
 use crate::tokens::{FALLBACK_REFRESH, SCREEN_POLL};
 use gpui::{App, AppContext, Context, DisplayId, Entity, Pixels, PlatformDisplay, Point, SharedString, Size};
 use std::rc::Rc;
 use std::time::Duration;
 
-/// One screen, as the stage and the views on it lay themselves out by it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Screen {
-    /// What GPUI calls it: a window opens on a screen by this.
     pub id: DisplayId,
-    /// What the compositor calls it, like `DP-1`: novad's messages name an
-    /// output this way (a workspace's, `nova toggle`'s). Empty when the
-    /// compositor gave none.
     pub name: SharedString,
     pub size: Size<Pixels>,
-    /// Where its top left corner is among the screens side by side, in the
-    /// compositor's layout (`screen.x` and `screen.y` in Quickshell): what
-    /// a recording's region counts from. GPUI divides `wl_output`'s
-    /// position by the output's whole-number scale, so it is right only on
-    /// screens at scale 1 (a fractional scale rounds up to 2 there).
     pub origin: Point<Pixels>,
-    /// The time between two of its frames.
     pub refresh: Duration,
 }
 
@@ -41,18 +24,14 @@ impl Screen {
     }
 }
 
-/// Every screen, sorted by name.
 pub struct Screens {
     list: Vec<Screen>,
 }
 
 impl Screens {
-    /// Starts looking. The entity notifies when a screen came, went or
-    /// changed its size.
     pub(crate) fn follow(cx: &mut App) -> Entity<Self> {
         cx.new(|cx: &mut Context<Self>| {
             cx.spawn(async move |screens, cx| {
-                // Until nothing follows the screens any more.
                 let mut followed = true;
                 while followed {
                     cx.background_executor().timer(SCREEN_POLL).await;
@@ -73,7 +52,6 @@ impl Screens {
     }
 
     fn look(cx: &App) -> Vec<Screen> {
-        // GPUI lists them in no order that lasts.
         let mut screens: Vec<Screen> = cx.displays().iter().map(Screen::of).collect();
         screens.sort_by(|a, b| a.name.cmp(&b.name));
         screens
@@ -87,9 +65,6 @@ impl Screens {
         self.list.iter().find(|screen| screen.id == id)
     }
 
-    /// The screen novad means by `output` (the focused output's name): that
-    /// one, or the first when novad doesn't know or names one that isn't
-    /// here.
     pub fn for_output(&self, output: Option<&str>) -> Option<&Screen> {
         let named = output.and_then(|name| self.list.iter().find(|screen| screen.name.as_ref() == name));
         named.or(self.list.first())

@@ -1,7 +1,4 @@
-//! The `clock.time` view: the short day name and the date, dim, then the
-//! 24-hour time, both in the mono face, as today's central pill writes them
-//! (`ddd d`, `hh:mm`).
-
+use crate::day::DayNames;
 use crate::digits::{Digit, Digits};
 use gpui::{
     AnyElement, Context, Div, FontWeight, IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Window,
@@ -13,24 +10,17 @@ use nova_look::Theme;
 use nova_look::tokens::{FONT_MONO, FONT_SIZE, GAP, WEIGHT_LABEL, WEIGHT_TITLE};
 use std::time::{Duration, Instant};
 
-/// The day and the date, and the time: strftime's way of writing today's
-/// `ddd d` and `hh:mm`.
-const DAY_FORMAT: &str = "%a %-d";
 const TIME_FORMAT: &str = "%H:%M";
-/// A fixed time to show instead of the clock's, like `2026-10-24T16:40`.
 const FROZEN_TIME_VAR: &str = "NOVA_FROZEN_TIME";
-/// A wake-up this late into the next minute still counts as on time: the
-/// timer never fires early, so the minute has always turned.
 const ON_THE_MINUTE: Duration = Duration::from_millis(5);
 
 pub struct ClockTime {
     now: DateTime,
     digits: Digits,
+    day: SharedString,
 }
 
 impl ClockTime {
-    /// Shows the time now, then ticks on each minute until the view goes.
-    /// A frozen time never ticks.
     pub fn start(cx: &mut Context<Self>) -> Self {
         let frozen = frozen_time();
         let now = frozen.unwrap_or_else(local_now);
@@ -45,13 +35,17 @@ impl ClockTime {
             })
             .detach();
         }
-        Self { digits: Digits::new(&now.strftime(TIME_FORMAT).to_string(), Instant::now()), now }
+        let day = cx.global::<DayNames>().day(now.date()).into();
+        Self { digits: Digits::new(&now.strftime(TIME_FORMAT).to_string(), Instant::now()), now, day }
     }
 
     fn show(&mut self, now: DateTime, cx: &mut Context<Self>) {
-        let changed = now.strftime(TIME_FORMAT).to_string() != self.now.strftime(TIME_FORMAT).to_string()
-            || now.date() != self.now.date();
+        let new_day = now.date() != self.now.date();
+        let changed = new_day || now.strftime(TIME_FORMAT).to_string() != self.now.strftime(TIME_FORMAT).to_string();
         self.now = now;
+        if new_day {
+            self.day = cx.global::<DayNames>().day(now.date()).into();
+        }
         if changed {
             self.digits.set(&now.strftime(TIME_FORMAT).to_string(), Instant::now());
             cx.notify();
@@ -59,12 +53,10 @@ impl ClockTime {
     }
 }
 
-/// The time on the wall here, in the system's time zone.
 fn local_now() -> DateTime {
     Zoned::now().datetime()
 }
 
-/// `NOVA_FROZEN_TIME`, when it is set to a time this can read.
 fn frozen_time() -> Option<DateTime> {
     let text = std::env::var(FROZEN_TIME_VAR).ok()?;
     let time = text.parse::<DateTime>();
@@ -74,7 +66,6 @@ fn frozen_time() -> Option<DateTime> {
     time.ok()
 }
 
-/// How long until the next minute starts, from `now`.
 fn until_next_minute(now: DateTime) -> Duration {
     let seconds = u64::try_from(now.second()).unwrap_or(0);
     let nanos = u64::try_from(now.subsec_nanosecond()).unwrap_or(0);
@@ -82,8 +73,6 @@ fn until_next_minute(now: DateTime) -> Duration {
     Duration::from_secs(60).saturating_sub(into_minute) + ON_THE_MINUTE
 }
 
-/// How one digit's cell is drawn: as wide as the face's digits (they are
-/// all as wide in a mono face), and as tall as its glyphs.
 #[derive(Clone, Copy)]
 struct Cell {
     width: Pixels,
@@ -102,7 +91,6 @@ impl Cell {
     }
 }
 
-/// A character centered in a cell, `offset` down from its place.
 fn glyph(character: char, cell: Cell, offset: Pixels, opacity: f32) -> Div {
     div()
         .absolute()
@@ -117,8 +105,6 @@ fn glyph(character: char, cell: Cell, offset: Pixels, opacity: f32) -> Div {
         .child(SharedString::from(character.to_string()))
 }
 
-/// A digit that rolls: the old one up and out, the new one in from below,
-/// clipped to its cell. The colon stands in a cell of its own width.
 fn digit(digit: &Digit, cell: Cell, now: Instant) -> AnyElement {
     if !digit.rolls() {
         return div().child(SharedString::from(digit.shown.to_string())).into_any_element();
@@ -139,8 +125,7 @@ impl Render for ClockTime {
         }
         let theme = Theme::of(cx);
         let cell = Cell::of(window, WEIGHT_TITLE);
-        let day =
-            div().font_weight(WEIGHT_LABEL).text_color(theme.fg_dim()).child(self.now.strftime(DAY_FORMAT).to_string());
+        let day = div().font_weight(WEIGHT_LABEL).text_color(theme.fg_dim()).child(self.day.clone());
         let time = div()
             .flex()
             .items_center()
@@ -175,9 +160,8 @@ mod tests {
     }
 
     #[test]
-    fn it_writes_the_day_and_time_as_today_s_pill() {
+    fn it_writes_the_time_as_today_s_pill() {
         let time = at(9, 5, 0, 0);
-        assert_eq!(time.strftime(DAY_FORMAT).to_string(), "Sat 24");
         assert_eq!(time.strftime(TIME_FORMAT).to_string(), "09:05");
     }
 

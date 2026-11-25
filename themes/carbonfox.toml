@@ -4,7 +4,7 @@
 #
 # A theme has a [dark] table and may have a [light] one. Each table sets
 # every color token exactly once (novad refuses missing or unknown ones).
-# The UI's Tokens.qml exposes them under these names.
+# The UI's look tokens take them by these names.
 
 name = "Carbonfox"
 

@@ -1,21 +1,10 @@
-//! A notification's picture, as an app sends it: raw pixels in an
-//! `image-data` hint, written out as a PNG the UI can load; or a file, by
-//! path or `file://` URI (`nova_paths::reference`), which the UI loads as it is.
-
 use nova_base::state_file;
 use std::path::{Path, PathBuf};
 
-/// The pixels in an `image-data` hint: width, height, row stride, whether
-/// there's an alpha channel, bits per sample, channels, and the bytes.
 pub type Raw = (i32, i32, i32, bool, i32, i32, Vec<u8>);
 
-/// Pictures bigger than this on either side are refused: senders scale
-/// avatars down, and anything on the bus can send one.
 const MAX_SIDE: u32 = 1024;
 
-/// Writes `raw` to `<folder>/<id>-<revision>.png` and returns that path. A
-/// new revision for each picture gives it a path of its own, so the UI
-/// loads it afresh rather than showing a cached one.
 pub fn save(raw: Raw, folder: &Path, id: u32, revision: u64) -> Result<PathBuf, String> {
     let (width, height, stride, alpha, bits, channels, bytes) = raw;
     let (Ok(width), Ok(height), Ok(stride)) = (u32::try_from(width), u32::try_from(height), usize::try_from(stride))
@@ -30,7 +19,6 @@ pub fn save(raw: Raw, folder: &Path, id: u32, revision: u64) -> Result<PathBuf, 
         return Err(format!("{channels} channels of {bits} bits aren't 8-bit RGB or RGBA"));
     }
     let row = width as usize * wanted as usize;
-    // The last row may stop short of the stride.
     if stride < row || bytes.len() < stride * (height as usize - 1) + row {
         return Err("fewer bytes than its size needs".into());
     }
@@ -51,8 +39,6 @@ pub fn save(raw: Raw, folder: &Path, id: u32, revision: u64) -> Result<PathBuf, 
     Ok(path)
 }
 
-/// Whether `path` is a picture `save` wrote for notification `id`: novad
-/// deletes only those, never a file an app named.
 pub fn is_saved(folder: &Path, id: u32, path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else { return false };
     let revision = name.strip_prefix(&format!("{id}-")).and_then(|rest| rest.strip_suffix(".png"));
@@ -66,7 +52,6 @@ mod tests {
     #[test]
     fn padded_rows_become_a_png_of_the_right_size() {
         let dir = nova_test_support::TempDir::new("notification-image");
-        // 2×2 RGB, each row padded to 8 bytes; the last row isn't.
         let bytes = vec![255, 0, 0, 0, 255, 0, 9, 9, 0, 0, 255, 255, 255, 255];
         let path = save((2, 2, 8, false, 8, 3, bytes), &dir, 5, 9).unwrap();
         assert_eq!(path, dir.join("5-9.png"));

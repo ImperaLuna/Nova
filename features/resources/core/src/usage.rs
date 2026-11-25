@@ -1,12 +1,7 @@
-//! Reading CPU, memory and process usage from `/proc`: counters that only
-//! mean something as the difference between two looks, so each reading is
-//! kept to compare the next one with.
-
 use std::collections::HashMap;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-/// CPU time since boot, all CPUs together, in clock ticks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CpuTimes {
     pub total: u64,
@@ -14,8 +9,6 @@ pub struct CpuTimes {
 }
 
 impl CpuTimes {
-    /// The first (`cpu`) line of `/proc/stat`. Guest time is already part of
-    /// user time there, so only the first eight columns count.
     pub fn parse(stat: &str) -> Option<Self> {
         let line = stat.lines().find(|line| line.starts_with("cpu "))?;
         let columns: Vec<u64> =
@@ -28,7 +21,6 @@ impl CpuTimes {
         Self::parse(&std::fs::read_to_string(proc_root.join("stat")).ok()?)
     }
 
-    /// Share of the time between `earlier` and this that was busy, 0 to 100.
     pub fn busy_since(&self, earlier: &Self) -> f32 {
         let total = self.total.saturating_sub(earlier.total);
         let idle = self.idle.saturating_sub(earlier.idle);
@@ -39,7 +31,6 @@ impl CpuTimes {
     }
 }
 
-/// `part` as a share of `whole`, 0 to 100.
 pub fn percent(part: u64, whole: u64) -> f32 {
     if whole == 0 {
         return 0.0;
@@ -47,9 +38,6 @@ pub fn percent(part: u64, whole: u64) -> f32 {
     (part as f64 / whole as f64 * 100.0).clamp(0.0, 100.0) as f32
 }
 
-/// Memory in use and in all, in bytes, from `/proc/meminfo`. In use is
-/// what isn't available to start new programs (`MemAvailable`), the
-/// number `free` and btop show.
 pub fn memory(meminfo: &str) -> Option<(u64, u64)> {
     let field = |key: &str| {
         meminfo.lines().find_map(|line| {
@@ -66,33 +54,22 @@ pub fn read_memory(proc_root: &Path) -> Option<(u64, u64)> {
     memory(&std::fs::read_to_string(proc_root.join("meminfo")).ok()?)
 }
 
-/// One process at one look.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Process {
     pub pid: u32,
     pub ppid: u32,
     pub name: String,
-    /// The program it runs (`/proc/<pid>/exe`), when readable: only for
-    /// the user's own processes.
     pub program: Option<PathBuf>,
-    /// Its owner.
     pub uid: Option<u32>,
-    /// User and system CPU time since it started, in clock ticks.
     pub ticks: u64,
-    /// Resident memory in pages.
     pub resident_pages: u64,
 }
 
 impl Process {
-    /// A `/proc/<pid>/stat` line. The name sits in parentheses and may hold
-    /// spaces and parentheses itself, so the fields after it are counted
-    /// from the last `)`.
     pub fn parse(pid: u32, stat: &str) -> Option<Self> {
         let open = stat.find('(')?;
         let close = stat.rfind(')')?;
         let name = stat.get(open + 1..close)?.to_string();
-        // From the state (field 3 in proc(5)): ppid is 4, utime 14, stime
-        // 15, rss 24.
         let fields: Vec<&str> = stat.get(close + 1..)?.split_whitespace().collect();
         let field = |number: usize| fields.get(number - 3)?.parse::<u64>().ok();
         Some(Self {
@@ -107,7 +84,6 @@ impl Process {
     }
 }
 
-/// Every process readable now. Ones that exit while being read are left out.
 pub fn processes(proc_root: &Path) -> Vec<Process> {
     let Ok(entries) = std::fs::read_dir(proc_root) else { return Vec::new() };
     entries
@@ -123,14 +99,10 @@ pub fn processes(proc_root: &Path) -> Vec<Process> {
         .collect()
 }
 
-/// Each process's CPU ticks at the last look, to tell how busy it's been
-/// since.
 #[derive(Debug, Default)]
 pub struct ProcessTicks(HashMap<u32, u64>);
 
 impl ProcessTicks {
-    /// The ticks each of `now` used since the last look (all of them for a
-    /// process that's new since), remembering `now` for the next one.
     pub fn since_last(&mut self, now: &[Process]) -> Vec<u64> {
         let used =
             now.iter().map(|process| process.ticks.saturating_sub(*self.0.get(&process.pid).unwrap_or(&0))).collect();

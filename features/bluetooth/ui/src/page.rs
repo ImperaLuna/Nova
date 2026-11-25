@@ -1,12 +1,3 @@
-//! `bluetooth.page`: the Bluetooth page's state and what it asks of novad.
-//! `draw.rs` draws it.
-//!
-//! While it shows on some screen, novad looks for nearby devices and asks
-//! pairing questions here instead of on the pop-up ([`crate::watch`]). It
-//! opens fresh each time quick settings shows it: no menu, no confirm, no
-//! failure closed. What's typed into a PIN field stays while the rows
-//! around it move, and goes with the question.
-
 use crate::{PAGE, QUICK_SETTINGS, logic};
 use gpui::{AppContext, Context, Entity, KeyDownEvent, Subscription, Window};
 use nova_bluetooth_api::{Bluetooth, BluetoothDevice, BluetoothRadio, Command, Event, TOPIC};
@@ -22,23 +13,14 @@ pub struct BluetoothPage {
     pub screen: Screen,
     pub bluetooth: Entity<Live<Bluetooth>>,
     watch: Entity<Watch>,
-    /// Quick settings shows this page on its screen.
     shown: bool,
-    /// The connected device whose Disconnect and Forget show.
     pub opened: Option<String>,
-    /// The known device asking to confirm Forget.
     pub forgetting: Option<String>,
-    /// Failures closed with Close, by address: hidden until the next one.
     pub closed: HashMap<String, String>,
-    /// The row under the pointer, by address.
     pub hovered: Option<String>,
-    /// A PIN being typed for the question asked now.
     pub pin: Entity<TextField>,
-    /// The question whose field was given the focus.
     pub focused_for: Option<u64>,
-    /// The question the PIN field was last typed for.
     pin_for: Option<u64>,
-    /// Where the switch's knob is, sliding as it flips.
     pub power_knob: Eased,
     _followed: Vec<Subscription>,
 }
@@ -81,8 +63,6 @@ impl BluetoothPage {
         self.bluetooth.read(cx).get()
     }
 
-    /// Shown or not: fresh each time it opens; novad looks for devices
-    /// while it shows.
     fn follow_stage(&mut self, cx: &mut Context<Self>) {
         let screen = self.screen.id;
         let shown = Stage::is_open(QUICK_SETTINGS, screen, cx)
@@ -108,21 +88,25 @@ impl BluetoothPage {
         match self.shown {
             true if self.power_knob.target() != on => self.power_knob.set_target(on, now),
             true => {}
-            // Out of sight it is just there.
             false => self.power_knob = Eased::lasting(on, DURATION_COLOR, now),
         }
-        // What was typed goes with its question.
         let id = self.state(cx).and_then(|state| state.pairing.as_ref()).map(|request| request.id);
         if id != self.pin_for {
             self.pin_for = id;
             if id.is_none() {
                 self.focused_for = None;
             }
-            if !self.pin.read(cx).text().is_empty() {
-                self.pin.update(cx, |field, cx| field.set_text("", cx));
-            }
+            let max = self
+                .state(cx)
+                .and_then(|state| state.pairing.as_ref())
+                .map_or(0, |request| crate::logic::code_max(&request.ask));
+            self.pin.update(cx, |field, cx| {
+                field.set_max_chars(max);
+                if !field.text().is_empty() {
+                    field.set_text("", cx);
+                }
+            });
         }
-        // A closed failure shows again once it's gone and comes back.
         if let Some(state) = self.bluetooth.read(cx).get() {
             let failing = |address: &String, error: &String| {
                 state.devices.iter().any(|device| &device.address == address && device.error.as_ref() == Some(error))
@@ -132,8 +116,6 @@ impl BluetoothPage {
         cx.notify();
     }
 
-    /// A click on a device: connects a new or known one (pairing a new one
-    /// first), disconnects a connected one.
     pub fn act(&mut self, device: &BluetoothDevice, cx: &mut Context<Self>) {
         self.forgetting = None;
         let address = device.address.clone();
@@ -151,7 +133,6 @@ impl BluetoothPage {
         cx.notify();
     }
 
-    /// A right click: the device's menu, or shut it when it's open.
     pub fn open_menu(&mut self, device: &BluetoothDevice, cx: &mut Context<Self>) {
         let address = Some(device.address.clone());
         match logic::menu(device.status) {
@@ -168,7 +149,6 @@ impl BluetoothPage {
         cx.notify();
     }
 
-    /// A known device's ⋯: asks to forget it, or stops asking.
     pub fn toggle_forget(&mut self, address: &str, cx: &mut Context<Self>) {
         self.opened = None;
         self.forgetting = match self.forgetting.as_deref() == Some(address) {
@@ -210,8 +190,6 @@ impl BluetoothPage {
         }
     }
 
-    /// Enter answers a typed question; every other key is left alone, so
-    /// Esc closes quick settings.
     pub fn key_down(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         if event.keystroke.key != "enter" {
             return;

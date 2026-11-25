@@ -1,7 +1,3 @@
-//! What `devices.js` worked out for the Devices card, with no GPUI drawing
-//! in it: each device's icon, how its link reads, how full its battery is
-//! drawn, when it reads as low, and the text beside it.
-
 use nova_look::{Glyph, LOW_PERCENT};
 use nova_peripherals_api::{Battery, BatteryLevel, PeripheralKind, PeripheralLink};
 
@@ -31,7 +27,6 @@ pub fn link_label(link: PeripheralLink) -> &'static str {
     }
 }
 
-/// How full its battery is drawn, 0 to 1 (0 when it hasn't said).
 pub fn fill(battery: Option<Battery>) -> f32 {
     match battery {
         None => 0.0,
@@ -46,7 +41,6 @@ pub fn fill(battery: Option<Battery>) -> f32 {
     }
 }
 
-/// Low, unless it charges.
 pub fn low(battery: Option<Battery>, charging: bool) -> bool {
     match battery {
         _ if charging => false,
@@ -56,12 +50,9 @@ pub fn low(battery: Option<Battery>, charging: bool) -> bool {
     }
 }
 
-/// What the text beside the battery says, and how it is inked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
-    /// A percentage.
     Plain,
-    /// A rough level, or nothing said yet.
     Soft,
     Low,
 }

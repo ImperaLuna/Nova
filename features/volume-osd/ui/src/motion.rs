@@ -1,10 +1,3 @@
-//! The motion behind the capsule, with no GPUI in it (`LiquidMotion.qml`
-//! in today's shell): springs for how far it's out and for the liquid's
-//! level, and the liquid's reaction to both. Sliding sideways tilts the
-//! surface (it lags the glass); a level change makes it slosh and sends
-//! more specks up. Whoever draws it steps it once a frame, and only while
-//! it is shown, so a hidden one costs nothing.
-
 use crate::tokens::{
     FIZZ, FIZZ_PACE, FRAME_MAX, GONE, IDLE_WAVE, LEVEL, SLIDE, SLOSH_DECAY, SLOSH_GAIN, SLOSH_MAX, TILT, TILT_GAIN,
     TILT_MAX,
@@ -14,39 +7,28 @@ use std::time::Duration;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LiquidMotion {
-    /// Targets: 1 out, 0 in; the fill, 0..1.
     pub open_target: f32,
     pub level_target: f32,
-    /// A muted or missing output: the surface goes still, no specks.
     pub still: bool,
-    /// How far out it is (overshooting past 1) and how fast it moves.
     pub open: SpringState,
     pub level: SpringState,
-    /// The surface's tilt (px per px), swinging back like a pendulum.
     pub tilt: SpringState,
-    /// Seconds it has run, and how far the specks have risen (the same,
-    /// run faster while it fizzes).
     pub time: f32,
     pub rise: f32,
-    /// Waves a level change stirred up, settling; the waves' height with
-    /// the idle swell; how many specks rise (0..1).
     pub slosh: f32,
     pub amp: f32,
     pub fizz: f32,
 }
 
 impl LiquidMotion {
-    /// At rest, hidden, filled to `level`.
     pub fn at(level: f32, still: bool) -> Self {
         Self { level_target: level, level: SpringState::at(level), still, ..Self::default() }
     }
 
-    /// Out, or on its way in or out.
     pub fn shown(&self) -> bool {
         self.open.value > GONE || self.open_target > 0.0
     }
 
-    /// One frame `elapsed` after the last.
     pub fn advance(&mut self, elapsed: Duration) {
         let elapsed = elapsed.min(FRAME_MAX);
         let dt = elapsed.as_secs_f32();
@@ -55,13 +37,10 @@ impl LiquidMotion {
         let mut level = LEVEL.step(self.level, self.level_target, elapsed);
         level.value = level.value.clamp(0.0, 1.0);
         self.level = level;
-        // The glass's sideways acceleration tilts the surface, which swings
-        // back like a pendulum.
         let mut swing = TILT.step(self.tilt, 0.0, elapsed);
         swing.speed -= self.open.acceleration * TILT_GAIN * dt;
         swing.value = swing.value.clamp(-TILT_MAX, TILT_MAX);
         self.tilt = swing;
-        // Level changes stir up waves, which settle.
         let stirred = self.level.speed.abs() * SLOSH_GAIN * dt;
         self.slosh = SLOSH_MAX.min(self.slosh * (-dt / SLOSH_DECAY).exp() + stirred);
         self.amp = if self.still { 0.0 } else { IDLE_WAVE } + self.slosh;

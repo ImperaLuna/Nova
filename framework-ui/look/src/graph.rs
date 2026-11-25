@@ -1,21 +1,8 @@
-//! A graph over time: a history's values as a line, newest at the right,
-//! and the area under one. The network page's traffic and the resources
-//! page draw with it. `graphPath` in `ui/quick_settings/quick_settings.js`
-//! in today's shell.
-//!
-//! [`points`] places the values, with no GPUI drawing in it; [`line`] and
-//! [`area`] paint them from inside a `canvas`.
-
 use crate::tokens::GRAPH_LINE;
 use gpui::{Bounds, Hsla, PathBuilder, Pixels, Point, Window, point};
 
-/// The most a value is: values are shares of the graph's height, in percent.
 pub const FULL: f32 = 100.0;
 
-/// Where each of `values` (0 to [`FULL`], oldest first) sits in `bounds`:
-/// spaced so that `span` of them fill the width, the newest at the right
-/// edge, a value of 0 on the bottom edge. Values past either end are held
-/// to it; a history longer than `span` keeps its newest.
 pub fn points(values: &[f32], bounds: Bounds<Pixels>, span: usize) -> Vec<Point<Pixels>> {
     let values = &values[values.len().saturating_sub(span.max(1))..];
     let step = bounds.size.width / span.saturating_sub(1).max(1) as f32;
@@ -31,7 +18,6 @@ pub fn points(values: &[f32], bounds: Bounds<Pixels>, span: usize) -> Vec<Point<
         .collect()
 }
 
-/// Strokes `points` as one line in `color`.
 pub fn line(points: &[Point<Pixels>], color: Hsla, window: &mut Window) {
     if points.len() < 2 {
         return;
@@ -43,7 +29,6 @@ pub fn line(points: &[Point<Pixels>], color: Hsla, window: &mut Window) {
     }
 }
 
-/// Fills between `points` and the bottom of `bounds` in `color`.
 pub fn area(points: &[Point<Pixels>], bounds: Bounds<Pixels>, color: Hsla, window: &mut Window) {
     let (Some(first), Some(last)) = (points.first(), points.last()) else { return };
     let bottom = bounds.bottom();

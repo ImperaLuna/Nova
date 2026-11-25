@@ -1,13 +1,3 @@
-//! Talking HID++ 2.0 to one device on a hidraw node: is it there, what is
-//! it, and how charged is it.
-//!
-//! Every request waits for its own answer ([`ANSWER_TIMEOUT`] at most);
-//! reports nobody asked for that come meanwhile are kept in
-//! [`Conversation::heard`] for the reader to act on. A feature is used by
-//! its index on that device, which the root feature (always index 0) gives
-//! for its id. The battery comes from UNIFIED_BATTERY (`0x1004`, newer
-//! devices) or else BATTERY_STATUS (`0x1000`).
-
 use super::descriptor::Reports;
 use super::protocol::{self, Answer, Call, Length};
 use crate::hidraw::channel::{Channel, Received};
@@ -15,14 +5,10 @@ use crate::name;
 use nova_peripherals_api::{Battery, BatteryLevel, PeripheralKind};
 use std::time::{Duration, Instant};
 
-/// How long a device or its receiver may take to answer: a paired device
-/// answers over the air.
 pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(2);
-/// The root feature's index, and its functions.
 const ROOT: u8 = 0;
 const ROOT_GET_FEATURE: u8 = 0;
 const ROOT_PING: u8 = 1;
-/// Sent with a ping and echoed back.
 const PING_MARK: u8 = 0x5A;
 const DEVICE_INFO: u16 = 0x0003;
 const DEVICE_INFO_GET: u8 = 0;
@@ -35,35 +21,23 @@ const BATTERY_STATUS_GET: u8 = 0;
 const UNIFIED_BATTERY: u16 = 0x1004;
 const UNIFIED_CAPABILITIES: u8 = 0;
 const UNIFIED_STATUS: u8 = 1;
-/// UNIFIED_BATTERY's capability flag for a percentage, not only levels.
 const UNIFIED_HAS_PERCENT: u8 = 0x02;
-/// UNIFIED_BATTERY's level bits.
 const LEVEL_FULL: u8 = 0x08;
 const LEVEL_GOOD: u8 = 0x04;
 const LEVEL_LOW: u8 = 0x02;
 const LEVEL_CRITICAL: u8 = 0x01;
-/// UNIFIED_BATTERY's charging states: charging, slowly.
 const UNIFIED_CHARGING: [u8; 2] = [1, 2];
-/// BATTERY_STATUS's: recharging, almost full, slow recharge.
 const STATUS_CHARGING: [u8; 3] = [1, 2, 4];
-/// A receiver's HID++ 1.0 register of what it reports by itself, and its
-/// wireless bit (`0x000100`: which byte, which bit).
 const NOTIFICATIONS_REGISTER: u8 = 0x00;
 const WIRELESS_NOTICES: (usize, u8) = (1, 0x01);
-/// The longest name read: the sidebar shows less.
 const MAX_NAME_BYTES: usize = 64;
-/// DEVICE_INFO's transports, in the order their product ids follow:
-/// Bluetooth, Bluetooth LE, a receiver's (eQuad), USB.
 const TRANSPORTS: usize = 4;
 
-/// Why a request got no reply.
 #[derive(Debug)]
 pub enum Failure {
     Io(std::io::Error),
     Stopped,
-    /// Nothing came in [`ANSWER_TIMEOUT`].
     NoAnswer,
-    /// It answered with this HID++ error code.
     Error(u8),
 }
 
@@ -73,37 +47,28 @@ impl From<std::io::Error> for Failure {
     }
 }
 
-/// Whether a device index answered HID++ 2.0's ping.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Ping {
-    /// It's there and speaks HID++ 2.0 or later.
     There,
-    /// A receiver, speaking HID++ 1.0 only.
     Receiver,
-    /// Nothing there (or it's off).
     Gone,
 }
 
-/// What a device is, read once while it stays connected.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Info {
     pub name: Option<String>,
     pub kind: PeripheralKind,
-    /// Its unit id, which tells it from another of its model.
     pub unit_id: Option<[u8; 4]>,
-    /// Its model's product ids, on each transport it has.
     pub product_ids: Vec<u16>,
     pub battery: Option<BatteryFeature>,
 }
 
-/// Where a device's battery is read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BatteryFeature {
     Unified { index: u8, has_percent: bool },
     Status { index: u8 },
 }
 
-/// A battery reading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Charge {
     pub battery: Option<Battery>,
@@ -113,7 +78,6 @@ pub struct Charge {
 pub struct Conversation {
     channel: Channel,
     reports: Reports,
-    /// Reports nobody asked for that came while waiting for an answer.
     pub heard: Vec<Vec<u8>>,
 }
 
@@ -122,7 +86,6 @@ impl Conversation {
         Self { channel, reports, heard: Vec::new() }
     }
 
-    /// The next report nobody asked for, waiting until `until` at most.
     pub fn wait(&mut self, until: Instant) -> Result<Option<Vec<u8>>, Failure> {
         loop {
             match self.channel.receive(until)? {
@@ -134,7 +97,6 @@ impl Conversation {
         }
     }
 
-    /// Function `function` of the feature at `feature` on `device`.
     fn call(&mut self, device: u8, feature: u8, function: u8, params: &[u8]) -> Result<Vec<u8>, Failure> {
         self.call_as(Length::Long, Call { device, feature, function, params })
     }
@@ -143,7 +105,6 @@ impl Conversation {
         self.send(protocol::request(self.reports, length, call))
     }
 
-    /// Sends `request` and waits for its answer.
     fn send(&mut self, request: Vec<u8>) -> Result<Vec<u8>, Failure> {
         if !self.channel.send(&request)? {
             return Err(Failure::Stopped);
@@ -163,9 +124,6 @@ impl Conversation {
         }
     }
 
-    /// Whether `device` is there. An error says it isn't (a receiver
-    /// answers so for an empty slot, or a device asleep); no answer at all
-    /// fails, as it may only have been lost over the air.
     pub fn ping(&mut self, device: u8) -> Result<Ping, Failure> {
         match self
             .call_as(Length::Short, Call { device, feature: ROOT, function: ROOT_PING, params: &[0, 0, PING_MARK] })
@@ -177,11 +135,6 @@ impl Conversation {
         }
     }
 
-    /// Has a receiver say when a paired device connects or goes (HID++
-    /// 1.0 notice `0x41`), as Solaar and the kernel's driver do: the
-    /// wireless bit of its notifications register, keeping the bits others
-    /// set. A device waking from sleep is then read at once, not on the
-    /// next poll.
     pub fn follow_connections(&mut self) -> Result<(), Failure> {
         if !self.reports.short {
             return Ok(());
@@ -198,14 +151,11 @@ impl Conversation {
         self.send(protocol::write_register(NOTIFICATIONS_REGISTER, value)).map(|_| ())
     }
 
-    /// The index of feature `id` on `device`, if it has it.
     fn feature(&mut self, device: u8, id: u16) -> Result<Option<u8>, Failure> {
         let reply = self.call(device, ROOT, ROOT_GET_FEATURE, &id.to_be_bytes())?;
         Ok(reply.first().copied().filter(|index| *index != 0))
     }
 
-    /// What `device` is. Its name, type and ids are nice to have: one it
-    /// won't give is left out, and only its battery feature must be found.
     pub fn info(&mut self, device: u8) -> Result<Info, Failure> {
         let mut info =
             Info { name: None, kind: PeripheralKind::Other, unit_id: None, product_ids: Vec::new(), battery: None };
@@ -229,7 +179,6 @@ impl Conversation {
         Ok(info)
     }
 
-    /// Its name, read in parts.
     fn name(&mut self, device: u8, index: u8) -> Result<Option<String>, Failure> {
         let length = self.call(device, index, NAME_LENGTH, &[])?;
         let length = length.first().map_or(0, |length| usize::from(*length)).min(MAX_NAME_BYTES);
@@ -246,7 +195,6 @@ impl Conversation {
         Ok(name(&String::from_utf8_lossy(&bytes)))
     }
 
-    /// How charged it is now.
     pub fn charge(&mut self, device: u8, feature: BatteryFeature) -> Result<Charge, Failure> {
         Ok(match feature {
             BatteryFeature::Unified { index, has_percent } => {
@@ -257,8 +205,6 @@ impl Conversation {
     }
 }
 
-/// `result`, or `None` when the device said no or didn't answer; a stop or
-/// a lost node still ends it.
 fn optional<T>(result: Result<T, Failure>) -> Result<Option<T>, Failure> {
     match result {
         Ok(value) => Ok(Some(value)),
@@ -267,7 +213,6 @@ fn optional<T>(result: Result<T, Failure>) -> Result<Option<T>, Failure> {
     }
 }
 
-/// UNIFIED_BATTERY's status: percentage, level bits, charging state.
 fn unified(reply: &[u8], has_percent: bool) -> Charge {
     let byte = |at: usize| reply.get(at).copied().unwrap_or(0);
     let level = byte(1);
@@ -287,16 +232,12 @@ fn unified(reply: &[u8], has_percent: bool) -> Charge {
     Charge { battery, charging: UNIFIED_CHARGING.contains(&byte(2)) }
 }
 
-/// BATTERY_STATUS's: percentage (0 while unknown), next level, state.
 fn status(reply: &[u8]) -> Charge {
     let byte = |at: usize| reply.get(at).copied().unwrap_or(0);
     let battery = (1..=100).contains(&byte(0)).then(|| Battery::Percent(byte(0)));
     Charge { battery, charging: STATUS_CHARGING.contains(&byte(2)) }
 }
 
-/// DEVICE_INFO's unit id and its model's product ids: entity count, unit
-/// id (4 bytes), transports (2, a bit each), model id (a product id per
-/// transport, 2 bytes each, in [`TRANSPORTS`] order).
 fn ids(reply: &[u8]) -> (Option<[u8; 4]>, Vec<u16>) {
     let unit_id = reply.get(1..5).and_then(|bytes| <[u8; 4]>::try_from(bytes).ok()).filter(|id| *id != [0; 4]);
     let transports = reply.get(5..7).map_or(0, |bytes| u16::from_be_bytes([bytes[0], bytes[1]]));
@@ -317,7 +258,6 @@ fn ids(reply: &[u8]) -> (Option<[u8; 4]>, Vec<u16>) {
     (unit_id, product_ids)
 }
 
-/// DEVICE_NAME's device types, for the icon.
 fn kind_of(kind: u8) -> PeripheralKind {
     match kind {
         0 | 2 => PeripheralKind::Keyboard,
@@ -356,7 +296,6 @@ mod tests {
 
     #[test]
     fn device_info_gives_the_unit_and_its_product_ids() {
-        // Unit 12345678; transports eQuad + USB; model ids 407f, c094.
         let reply = [2, 0x12, 0x34, 0x56, 0x78, 0x00, 0x0c, 0x40, 0x7f, 0xc0, 0x94, 0, 0, 0, 0];
         assert_eq!(ids(&reply), (Some([0x12, 0x34, 0x56, 0x78]), vec![0x407f, 0xc094]));
         assert_eq!(ids(&[]), (None, Vec::new()));

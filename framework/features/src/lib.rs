@@ -1,125 +1,50 @@
-//! Feature manifests (`features/<id>/feature.toml`).
-//!
-//! A manifest is the single source of truth for one feature. Nix reads it
-//! with `builtins.fromTOML`, `nova setup` reads it to pick packages on other
-//! distros, and `novad` reads it to decide what the UI may load.
-//!
-//! ```toml
-//! id = "recording"
-//! name = "Screen recording"
-//! description = "Record the screen or a region."
-//! default = false
-//!
-//! [variants.nvidia]
-//! when = { gpu = "nvidia" }
-//! nix = ["gpu-screen-recorder"]
-//! arch = ["gpu-screen-recorder"]
-//!
-//! [variants.default]
-//! nix = ["wf-recorder"]
-//! arch = ["wf-recorder"]
-//!
-//! [check]
-//! binaries = ["gpu-screen-recorder|wf-recorder"]
-//!
-//! [[slot]]
-//! host = "bar.right"
-//! view = "recording.pill"
-//! order = 10
-//! ```
-//!
-//! A feature can come in modes, one of which is on while the feature is:
-//! `modes` lists them and `default-mode` says which one a user who didn't
-//! pick gets. `features.toml` picks one under `[modes]`
-//! (`nova-files = "full"`).
-//!
-//! Each `[[slot]]` is a place its UI goes: a view (an id the UI maps to its
-//! component in ui/slots/Views.qml) in one of the [`HOSTS`], sorted there by
-//! `order`. novad sends them with the feature's state, so a new feature
-//! plugs into the bar from its own manifest instead of the shell's files.
-
 pub mod gpus;
 
 pub use nova_daemon_info::Slot;
-use nova_daemon_info::{FeatureState, FeatureStatus, UiProgram};
+use nova_daemon_info::{FeatureState, FeatureStatus};
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-/// Package sets a variant may list. `nix` holds nixpkgs attribute names.
 pub const DISTROS: &[&str] = &["nix", "arch", "fedora", "debian"];
 
-/// A place in the UI that slots fill, and the feature that draws it. The
-/// UI's names for them are the `HOST_*` constants in ui/slots/slots.js.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Host {
     pub name: &'static str,
-    /// The feature whose UI draws the host: its slots have nowhere to show
-    /// while that feature isn't ready. `None` for a host the shell draws
-    /// whatever is on (the stage's panels, the overlays).
     pub owner: Option<&'static str>,
-    /// What answers its views.
     pub views: Views,
 }
 
-/// What a host's view ids name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Views {
-    /// A UI component each (ui/slots/views.js).
     Ui,
-    /// A service in novad each, whose answers the owner's UI shows in its own
-    /// way (the launcher's providers, `nova_launcher::providers`).
     Daemon,
 }
 
-/// Every host a slot may name. A slot naming another host is never filled.
 pub const HOSTS: &[Host] = &[
-    // The bar's rows of pills: left from the left edge, center around the
-    // middle, right from the right edge.
     Host { name: "bar.left", owner: Some("bar"), views: Views::Ui },
     Host { name: "bar.center", owner: Some("bar"), views: Views::Ui },
     Host { name: "bar.right", owner: Some("bar"), views: Views::Ui },
-    // The buttons at the right pill's end (and on quick settings, in the
-    // same place).
     Host { name: "right-pill.buttons", owner: Some("bar"), views: Views::Ui },
-    // The tray in the right pill, before a divider and its buttons. Today's
-    // right pill draws the tray itself; nova-ui's draws this host's views.
     Host { name: "right-pill.tray", owner: Some("bar"), views: Views::Ui },
-    // The central pill's parts beside the launcher's search button: the
-    // workspaces and the day and time.
     Host { name: "central-pill.parts", owner: Some("bar"), views: Views::Ui },
-    // Panels drawn on the stage or its panel surfaces that aren't a pill
-    // of their own, like the launcher. They open from their keys and
-    // `nova toggle` with the bar off too.
     Host { name: "stage.panels", owner: None, views: Views::Ui },
-    // Windows of their own over the screen: the volume capsule, the lock
-    // screen, notification pop-ups, the capture overlay, pairing questions.
     Host { name: "shell.overlays", owner: None, views: Views::Ui },
-    // Quick settings' first page: toggle tiles two to a row, sliders, cards,
-    // one view in the room left below them and one pinned at the foot.
     Host { name: "quick-settings.tiles", owner: Some("quick-settings"), views: Views::Ui },
     Host { name: "quick-settings.sliders", owner: Some("quick-settings"), views: Views::Ui },
     Host { name: "quick-settings.cards", owner: Some("quick-settings"), views: Views::Ui },
     Host { name: "quick-settings.fill", owner: Some("quick-settings"), views: Views::Ui },
     Host { name: "quick-settings.foot", owner: Some("quick-settings"), views: Views::Ui },
-    // Quick settings' other pages, each sliding in over the first.
     Host { name: "quick-settings.pages", owner: Some("quick-settings"), views: Views::Ui },
-    // What answers the launcher's searches and runs what they found, like
-    // installed apps. The launcher shows every provider's items alike.
     Host { name: "launcher.providers", owner: Some("launcher"), views: Views::Daemon },
 ];
 
-/// The host named `name`, if there is one.
 pub fn host(name: &str) -> Option<&'static Host> {
     HOSTS.iter().find(|host| host.name == name)
 }
 
-/// Whether `feature` is ready but has slots and none of them can show:
-/// each names a host that doesn't exist or whose owner (in `all`) isn't
-/// ready. `nova doctor` warns about it; the feature still runs, since it
-/// may show elsewhere too (pop-ups, keybinds).
 pub fn has_no_host(feature: &FeatureState, all: &[FeatureState]) -> bool {
     let ready = |id: &str| all.iter().any(|other| other.id == id && other.status == FeatureStatus::Ready);
     feature.status == FeatureStatus::Ready
@@ -141,15 +66,10 @@ pub struct Manifest {
     pub id: String,
     pub name: String,
     pub description: String,
-    /// Turned on when the user hasn't said otherwise. Every feature can be
-    /// turned off, the bar too.
     #[serde(default)]
     pub default: bool,
-    /// Names the feature's daemon side in novad (`novad::modules`).
     #[serde(default)]
     pub daemon: Option<String>,
-    /// The ways it can run, when there's more than one (`modes`), and the
-    /// one it runs in unless the user picks another (`default-mode`).
     #[serde(default)]
     pub modes: Vec<String>,
     #[serde(default, rename = "default-mode")]
@@ -158,7 +78,6 @@ pub struct Manifest {
     pub variants: BTreeMap<String, Variant>,
     #[serde(default)]
     pub check: Check,
-    /// Where its UI goes (`[[slot]]`).
     #[serde(default, rename = "slot")]
     pub slots: Vec<Slot>,
 }
@@ -167,7 +86,6 @@ pub struct Manifest {
 pub struct Variant {
     #[serde(default)]
     pub when: Option<When>,
-    /// Distro name to package names, e.g. `arch = ["wf-recorder"]`.
     #[serde(flatten)]
     pub packages: BTreeMap<String, Vec<String>>,
 }
@@ -181,7 +99,6 @@ pub struct When {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Check {
-    /// Each entry must resolve on `PATH`. `a|b` means either one.
     #[serde(default)]
     pub binaries: Vec<String>,
 }
@@ -201,8 +118,6 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 impl Manifest {
-    /// The variant that applies on this machine: the first one whose `when`
-    /// matches, otherwise `default`.
     pub fn variant_for(&self, gpu: Option<Gpu>) -> Option<&Variant> {
         self.variants
             .iter()
@@ -212,9 +127,6 @@ impl Manifest {
             .or_else(|| self.variants.get("default"))
     }
 
-    /// Packages to install for `distro` (one of [`DISTROS`]): the matching
-    /// variant's, else `default`'s when that variant doesn't list `distro`
-    /// (gpu-screen-recorder isn't packaged everywhere).
     pub fn packages(&self, distro: &str, gpu: Option<Gpu>) -> &[String] {
         [self.variant_for(gpu), self.variants.get("default")]
             .into_iter()
@@ -224,13 +136,10 @@ impl Manifest {
             .unwrap_or(&[])
     }
 
-    /// Whether the feature draws anything, so the UI (Quickshell) has to run
-    /// while it's on: it fills at least one slot with a UI view.
     pub fn has_ui(&self) -> bool {
         self.slots.iter().any(|slot| host(&slot.host).is_none_or(|host| host.views == Views::Ui))
     }
 
-    /// Entries of `check.binaries` with no match on `PATH`.
     pub fn missing_binaries(&self, path_var: &str) -> Vec<String> {
         self.check
             .binaries
@@ -302,7 +211,6 @@ fn on_path(bin: &str, path_var: &str) -> bool {
     nova_paths::find_program(bin, path_var).is_some()
 }
 
-/// `$NOVA_FEATURES_DIR`, else the installed set, else `./features` for a checkout.
 pub fn default_dir() -> PathBuf {
     match std::env::var_os("NOVA_FEATURES_DIR") {
         Some(dir) => dir.into(),
@@ -310,7 +218,6 @@ pub fn default_dir() -> PathBuf {
     }
 }
 
-/// Parses and validates `<dir>/feature.toml`.
 pub fn load(dir: &Path) -> Result<Manifest, Error> {
     let path = dir.join("feature.toml");
     let err = |message: String| Error { path: path.clone(), message };
@@ -321,7 +228,6 @@ pub fn load(dir: &Path) -> Result<Manifest, Error> {
     Ok(manifest)
 }
 
-/// Loads every `<root>/*/feature.toml`, sorted by id.
 pub fn load_all(root: &Path) -> Result<Vec<Manifest>, Error> {
     let entries = std::fs::read_dir(root).map_err(|e| Error { path: root.into(), message: e.to_string() })?;
     let mut manifests = Vec::new();
@@ -334,22 +240,13 @@ pub fn load_all(root: &Path) -> Result<Vec<Manifest>, Error> {
     Ok(manifests)
 }
 
-/// The user's choices from `features.toml`: `enabled = [...]`, `disabled =
-/// [...]`, a mode for a feature that has modes under `[modes]`, and the
-/// program that draws them all (`ui = "gpui"`; Quickshell unless set).
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
-    /// The UI program's name ([`UiProgram::name`]). Kept as written, so a
-    /// name this novad doesn't know is a warning ([`Selection::unknown_ui`])
-    /// rather than a file that doesn't load.
-    #[serde(default)]
-    pub ui: Option<String>,
     #[serde(default)]
     pub enabled: Vec<String>,
     #[serde(default)]
     pub disabled: Vec<String>,
-    /// Feature id to mode.
     #[serde(default)]
     pub modes: BTreeMap<String, String>,
 }
@@ -359,16 +256,6 @@ impl Selection {
         toml::from_str(text)
     }
 
-    /// The program that draws the UI: the one `ui` names, else Quickshell.
-    pub fn ui_program(&self) -> UiProgram {
-        self.ui.as_deref().and_then(UiProgram::named).unwrap_or_default()
-    }
-
-    /// `ui`, when it names no program, for `nova doctor` and the log.
-    pub fn unknown_ui(&self) -> Option<&str> {
-        self.ui.as_deref().filter(|name| UiProgram::named(name).is_none())
-    }
-
     pub fn is_on(&self, manifest: &Manifest) -> bool {
         if self.disabled.contains(&manifest.id) {
             return false;
@@ -376,18 +263,11 @@ impl Selection {
         manifest.default || self.enabled.contains(&manifest.id)
     }
 
-    /// The mode `manifest` runs in while it's on: the one picked, else its
-    /// `default-mode`. A pick that isn't one of its modes counts as none
-    /// ([`Selection::unknown_modes`] lists those). `None` for a feature
-    /// without modes.
     pub fn mode<'a>(&self, manifest: &'a Manifest) -> Option<&'a str> {
         let picked = self.modes.get(&manifest.id);
         manifest.modes.iter().find(|mode| Some(*mode) == picked).or(manifest.default_mode.as_ref()).map(String::as_str)
     }
 
-    /// The `[modes]` picks that name no mode of their feature, as
-    /// `(id, mode)`, for `nova doctor` and the log. A feature that isn't
-    /// installed is left out: an old pick for it does no harm.
     pub fn unknown_modes<'a>(&'a self, manifests: &[Manifest]) -> Vec<(&'a str, &'a str)> {
         self.modes
             .iter()
@@ -423,19 +303,6 @@ mod tests {
     "#;
 
     #[test]
-    fn the_ui_is_quickshell_unless_a_known_program_is_picked() {
-        let ui = |text: &str| {
-            let selection = Selection::parse(text).unwrap();
-            (selection.ui_program(), selection.unknown_ui().map(str::to_owned))
-        };
-        assert_eq!(ui(""), (UiProgram::Quickshell, None));
-        assert_eq!(ui("ui = \"quickshell\""), (UiProgram::Quickshell, None));
-        assert_eq!(ui("ui = \"gpui\"\ndisabled = [\"bar\"]"), (UiProgram::Gpui, None));
-        // A name from a newer Nova (or a typo) still loads the file.
-        assert_eq!(ui("ui = \"GPUI\""), (UiProgram::Quickshell, Some("GPUI".into())));
-    }
-
-    #[test]
     fn every_manifest_in_the_repo_is_valid() {
         let all = load_all(&repo_features()).unwrap_or_else(|e| panic!("{e}"));
         assert!(all.iter().any(|m| m.id == "bar"));
@@ -446,7 +313,6 @@ mod tests {
         let m = manifest(RECORDING);
         assert_eq!(m.packages("arch", Some(Gpu::Nvidia)), ["gpu-screen-recorder"]);
         assert_eq!(m.packages("arch", Some(Gpu::Amd)), ["wf-recorder"]);
-        // The NVIDIA variant lists no Fedora package: the default's applies.
         let partial = manifest(
             r#"
             id = "recording"
@@ -561,24 +427,8 @@ mod tests {
         assert!(toml::from_str::<Manifest>(unknown).is_err(), "unknown slot fields are rejected");
     }
 
-    /// The quoted strings of `prefix` lines in a UI file, like
-    /// `var HOST_BAR_LEFT = "bar.left";` or `"media.pill": "../media/X.qml",`.
-    fn js_strings(file: &str, prefix: &str) -> Vec<Vec<String>> {
-        let text = std::fs::read_to_string(repo_features().join("../ui").join(file)).unwrap();
-        text.lines()
-            .map(str::trim)
-            .filter(|line| line.starts_with(prefix))
-            .map(|line| line.split('"').skip(1).step_by(2).map(String::from).collect())
-            .collect()
-    }
-
     #[test]
-    fn the_ui_names_the_same_hosts() {
-        let mut ui: Vec<String> = js_strings("slots/slots.js", "var HOST_").into_iter().flatten().collect();
-        let mut known: Vec<String> = HOSTS.iter().map(|host| host.name.to_string()).collect();
-        ui.sort();
-        known.sort();
-        assert_eq!(ui, known, "ui/slots/slots.js and HOSTS differ");
+    fn a_host_s_owner_is_a_feature() {
         let ids: Vec<String> = load_all(&repo_features()).unwrap().into_iter().map(|m| m.id).collect();
         for host in HOSTS {
             if let Some(owner) = host.owner {
@@ -597,33 +447,10 @@ mod tests {
     }
 
     #[test]
-    fn every_slot_names_a_known_host_and_a_registered_view() {
-        let views = js_strings("slots/Views.qml", "\"");
-        let imports = js_strings("slots/Views.qml", "import \"../");
-        let slots = repo_features().join("../ui/slots");
-        let whole_ui = repo_features().join("../ui/shell.qml").is_file();
+    fn every_slot_names_a_known_host() {
         for manifest in load_all(&repo_features()).unwrap() {
             for slot in &manifest.slots {
-                let known = host(&slot.host).unwrap_or_else(|| panic!("{}: unknown host {}", manifest.id, slot.host));
-                if known.views == Views::Daemon {
-                    // novad's tests check its own (its launcher wiring's PROVIDERS).
-                    continue;
-                }
-                let file = views
-                    .iter()
-                    .find(|entry| entry.first() == Some(&slot.view))
-                    .and_then(|entry| entry.get(1))
-                    .unwrap_or_else(|| panic!("{}: view {} isn't in ui/slots/Views.qml", manifest.id, slot.view));
-                // The Nix build's source has ui/slots but not the views.
-                if whole_ui {
-                    assert!(slots.join(file).is_file(), "{}: {file} doesn't exist next to ui/slots", slot.view);
-                }
-                let folder = file.split('/').nth(1).unwrap_or_default();
-                assert!(
-                    imports.iter().any(|import| import.first().is_some_and(|dir| dir == &format!("../{folder}"))),
-                    "{}: ui/slots/Views.qml must import \"../{folder}\" for Quickshell to load it",
-                    slot.view
-                );
+                assert!(host(&slot.host).is_some(), "{}: unknown host {}", manifest.id, slot.host);
             }
         }
     }

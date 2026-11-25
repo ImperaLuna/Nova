@@ -1,22 +1,5 @@
-//! The shape of what a shell window draws, as the compositor needs it.
-//!
-//! A shell window is see-through and much bigger than what's on it, so the
-//! compositor is told which part is really there: where to blur what's
-//! behind (glass), and where clicks land (everything else passes them to
-//! the window below). Both are regions made of whole-pixel rectangles, and
-//! both must follow the drawing exactly, rounded corners too: a blur that
-//! covers the whole window costs the compositor frames, and one that pokes
-//! out past a rounded corner shows.
-//!
-//! A [`Shape`] is one rounded rectangle; [`Shape::rects`] cuts it into rows
-//! that follow its corners a pixel at a time, and [`region`] joins several.
-//! The window's owner works its shapes out while it renders, from the same
-//! bounds and radius it draws with, and passes them to [`set_blur_region`]
-//! and to GPUI's `Window::set_input_region` every frame they change.
-
 use gpui::{Bounds, Pixels, Window, point, px, size};
 
-/// A rounded rectangle on a window, in the window's own coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Shape {
     pub bounds: Bounds<Pixels>,
@@ -28,13 +11,7 @@ impl Shape {
         Self { bounds, radius }
     }
 
-    /// The shape as rectangles on whole pixels: one for its middle, and
-    /// rows above and below that step in along the corners, a pixel row at
-    /// a time (rows that step in equally are one rectangle).
     pub fn rects(&self) -> Vec<Bounds<Pixels>> {
-        // Whole pixels, since that is what a region holds: the edges
-        // rounded, not the origin and the size apart, so a shape that moves
-        // by fractions never grows or shrinks by a pixel.
         let left = f32::from(self.bounds.left()).round();
         let right = f32::from(self.bounds.right()).round();
         let top = f32::from(self.bounds.top()).round();
@@ -49,7 +26,6 @@ impl Shape {
         let mut rects = Vec::new();
         let mut row = 0.0;
         while row < corner_rows {
-            // Rows that step in by the same whole pixels form one band.
             let inset = corner_inset(radius, row);
             let mut band_end = row + 1.0;
             while band_end < corner_rows && corner_inset(radius, band_end) == inset {
@@ -70,8 +46,6 @@ impl Shape {
     }
 }
 
-/// How far a corner of `radius` steps in on pixel row `row` (0 is the
-/// shape's first row), in whole pixels: the arc's inset at the row's middle.
 fn corner_inset(radius: f32, row: f32) -> f32 {
     let from_centre = radius - (row + 0.5);
     if from_centre <= 0.0 {
@@ -84,15 +58,10 @@ fn rect(x: f32, y: f32, width: f32, height: f32) -> Bounds<Pixels> {
     Bounds { origin: point(px(x), px(y)), size: size(px(width), px(height)) }
 }
 
-/// Every shape's rectangles, as one region.
 pub fn region(shapes: &[Shape]) -> Vec<Bounds<Pixels>> {
     shapes.iter().flat_map(Shape::rects).collect()
 }
 
-/// Has the compositor blur what's behind `shapes` and nothing else of the
-/// window. With no shapes nothing is blurred. A shell window opens blurred
-/// all over (`crate::ShellWindow`), so its owner calls this before its
-/// first frame; GPUI drops a call that changes nothing.
 pub fn set_blur_region(window: &Window, shapes: &[Shape]) {
     window.set_blur_region(Some(&region(shapes)));
 }
@@ -113,7 +82,6 @@ mod tests {
         rects.iter().map(|rect| f32::from(rect.size.width) * f32::from(rect.size.height)).sum()
     }
 
-    /// Whether the pixel at (`x`, `y`) is in any of `rects`.
     fn covered(rects: &[Bounds<Pixels>], x: f32, y: f32) -> usize {
         rects
             .iter()
@@ -138,8 +106,6 @@ mod tests {
             assert!(left >= 100.0 && right <= 100.0 + width && top >= 8.0 && bottom <= 8.0 + height, "{rect:?}");
             assert_eq!([left, top, right, bottom].map(f32::fract), [0.0; 4], "{rect:?} is off the pixel grid");
         }
-        // No pixel twice, and each pixel in the region exactly when its
-        // middle is inside the rounded rectangle.
         for y in 0..height as u32 {
             for x in 0..width as u32 {
                 let (x, y) = (x as f32, y as f32);
@@ -159,7 +125,6 @@ mod tests {
 
     #[test]
     fn a_pill_is_all_corner() {
-        // As tall as twice its radius: no straight middle part.
         let rects = shape(0.0, 0.0, 200.0, 36.0, 18.0).rects();
         assert_eq!(covered(&rects, 0.0, 0.0), 0);
         assert_eq!(covered(&rects, 0.0, 17.0), 1);
@@ -176,8 +141,6 @@ mod tests {
 
     #[test]
     fn a_shape_between_pixels_keeps_its_edges_not_its_size() {
-        // 10.4..110.6 covers pixels 10 to 111: rounding origin and width
-        // apart would give 10..110.
         let rects = shape(10.4, 0.0, 100.2, 50.0, 0.0).rects();
         assert_eq!(rects, vec![rect(10.0, 0.0, 101.0, 50.0)]);
     }

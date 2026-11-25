@@ -216,8 +216,7 @@ pub struct TextRun {
     pub matched: bool,
 }
 
-/// A stretch of text to highlight, in UTF-16 code units, what QML's
-/// strings count.
+/// A stretch of text to highlight, in UTF-16 code units.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TextMark {

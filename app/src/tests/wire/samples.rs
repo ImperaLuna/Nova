@@ -1,6 +1,3 @@
-//! The sample values the wire snapshot shows: one of each message's
-//! payloads, filled the way novad fills them.
-
 use super::*;
 
 pub(super) fn desktop() -> Desktop {
@@ -124,7 +121,14 @@ pub(super) fn sound() -> nova_sound_api::Sound {
             device(61, "ALC1220 Analog", DeviceKind::Speakers, None, false),
         ],
         inputs: vec![device(53, "Arctis Nova 7", DeviceKind::Headphones, Some(Link::Usb), true)],
-        apps: vec![App { id: 77, name: "Firefox".into(), volume: 1.0, muted: true }],
+        apps: vec![App {
+            id: 77,
+            name: "Firefox".into(),
+            icon_name: "firefox".into(),
+            program: "firefox".into(),
+            volume: 1.0,
+            muted: true,
+        }],
         recorders: vec!["Discord".into()],
     }
 }
@@ -454,9 +458,7 @@ pub(super) fn status() -> Status {
         pid: 100,
         uptime_secs: 42,
         pss_kib: Some(4096),
-        quickshell: Some("0.3.2".into()),
         ui: UiStatus {
-            program: UiProgram::Quickshell,
             state: UiState::Running,
             pid: Some(101),
             pss_kib: Some(180_000),
@@ -465,6 +467,8 @@ pub(super) fn status() -> Status {
                 time: "2026-10-22T13:40:00.000Z".into(),
                 log: "/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log".into(),
             }),
+            since: Some("2026-10-22T13:40:01.000Z".into()),
+            problem: None,
         },
         features: vec![FeatureState {
             id: "bar".into(),
@@ -478,7 +482,6 @@ pub(super) fn status() -> Status {
     }
 }
 
-/// A `tray_menu` answer, shaped as Spotify's libdbusmenu menu reads.
 pub(super) fn tray_menu_level() -> nova_tray_api::TrayMenuLevel {
     use nova_tray_api::{Toggle, TrayMenuEntry, TrayMenuLevel};
     let entry = |id, label: &str| TrayMenuEntry {

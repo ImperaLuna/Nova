@@ -1,8 +1,3 @@
-//! Runs the network feature (`nova-network`, in `features/network`) in
-//! novad: its module and the answers to its commands. Wiring only: it
-//! adapts the feature's core to novad's `Module` trait and `Daemon`, and
-//! all of the feature's work and state stay in the core.
-
 use crate::Daemon;
 use nova_carrier::Outcome;
 use nova_hub::ClientId;
@@ -12,7 +7,6 @@ use std::sync::Arc;
 
 use nova_network::{FEATURE_ID, Sources};
 
-/// The feature's core, as novad's module.
 pub struct Network(Arc<nova_network::Network>);
 
 impl std::ops::Deref for Network {
@@ -23,8 +17,6 @@ impl std::ops::Deref for Network {
     }
 }
 
-/// The answer to one of the feature's commands from `caller`, the route
-/// `requests::router` gives them.
 pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
     let network = daemon.module::<Network>();
     let outcome = match command {
@@ -50,7 +42,6 @@ pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
     Answer::Now(outcome)
 }
 
-/// Runs `work` on its own thread: NetworkManager may take a while.
 fn later(network: Result<Arc<Network>, String>, work: impl FnOnce(&Network) -> Outcome + Send + 'static) -> Answer {
     match network {
         Ok(network) => Answer::later(move || work(&network)),
@@ -58,7 +49,6 @@ fn later(network: Result<Arc<Network>, String>, work: impl FnOnce(&Network) -> O
     }
 }
 
-/// No options.
 impl nova_modules::Module for Network {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;

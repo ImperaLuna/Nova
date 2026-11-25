@@ -1,18 +1,12 @@
-//! AI usage: Claude and Codex limits from their files and endpoints.
-
 use super::*;
 
-/// `config.toml` with Claude's usage endpoint turned on.
 pub(super) const CLAUDE_ENDPOINT_ON: &str = "[ai-usage]\nclaude-usage-endpoint = true\n";
-/// `config.toml` with Codex's usage endpoint turned on.
 const CODEX_ENDPOINT_ON: &str = "[ai-usage]\ncodex-usage-endpoint = true\n";
 
-/// Answers every request with `body`, keeping the request heads it got.
 pub(super) fn fake_endpoint(body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
     fake_endpoint_gated(body, None)
 }
 
-/// Like [`fake_endpoint`], answering each request only once `gate` lets it.
 fn fake_endpoint_gated(
     body: &'static str,
     gate: Option<std::sync::mpsc::Receiver<()>>,
@@ -41,8 +35,6 @@ fn fake_endpoint_gated(
     (url, requests)
 }
 
-/// Claude Code's credentials file, signed in to a Max plan, and the usage
-/// endpoint at `url` (turned on in `config.toml` separately).
 pub(super) fn claude_sign_in(root: &Path, url: &str) {
     let dir = root.join("claude");
     std::fs::create_dir_all(&dir).unwrap();
@@ -55,8 +47,6 @@ pub(super) fn claude_sign_in(root: &Path, url: &str) {
     std::fs::write(dir.join("url"), url).unwrap();
 }
 
-/// Codex's sign-in with a ChatGPT account, and the usage endpoint at `url`
-/// (turned on in `config.toml` separately).
 fn codex_sign_in(root: &Path, url: &str) {
     let home = root.join("codex");
     std::fs::create_dir_all(&home).unwrap();
@@ -66,11 +56,8 @@ fn codex_sign_in(root: &Path, url: &str) {
     std::fs::write(root.join("codex-url"), url).unwrap();
 }
 
-/// OpenAI's answer for a Plus plan with only a weekly window.
 const CODEX_ANSWER: &str = r#"{"plan_type":"plus","rate_limit":{"allowed":true,"limit_reached":false,"primary_window":{"used_percent":6,"limit_window_seconds":604800,"reset_after_seconds":400000,"reset_at":4102444800},"secondary_window":null},"credits":null}"#;
 
-/// A Codex `token_count` log line in the shape Codex writes, with limits
-/// that reset an hour and three days from now.
 fn codex_line(session: u8, weekly: u8) -> String {
     let now = jiff::Timestamp::now().as_second();
     format!(
@@ -88,7 +75,6 @@ fn codex_day(root: &Path) -> PathBuf {
 }
 
 impl Client {
-    /// The next `ai_usage` event's data, skipping anything else.
     pub(super) fn next_usage(&mut self) -> Value {
         self.next_event("ai_usage")
     }
@@ -141,7 +127,6 @@ fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
     assert!(head.contains("authorization: bearer tok\r\n") && head.contains("anthropic-beta: oauth-2025-04-20\r\n"));
     assert!(head.contains("user-agent: nova/"), "{head}");
 
-    // Opening the panel right after the first answer doesn't ask again.
     client.request(2, "refresh_ai_usage", None);
     nova_test_support::settle(Duration::from_millis(300));
     assert_eq!(requests.lock().unwrap().len(), 1);
@@ -152,7 +137,6 @@ fn claude_limits_use_the_desktop_apps_sign_in_when_claude_code_has_none() {
     let (url, requests) = fake_endpoint(r#"{"five_hour":{"utilization":4.0,"resets_at":"2100-01-01T05:00:00Z"}}"#);
     let novad = TestDaemon::with_ai_usage("ai-usage-claude-desktop", |root| {
         claude_sign_in(root, &url);
-        // What Claude Code leaves when the desktop app signs it in.
         let empty = r#"{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0,"subscriptionType":"max"}}"#;
         std::fs::write(root.join("claude/.credentials.json"), empty).unwrap();
         let expires = jiff::Timestamp::now().as_millisecond() + 3_600_000;
@@ -173,7 +157,6 @@ fn claude_limits_use_the_desktop_apps_sign_in_when_claude_code_has_none() {
 #[test]
 fn reset_numbers_give_way_to_why_there_are_none() {
     let novad = TestDaemon::with_ai_usage("ai-usage-claude-stale", |root| {
-        // Numbers from a status line whose windows have all reset since.
         let saved = json!({"claude": [
             {"window": "session", "percent": 1, "resets_at": "2026-10-30T17:59:59Z"},
             {"window": "weekly", "percent": 8, "resets_at": "2026-10-31T21:00:00Z"}
@@ -184,7 +167,6 @@ fn reset_numbers_give_way_to_why_there_are_none() {
     });
     let mut client = novad.connect();
     let mut usage = client.subscribe_usage();
-    // Once the endpoint has said why: the 0% before it is a guess.
     while provider(&usage, "claude")["state"] != "unavailable" {
         usage = client.next_usage();
     }
@@ -201,12 +183,10 @@ fn a_status_line_report_beats_an_older_endpoint_answer() {
     });
     let mut client = novad.connect();
     nova_test_support::wait_until(Duration::from_secs(5), "the request", || !requests.lock().unwrap().is_empty());
-    // While the request is out, the status line reports newer numbers.
     let reply =
         client.request(2, "report_claude_usage", Some(json!({"limits": [{"window": "session", "percent": 50}]})));
     assert_eq!(reply["result"], Value::Null);
     open_gate.send(()).unwrap();
-    // The answer is dropped: a later subscriber still sees the report.
     nova_test_support::settle(Duration::from_millis(300));
     let usage = novad.connect().subscribe_usage();
     assert_eq!(provider(&usage, "claude")["limits"][0]["percent"], 50, "{usage}");
@@ -221,7 +201,6 @@ fn busy_codex_sessions_are_still_read() {
     });
     let mut client = novad.connect();
     assert_eq!(provider(&client.subscribe_usage(), "codex")["limits"][0]["percent"], 1);
-    // Lines faster than the settle time, for longer than the longest delay.
     let writing = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let still_writing = Arc::clone(&writing);
     let writer = std::thread::spawn(move || {
@@ -257,7 +236,6 @@ fn codex_limits_come_from_its_newest_log_and_follow_new_lines() {
         let day = codex_day(root);
         let old = day.join("rollout-old.jsonl");
         std::fs::write(&old, codex_line(1, 2) + "\n").unwrap();
-        // Written microseconds before the new one, it would share its time.
         let past = std::time::SystemTime::now() - Duration::from_secs(60);
         std::fs::File::options().write(true).open(&old).unwrap().set_modified(past).unwrap();
         log = day.join("rollout-new.jsonl");
@@ -279,12 +257,9 @@ fn codex_limits_come_from_its_newest_log_and_follow_new_lines() {
 
     let mut file = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
     writeln!(file, "{}", codex_line(13, 85)).unwrap();
-    // An event for the first line may still be on its way; the new line's
-    // follows it (next_usage fails if it never comes).
     while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 13 {}
 }
 
-/// The logs only change when Codex runs a turn; the endpoint is current.
 #[test]
 fn codex_limits_come_from_openai_with_codexs_sign_in() {
     let (url, requests) = fake_endpoint(CODEX_ANSWER);
@@ -292,7 +267,6 @@ fn codex_limits_come_from_openai_with_codexs_sign_in() {
     let novad = TestDaemon::with_ai_usage("ai-usage-codex-api", |root| {
         codex_sign_in(root, &url);
         std::fs::write(root.join("../config/config.toml"), CODEX_ENDPOINT_ON).unwrap();
-        // An older turn's numbers.
         log = codex_day(root).join("rollout-a.jsonl");
         std::fs::write(&log, codex_line(1, 8) + "\n").unwrap();
     });
@@ -307,14 +281,11 @@ fn codex_limits_come_from_openai_with_codexs_sign_in() {
     assert!(head.contains("authorization: bearer tok\r\n") && head.contains("chatgpt-account-id: work\r\n"), "{head}");
     assert!(head.contains("user-agent: nova/"), "{head}");
 
-    // A turn after the answer logs newer numbers, which win.
     let mut file = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
     writeln!(file, "{}", codex_line(2, 9)).unwrap();
     while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 2 {}
 }
 
-/// Codex's first turn creates its sessions folder before it logs limits;
-/// the endpoint's numbers stay meanwhile.
 #[test]
 fn codex_endpoint_numbers_outlast_a_rescan_without_limits() {
     let (url, _requests) = fake_endpoint(CODEX_ANSWER);
@@ -330,7 +301,6 @@ fn codex_endpoint_numbers_outlast_a_rescan_without_limits() {
         codex = provider(&client.next_usage(), "codex").clone();
     }
     std::fs::write(codex_day(&root_dir).join("rollout-a.jsonl"), "").unwrap();
-    // Give the watcher time to rescan.
     nova_test_support::settle(Duration::from_millis(300));
     let codex = provider(&novad.connect().subscribe_usage(), "codex").clone();
     assert_eq!((codex["state"].as_str(), &codex["limits"][0]["percent"]), (Some("ready"), &json!(6)), "{codex}");
@@ -360,8 +330,6 @@ fn codex_installed_after_novad_started_is_picked_up() {
     codex_appears_later("ai-usage-codex-installed-later", false);
 }
 
-/// Codex's sessions (and its home too, without `home_exists`) appear after
-/// novad started.
 fn codex_appears_later(name: &str, home_exists: bool) {
     let mut root_dir = PathBuf::new();
     let novad = TestDaemon::with_ai_usage(name, |root| {
@@ -373,7 +341,6 @@ fn codex_appears_later(name: &str, home_exists: bool) {
     let mut client = novad.connect();
     assert_eq!(provider(&client.subscribe_usage(), "codex")["state"], "unavailable");
     let day = codex_day(&root_dir);
-    // Give the watcher a moment to watch the new folders before writing.
     nova_test_support::settle(Duration::from_millis(200));
     std::fs::write(day.join("rollout-a.jsonl"), codex_line(7, 8) + "\n").unwrap();
     loop {
@@ -394,7 +361,6 @@ fn a_replaced_codex_home_is_followed() {
     });
     let mut client = novad.connect();
     assert_eq!(provider(&client.subscribe_usage(), "codex")["limits"][0]["percent"], 7);
-    // Restored from a backup: a new home moved into place of the old one.
     let restored = root_dir.join("restored");
     let day = restored.join("sessions/2026/10/23");
     std::fs::create_dir_all(&day).unwrap();
@@ -402,7 +368,6 @@ fn a_replaced_codex_home_is_followed() {
     std::fs::rename(root_dir.join("codex"), root_dir.join("codex.old")).unwrap();
     std::fs::rename(&restored, root_dir.join("codex")).unwrap();
     while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 9 {}
-    // And it's watched: new lines in the new home arrive too.
     nova_test_support::settle(Duration::from_millis(200));
     let mut file = std::fs::OpenOptions::new()
         .append(true)
@@ -430,7 +395,6 @@ fn claude_reports_and_the_bar_choice_survive_a_restart() {
     client.request(3, "show_ai_usage", Some(json!({"provider": "codex"})));
     assert_eq!(client.next_usage()["shown"], "codex");
 
-    // A second novad on the same files starts where the first left off.
     let again = nova_ai_usage::Usage::start(
         ai_usage_paths(&novad.dir.join("ai-usage")),
         &nova_ai_usage::AiUsageConfig::default(),

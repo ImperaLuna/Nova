@@ -1,5 +1,3 @@
-//! Screenshots, recording, host, tray, notifications, media, resources, peripherals and folder views over the socket.
-
 use super::*;
 
 #[test]
@@ -47,7 +45,6 @@ fn subscribing_to_host_sends_the_machine_and_its_user() {
     assert_eq!(client.next_event("host")["user"], "Katov", "the config's name applies live");
 }
 
-/// The tray's own tests cover its bus; here it has none, so the list is empty.
 #[test]
 fn subscribing_to_the_tray_sends_its_items() {
     let novad = TestDaemon::start("tray", None);
@@ -56,8 +53,6 @@ fn subscribing_to_the_tray_sends_its_items() {
     assert_eq!(client.next_event("tray"), json!({"items": []}));
 }
 
-/// The notifications' own tests cover the bus; here there's none, so the
-/// list starts empty, and do not disturb and mutes work over the socket.
 #[test]
 fn notifications_are_listed_and_set_over_the_socket() {
     let novad = TestDaemon::start("notifications", None);
@@ -75,8 +70,6 @@ fn notifications_are_listed_and_set_over_the_socket() {
     assert!(missing["error"].as_str().unwrap().contains("no notification 9"), "{missing}");
 }
 
-/// The media's own tests cover the bus; here there's none, so there are no
-/// players, and commands for one are refused.
 #[test]
 fn media_players_are_listed_and_checked_over_the_socket() {
     let novad = TestDaemon::start("media", None);
@@ -95,8 +88,6 @@ fn media_players_are_listed_and_checked_over_the_socket() {
     assert!(extra["error"].as_str().unwrap().contains("unknown field"), "{extra}");
 }
 
-/// Resources come only while a connection watches, and stop once the last
-/// one stops watching or hangs up.
 #[test]
 fn resources_are_sent_while_watched() {
     let novad = TestDaemon::start("resources", None);
@@ -112,7 +103,6 @@ fn resources_are_sent_while_watched() {
     assert!(reading["history"].is_array());
 
     drop(watcher);
-    // Looks already sent when it hung up arrive first; then nothing.
     nova_test_support::settle(nova_resources::LIVE_INTERVAL);
     listener.writer.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
     while listener.lines.next().is_some_and(|line| line.is_ok()) {}
@@ -121,8 +111,6 @@ fn resources_are_sent_while_watched() {
     assert!(late.as_ref().is_none_or(Result::is_err), "still sent after the watcher left: {late:?}");
 }
 
-/// Ending an app only ends what Nova offers to: not Nova itself, and not
-/// what isn't running.
 #[test]
 fn ending_nova_or_a_missing_app_is_refused() {
     let novad = TestDaemon::start("end-app", None);
@@ -143,8 +131,6 @@ fn watching_resources_needs_the_feature() {
     assert!(reply["error"].as_str().is_some_and(|error| error.contains("the resources feature")), "{reply}");
 }
 
-/// The peripherals' own tests cover UPower and HeadsetControl; here there's
-/// neither, so subscribing sends an empty list.
 #[test]
 fn subscribing_to_peripherals_sends_the_devices() {
     let novad = TestDaemon::start("peripherals", None);

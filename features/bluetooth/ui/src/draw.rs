@@ -1,9 +1,3 @@
-//! How the Bluetooth page looks: the switch in its top row, why it can't
-//! turn on when it can't, then the devices connected, the known ones and
-//! the ones nearby, scrolling once they're longer than the page. Pairing
-//! questions, failures, a connected device's actions and Forget's confirm
-//! show under the device's row. `BluetoothPage.qml` in today's shell.
-
 use crate::logic::{self, Section};
 use crate::page::BluetoothPage;
 use crate::prompt::{self, card};
@@ -21,7 +15,7 @@ use nova_look::tokens::{
 };
 use nova_look::{
     CardTitle, DeviceBattery, Glyph, Icon, LookStyled, PILL_BUTTONS, PageHeader, PromptButton, RoundButton, Spinner,
-    Theme, ToggleSwitch, header_inset,
+    Theme, ToggleSwitch, header_inset, wheel_list,
 };
 use nova_stage::Stage;
 use std::time::Instant;
@@ -39,12 +33,10 @@ impl Render for BluetoothPage {
         let busy = devices.iter().any(|device| logic::busy_text(device.status, false).is_some());
         let scanning = on && state.is_some_and(|state| state.scanning);
         if !self.power_knob.settled(now) || (on && busy) || scanning {
-            // The knob slides, or a spinner in sight turns.
             window.request_animation_frame();
         }
         self.focus_question(pairing, window, cx);
 
-        // The pill's buttons the drawer draws: those some ui registered.
         let buttons = Stage::slots(cx).map_or(0, |slots| {
             slots.read(cx).for_host(PILL_BUTTONS, cx).iter().filter(|view| nova_stage::has_part(view, cx)).count()
         });
@@ -103,11 +95,10 @@ impl Render for BluetoothPage {
             .flex_col()
             .on_key_down(cx.listener(Self::key_down))
             .child(head)
-            .child(div().id("lists").flex_1().min_h_0().mt(GAP).overflow_y_scroll().child(lists))
+            .child(wheel_list("lists", window, cx).flex_1().min_h_0().mt(GAP).child(lists))
     }
 }
 
-/// Why it can't turn on, when it can't. Plain off is the switch's.
 fn why_off(radio: BluetoothRadio) -> Option<&'static str> {
     match radio {
         BluetoothRadio::Missing => Some("No Bluetooth adapter"),
@@ -116,7 +107,6 @@ fn why_off(radio: BluetoothRadio) -> Option<&'static str> {
     }
 }
 
-/// A titled list of devices, with a spinner while it looks for more.
 fn section(title: &'static str, spinning: bool, rows: Vec<Div>, cx: &App) -> Div {
     let label = div()
         .flex()
@@ -141,7 +131,6 @@ fn message(text: &'static str, cx: &App) -> Div {
 }
 
 impl BluetoothPage {
-    /// A question to type an answer to takes the keyboard when it comes.
     fn focus_question(&mut self, pairing: Option<&PairingRequest>, window: &mut Window, cx: &mut Context<Self>) {
         let Some(request) = pairing.filter(|request| logic::typed(&request.ask)) else { return };
         if self.focused_for != Some(request.id) {
@@ -154,8 +143,6 @@ impl BluetoothPage {
         list.iter().map(|device| self.entry(device, state, cx)).collect()
     }
 
-    /// A device's row, and what shows under it: its pairing question, its
-    /// failure, Disconnect and Forget, or Forget's confirm.
     fn entry(&self, device: &BluetoothDevice, state: Option<&Bluetooth>, cx: &mut Context<Self>) -> Div {
         let on = state.is_some_and(|state| state.radio == BluetoothRadio::On);
         let address = device.address.clone();
@@ -222,8 +209,6 @@ impl BluetoothPage {
                     })
             })
             .child(Icon::new(logic::icon(device.kind)).size(ICON_SIZE_MENU))
-            // Its name alone: the icon says what it is, the section where
-            // it stands.
             .child(
                 div()
                     .flex_1()
@@ -238,9 +223,6 @@ impl BluetoothPage {
             .when(on, |row| row.child(div().flex_none().flex().items_center().gap(GAP).children(end)))
     }
 
-    /// The end of a device's row. Busy: what's happening and a spinner.
-    /// Connected: its battery. Otherwise what a click does, on hover, and
-    /// ⋯ for a known one.
     fn row_end(
         &self,
         device: &BluetoothDevice,
@@ -263,7 +245,6 @@ impl BluetoothPage {
         }
         let stoppable = matches!(device.status, BluetoothStatus::Connecting | BluetoothStatus::Pairing);
         if !asking && stoppable {
-            // Stops pairing or connecting: novad cancels what's under way.
             let (page, address) = (page.clone(), address.clone());
             end.push(
                 RoundButton::new("stop", Glyph::CLOSE, ROUND_BUTTON)
@@ -279,7 +260,10 @@ impl BluetoothPage {
                     .flex()
                     .items_center()
                     .gap(ICON_GAP)
-                    .child(DeviceBattery::percent(percent))
+                    .child(
+                        DeviceBattery::percent(percent)
+                            .eased(gpui::SharedString::from(format!("battery {}", device.address))),
+                    )
                     .child(
                         div()
                             .font_family(FONT_MONO)
@@ -304,7 +288,6 @@ impl BluetoothPage {
         end
     }
 
-    /// Why it failed, with Close and, unless it's connected, Try again.
     fn failure(&self, device: &BluetoothDevice, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx).clone();
         let page = cx.entity();
@@ -326,7 +309,6 @@ impl BluetoothPage {
         card(theme.error, device.error.as_deref().unwrap_or(""), cx).child(prompt::buttons(buttons))
     }
 
-    /// A connected device's Disconnect and Forget, from a right click.
     fn actions(&self, address: &str, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx).clone();
         let page = cx.entity();
@@ -341,7 +323,6 @@ impl BluetoothPage {
         card(theme.fg, "", cx).child(prompt::buttons(vec![disconnect.into_any_element(), forget.into_any_element()]))
     }
 
-    /// "Forget it?" for a known device.
     fn confirm_forget(&self, device: &BluetoothDevice, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx).clone();
         let page = cx.entity();

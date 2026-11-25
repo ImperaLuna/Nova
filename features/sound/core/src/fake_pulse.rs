@@ -1,9 +1,3 @@
-//! A stand-in sound server on a test's socket, answering PulseAudio's
-//! protocol from a recording (`recorded/*.pulse`: what a real server
-//! answered each listing request, one answer per line as `<name> <hex>`).
-//! It lists what the recording holds, tells its followers when a test
-//! changes that, and can hang up or go away as a real one does.
-
 use crate::server::Listing;
 use nova_base::lock;
 use pulseaudio::protocol::{
@@ -16,18 +10,14 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// The version recordings are written in, and the fake speaks.
 const VERSION: u16 = protocol::MAX_VERSION;
-/// The request number of what the server sends unasked.
 const UNASKED: u32 = u32::MAX;
-/// The lines of a recording, in order.
 const SERVER: &str = "server";
 const SINKS: &str = "sinks";
 const SOURCES: &str = "sources";
 const SINK_INPUTS: &str = "sink_inputs";
 const SOURCE_OUTPUTS: &str = "source_outputs";
 
-/// The listing a recording holds.
 pub fn recorded(text: &str) -> Listing {
     fn answer<R: CommandReply>(text: &str, name: &str) -> R {
         let line = text.lines().find_map(|line| line.strip_prefix(name)?.strip_prefix(' '));
@@ -45,7 +35,6 @@ pub fn recorded(text: &str) -> Listing {
     }
 }
 
-/// `listing` as a recording's text.
 pub fn recording(listing: &Listing) -> String {
     fn line<R: CommandReply>(name: &str, reply: &R) -> String {
         let mut bytes = Vec::new();
@@ -70,19 +59,14 @@ pub struct FakePulse {
 
 struct Fake {
     listing: Listing,
-    /// Every connection, to hang up on.
     connections: Vec<UnixStream>,
-    /// The ones that asked to be told of changes.
     followers: Vec<UnixStream>,
-    /// How many listings were asked for (their first request).
     listings: usize,
-    /// Listings are answered with an error.
     refusing: bool,
     gone: bool,
 }
 
 impl FakePulse {
-    /// Serves `listing` on a new socket at `socket`.
     pub fn start(socket: &Path, listing: Listing) -> Self {
         let listener = UnixListener::bind(socket).unwrap();
         let state = Arc::new(Mutex::new(Fake {
@@ -110,27 +94,20 @@ impl FakePulse {
         Self { socket: socket.to_owned(), state }
     }
 
-    /// Changes what it lists and tells its followers, as the real server
-    /// does whoever made the change.
     pub fn change(&self, change: impl FnOnce(&mut Listing)) {
         let mut fake = lock(&self.state);
         change(&mut fake.listing);
         fake.tell_followers();
     }
 
-    /// Changes what it lists without a word, so what a client last read
-    /// is out of date.
     pub fn change_quietly(&self, change: impl FnOnce(&mut Listing)) {
         change(&mut lock(&self.state).listing);
     }
 
-    /// What it lists now.
     pub fn listing(&self) -> Listing {
         lock(&self.state).listing.clone()
     }
 
-    /// Tells its followers something changed, `times` over, as a dragged
-    /// slider does.
     pub fn say_changed(&self, times: usize) {
         let mut fake = lock(&self.state);
         for _ in 0..times {
@@ -138,24 +115,18 @@ impl FakePulse {
         }
     }
 
-    /// Answers every listing with an error from here on, as a server
-    /// that takes connections but can't list does.
     pub fn refuse_listings(&self) {
         lock(&self.state).refusing = true;
     }
 
-    /// How many listings were asked for so far.
     pub fn listings(&self) -> usize {
         lock(&self.state).listings
     }
 
-    /// How many connections follow its changes now.
     pub fn followers(&self) -> usize {
         lock(&self.state).followers.len()
     }
 
-    /// Closes every connection, as a server that restarts does; new ones
-    /// are still taken.
     pub fn hang_up(&self) {
         let mut fake = lock(&self.state);
         for connection in fake.connections.drain(..) {
@@ -165,21 +136,16 @@ impl FakePulse {
     }
 }
 
-/// Goes away: its socket with it, and every connection.
 impl Drop for FakePulse {
     fn drop(&mut self) {
         lock(&self.state).gone = true;
         self.hang_up();
-        // Ends the wait for the next connection.
         let _ = UnixStream::connect(&self.socket);
         let _ = std::fs::remove_file(&self.socket);
     }
 }
 
 impl Fake {
-    /// Does what `command` asks of the listing, as the real server would:
-    /// whether what it names was there, or None for another kind of
-    /// command.
     fn change(&mut self, command: &Command) -> Option<bool> {
         let listing = &mut self.listing;
         let found = match command {
@@ -239,14 +205,12 @@ impl Fake {
     }
 }
 
-/// Answers one connection's requests until it closes.
 fn serve(stream: UnixStream, state: &Mutex<Fake>) {
     let mut reader = BufReader::new(stream);
     while let Ok((request, command)) = protocol::read_command_message(&mut reader, VERSION) {
         let mut fake = lock(state);
         let to = reader.get_mut();
         let sent = match command {
-            // What `pipewire-pulse` 1.6.11 does with a cookie of another length.
             Command::Auth(auth) if auth.cookie.len() != crate::server::COOKIE_LENGTH => {
                 protocol::write_error(to, request, &PulseError::Invalid)
             }

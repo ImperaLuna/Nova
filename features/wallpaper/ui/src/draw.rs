@@ -1,11 +1,3 @@
-//! Drawing the carousel: the preview over the whole screen with a shade
-//! under the deck, the deck of cards, the label with the screen picker
-//! under it, and the mark on the screen picked for.
-//!
-//! Every card is laid out by the deck's numbers (`deck.rs`), not by GPUI:
-//! only the cards near the middle are built, the furthest first so nearer
-//! ones lie over them. `card.rs` draws one, turned.
-
 use crate::card::{CardLook, ChipPlaces, draw_card};
 use crate::carousel::{Carousel, NAME};
 use crate::deck::{file_name, offset, shown};
@@ -30,7 +22,6 @@ use nova_look::{Glyph, Icon, Theme};
 use nova_stage::Stage;
 use std::time::Instant;
 
-/// One card as it is drawn this frame.
 struct Placed {
     index: usize,
     away: f32,
@@ -69,7 +60,6 @@ impl Render for Carousel {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key))
             .on_scroll(cx.listener(|carousel, event: &ScrollEvent, _, cx| carousel.scrolled(event, cx)))
-            // A click beside the deck puts the old image back.
             .on_mouse_down(MouseButton::Left, cx.listener(|carousel, _: &MouseDownEvent, _, cx| carousel.close(cx)))
             .child(preview)
             .child(div().absolute().inset_0().bg(shade))
@@ -88,13 +78,10 @@ impl Render for Carousel {
     }
 }
 
-/// Stops a click from reaching the background, which closes.
 fn swallow_clicks(element: Div) -> Div {
     element.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
 
-/// The mark on the screen the deck picks for alone, at `opacity`: a ring
-/// round the screen's edge and a tag under the bar. None at 0.
 pub fn picking_mark(opacity: f32, cx: &App) -> Option<AnyElement> {
     if opacity <= 0.0 {
         return None;
@@ -140,9 +127,6 @@ impl Carousel {
         ((self.screen.size.height - self.card_size().1) / 2.0).round()
     }
 
-    /// The cards in view, furthest first, each with how much of it shows.
-    /// A card coming round to rest halfway (the other image of two) fades
-    /// in there rather than popping up.
     fn placed(&mut self, now: Instant) -> Vec<Placed> {
         let count = self.deck.count();
         let position = self.position.value(now);
@@ -183,7 +167,6 @@ impl Carousel {
         let middle = self.screen.size.width / 2.0;
         let placed = self.placed(now);
         let deck_shown = self.deck_shown.value(now);
-        // Where each card is, the furthest first.
         let turned: Vec<(Tilt, (f32, f32), f32)> = placed
             .iter()
             .map(|card| {
@@ -204,9 +187,6 @@ impl Carousel {
                 let path = self.deck.images[card.index].clone();
                 let near = card.away.abs().min(1.0);
                 let (tilt, at, sized) = turned[order];
-                // A chip is drawn while at least half of today's turned one
-                // would be in view. Hidden under a nearer card, the flat
-                // one is wider and would stick out.
                 let marks: Vec<String> = self.deck.marks(&path).into_iter().map(str::to_owned).collect();
                 let chips = ChipPlaces::of(&tilt, sized, &marks, window);
                 let in_view = |[from, to]: [(f32, f32); 2]| {
@@ -234,8 +214,6 @@ impl Carousel {
             .collect()
     }
 
-    /// The picked image's name, where it is in the folder, and where it'd
-    /// go; or why it couldn't.
     fn label(&mut self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         if self.deck.count() == 0 {
             return None;
@@ -285,8 +263,6 @@ impl Carousel {
         Some(row.into_any_element())
     }
 
-    /// Which screen the deck picks for: every one, or one of them drawn to
-    /// scale with its pick.
     fn picker(&mut self, window: &Window, cx: &mut Context<Self>) -> Div {
         let theme = Theme::of(cx);
         let (fg, dim, rim, quiet) = (theme.fg, theme.fg_dim(), theme.glass_rim(), theme.selected_quiet());
@@ -323,8 +299,6 @@ impl Carousel {
         div().flex().items_center().gap(MINI_GAP).child(all).children(minis)
     }
 
-    /// One screen in the picker: its pick, small, shaped like the screen,
-    /// with its name under it; ringed while the deck picks for it.
     fn mini(&mut self, name: String, drawn: gpui::Size<Pixels>, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx);
         let (fg, dim, rim, loading) = (theme.fg, theme.fg_dim(), theme.glass_rim(), theme.fg.opacity(LOADING));
@@ -335,7 +309,6 @@ impl Carousel {
         let picture = (!pick.is_empty())
             .then(|| self.minis.update(cx, |pictures, cx| pictures.get(&Wanted::new(&pick, pixels), cx)))
             .flatten();
-        // Chosen, a ring round it; else a faint edge on it.
         let (ring, out) = if chosen { (MINI_RING, MINI_RING) } else { (px(1.0), px(0.0)) };
         let frame = div()
             .absolute()
@@ -378,7 +351,6 @@ impl Carousel {
             .into_any_element()
     }
 
-    /// Every screen the deck picks for, in its order, with its size.
     fn screen_sizes(&self, cx: &App) -> Vec<(String, gpui::Size<Pixels>)> {
         let screens = Stage::screens(cx);
         self.deck
@@ -392,7 +364,6 @@ impl Carousel {
             .collect()
     }
 
-    /// No images: where to put some, or why the folder couldn't be read.
     fn note(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if self.deck.count() > 0 || self.loading {
             return None;
@@ -420,7 +391,6 @@ impl Carousel {
     }
 }
 
-/// `width` by `height` on `window`'s screen, in its pixels.
 pub fn device_size(width: Pixels, height: Pixels, window: &Window) -> gpui::Size<DevicePixels> {
     let scale = window.scale_factor();
     let side = |length: Pixels| DevicePixels((f32::from(length) * scale).round() as i32);

@@ -1,26 +1,12 @@
-//! Which app a running program is, from its file: Nix wraps programs as
-//! `.<name>-wrapped`, and shared runtimes (Electron, Python) say nothing
-//! about the app they run. The tray and app streams' icons look apps up by
-//! these names (`AppIndex::find_app`).
-
-/// Plasma's bridge that puts old X11 (XEmbed) tray icons up as items, all
-/// from its own process: its items are named by their own id only. Defined
-/// here, where it says nothing about an app; the tray tells its items
-/// apart by it.
 pub const XEMBED_TRAY_BRIDGE: &str = "xembedsniproxy";
 
-/// Program names that say nothing about the app: shared runtimes and
-/// sandbox helpers that run many apps, and the bridge for old X11 tray
-/// icons.
 const GENERIC_PROGRAMS: &[&str] = &["electron", "xdg-dbus-proxy", "bwrap", "python", "java", XEMBED_TRAY_BRIDGE];
 
-/// The app a program path or name stands for, unless it's a shared
-/// runtime (whatever its version: `python3.14`). Nix wraps programs as
-/// `.<name>-wrapped` (cut to `.<name>-wrappe` in the kernel's 15-character
-/// `comm`).
 pub fn program_name(program: &str) -> Option<String> {
     let name = program.trim().rsplit('/').next()?;
     let name = name.strip_prefix('.').unwrap_or(name);
+    // The kernel cuts `comm` to 15 bytes, so Nix's `.<name>-wrapped` may read `.<name>-wrappe`:
+    // https://man7.org/linux/man-pages/man5/proc_pid_comm.5.html
     let name = name.strip_suffix("-wrapped").or_else(|| name.strip_suffix("-wrappe")).unwrap_or(name);
     let unversioned = name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.').to_lowercase();
     (!name.is_empty() && !GENERIC_PROGRAMS.contains(&unversioned.as_str())).then(|| name.to_string())

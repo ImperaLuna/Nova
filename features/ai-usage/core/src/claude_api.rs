@@ -1,13 +1,3 @@
-//! Claude's limits from Anthropic's usage endpoint, the one Claude Code's
-//! `/usage` screen reads, signed in with Claude Code's own OAuth token, or
-//! the Claude desktop app's when Claude Code runs only inside the app
-//! (`claude_desktop`). It works however Claude Code runs; the status line
-//! only runs in a terminal.
-//!
-//! Off unless the user turns it on (`config`): Anthropic doesn't document
-//! this use of Claude Code's sign-in. How the token is kept safe is in
-//! `endpoint`.
-
 use super::endpoint::{self, Problem};
 use super::{display_plan, round_percent};
 use jiff::Timestamp;
@@ -15,18 +5,15 @@ use nova_ai_usage_api::{UsageLimit, UsageWindow};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-/// Anthropic's API, a macro so `USAGE_URL` can be built from it.
 macro_rules! api_origin {
     () => {
         "https://api.anthropic.com"
     };
 }
-/// Anthropic's API, which the usage endpoint is on.
 pub const API_ORIGIN: &str = api_origin!();
 pub const USAGE_URL: &str = concat!(api_origin!(), "/api/oauth/usage");
 const BETA_HEADER: &str = "oauth-2025-04-20";
 
-/// Claude Code's credentials file: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
 pub fn default_credentials() -> Option<PathBuf> {
     nova_paths::path_var("CLAUDE_CONFIG_DIR")
         .or_else(|| nova_paths::home().map(|home| home.join(".claude")))
@@ -35,7 +22,6 @@ pub fn default_credentials() -> Option<PathBuf> {
 
 pub struct Token {
     access: String,
-    /// The subscription's display name, like `Max`.
     pub plan: Option<String>,
 }
 
@@ -50,8 +36,6 @@ impl Token {
     }
 }
 
-/// The token in `path`, if it's there, private to the user and hasn't
-/// expired at `now`.
 pub fn read_token(path: &Path, now: Timestamp) -> Result<Token, Problem> {
     let json = endpoint::read_sign_in(path)?;
     let oauth = json.get("claudeAiOauth").ok_or(Problem::SignedOut)?;
@@ -66,15 +50,12 @@ pub fn read_token(path: &Path, now: Timestamp) -> Result<Token, Problem> {
     Ok(Token { access, plan })
 }
 
-/// Asks `url` for the limits.
 pub fn fetch(url: &str, token: &Token) -> Result<Vec<UsageLimit>, Problem> {
     let authorization = format!("Bearer {}", token.access);
     let headers = [("Authorization", authorization.as_str()), ("anthropic-beta", BETA_HEADER)];
     Ok(limits_from_usage(&endpoint::get_json(url, &headers, "Anthropic")?))
 }
 
-/// The windows in the endpoint's answer; others (per model, extra usage)
-/// aren't shown.
 pub fn limits_from_usage(json: &Value) -> Vec<UsageLimit> {
     [("five_hour", UsageWindow::Session), ("seven_day", UsageWindow::Weekly)]
         .into_iter()
@@ -96,7 +77,6 @@ mod tests {
         "2026-10-23T10:00:00Z".parse().unwrap()
     }
 
-    /// The file written and the folder it's in, which goes when dropped.
     fn write(dir: &str, text: &str) -> (nova_test_support::TempDir, PathBuf) {
         let dir = nova_test_support::TempDir::new(&format!("claude-api-{dir}"));
         let path = dir.join(".credentials.json");

@@ -1,28 +1,9 @@
-//! Which panels are open, on every screen, and what opening one closes: the
-//! stage contract the user decided, kept apart from any drawing so it can
-//! be tested alone.
-//!
-//! - A panel is open on one screen at a time: opening it closes it on the
-//!   others.
-//! - Opening an `exclusive` panel closes every other exclusive one, on any
-//!   screen.
-//! - Esc, or a click outside, closes every open panel that closes on it,
-//!   on every screen.
-//! - While a panel that takes typing or closes on Esc is open, the window
-//!   that draws it (its screen's strip across the top, or the one beside
-//!   it for a panel placed elsewhere) holds the keyboard, so typing doesn't
-//!   reach the window below.
-
 use crate::item::Placement;
 use gpui::{DisplayId, SharedString};
 
-/// What the rules need to know of a panel (`crate::Panel` has the rest).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PanelRules {
-    /// Its feature's id, which is what `nova toggle` calls it.
     pub name: SharedString,
-    /// Which of its screen's windows draws it, and so holds the keyboard
-    /// for it.
     pub placement: Placement,
     pub exclusive: bool,
     pub wants_keyboard: bool,
@@ -30,19 +11,15 @@ pub struct PanelRules {
 }
 
 impl PanelRules {
-    /// Whether Esc closes it: one that takes typing, and every one that
-    /// closes on a click outside.
     pub fn closes_on_esc(&self) -> bool {
         self.wants_keyboard || self.closes_on_click_outside
     }
 
-    /// Whether `other` opening closes this one.
     fn ruled_out_by(&self, other: &PanelRules) -> bool {
         other.name == self.name || (other.exclusive && self.exclusive)
     }
 }
 
-/// The panels open right now, each with the screen it is open on.
 #[derive(Debug, Default)]
 pub struct OpenPanels {
     open: Vec<(DisplayId, PanelRules)>,
@@ -53,8 +30,6 @@ impl OpenPanels {
         self.open.iter().any(|(on, panel)| *on == screen && panel.name.as_ref() == name)
     }
 
-    /// Opens `panel` on `screen`, closing what it rules out. Returns
-    /// whether anything changed.
     pub fn open(&mut self, panel: PanelRules, screen: DisplayId) -> bool {
         if self.is_open(&panel.name, screen) {
             return false;
@@ -72,35 +47,25 @@ impl OpenPanels {
         if self.is_open(&panel.name, screen) { self.close(&panel.name, screen) } else { self.open(panel, screen) }
     }
 
-    /// Esc, or a click outside: closes the panels that close on it.
     pub fn dismiss(&mut self) -> bool {
         self.retain(|_, panel| !panel.closes_on_esc())
     }
 
-    /// Keeps the open panels `keep` says still exist: a screen that left,
-    /// or a feature turned off, takes its open panels with it.
     pub fn retain(&mut self, mut keep: impl FnMut(DisplayId, &PanelRules) -> bool) -> bool {
         let before = self.open.len();
         self.open.retain(|(screen, panel)| keep(*screen, panel));
         self.open.len() != before
     }
 
-    /// Whether one of `screen`'s two windows holds the keyboard: the strip
-    /// across the top (`on_strip`), or the window beside it that draws the
-    /// panels placed elsewhere.
     pub fn needs_keyboard(&self, screen: DisplayId, on_strip: bool) -> bool {
         let here = |on: DisplayId, panel: &PanelRules| on == screen && panel.placement.on_strip() == on_strip;
         self.open.iter().any(|(on, panel)| here(*on, panel) && panel.closes_on_esc())
     }
 
-    /// Whether any screen has a panel open, so everything Nova draws on
-    /// `screen` sits over a fullscreen window too.
     pub fn any_open(&self, screen: DisplayId) -> bool {
         self.open.iter().any(|(on, _)| *on == screen)
     }
 
-    /// Whether a panel that closes on a click outside is open on any
-    /// screen, so every screen takes clicks everywhere.
     pub fn catches_clicks(&self) -> bool {
         self.open.iter().any(|(_, panel)| panel.closes_on_click_outside)
     }
@@ -128,7 +93,6 @@ mod tests {
         }
     }
 
-    /// One that stays open beside the others, like a notes window would.
     fn notes() -> PanelRules {
         PanelRules { exclusive: false, closes_on_click_outside: false, ..panel("notes") }
     }

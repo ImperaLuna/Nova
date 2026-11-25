@@ -1,17 +1,9 @@
-//! `nova doctor`: one line per check, ok, warn or fail, and a non-zero exit
-//! when anything fails. A warning is something Nova runs with but works
-//! worse for, like no compositor it follows.
-//!
-//! Facts are gathered first (`Facts::gather`), then each check turns its
-//! facts into a line, so the checks are tested on made-up facts.
-
 use crate::host::{Distro, Host};
 use crate::login_apps::{self, AUTOSTART_DIR, StartupCommand};
 use nova_cli::client::{Client, RESTART_COMMAND, Unreachable};
-use nova_daemon_info::{FeatureState, FeatureStatus};
+use nova_daemon_info::{FeatureState, FeatureStatus, UiState, UiStatus};
 use nova_desktop_info::HYPRLAND_LOCK_RESTORE;
 use nova_features::Gpu;
-use nova_quickshell::Range;
 use nova_tray_api::TrayItem;
 use novad::checks;
 use std::fmt;
@@ -19,13 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-/// Qt's render loop variable, and the value that keeps the UI's memory down
-/// on NVIDIA's driver.
 const SETUP_COMMAND: &str = "nova setup";
-/// Where Nova's NixOS module puts its Hyprland rules (`packaging/nix/nixos.nix`).
 const NIXOS_HYPRLAND_RULES: &str = "/etc/xdg/nova/hyprland.lua";
-/// How long fontconfig gets to match one family; a cold font cache can take
-/// a few seconds to build.
 const FC_MATCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -59,38 +46,22 @@ impl fmt::Display for Line {
     }
 }
 
-/// Whether novad answered on its socket.
 #[derive(Debug)]
 pub enum Daemon {
-    Running {
-        version: String,
-        /// The apps in the tray, when its feature is on.
-        tray: Vec<TrayItem>,
-    },
-    /// No socket, or nothing listening on it.
+    Running { version: String, tray: Vec<TrayItem>, ui: Option<UiStatus> },
     NotRunning,
-    /// Something listens but doesn't answer like novad.
     NoAnswer(String),
 }
 
-/// Everything the checks look at.
 pub struct Facts {
     pub host: Host,
     pub compositor: Option<&'static str>,
-    pub quickshell: Result<String, String>,
+    pub ui: Option<PathBuf>,
     pub daemon: Daemon,
-    /// config.toml's theme problems, or why it doesn't parse.
     pub config: Result<Vec<String>, String>,
-    /// Each feature's state with this session's `PATH`, or why they couldn't
-    /// be worked out.
     pub features: Result<Vec<FeatureState>, String>,
-    /// What the compositor starts at login.
     pub startup: Vec<StartupCommand>,
-    /// Whether the compositor lets a restarted lock screen lock again, or
-    /// why it couldn't be asked; `None` with no compositor.
     pub lock_restore: Option<Result<bool, String>>,
-    /// The family fontconfig draws for each of the look's fonts, or why it
-    /// couldn't be asked.
     pub fonts: Result<Vec<(&'static str, String)>, String>,
 }
 
@@ -98,11 +69,10 @@ impl Facts {
     pub fn gather(socket: &Path) -> Self {
         let path_var = checks::session_path();
         let config_dir = nova_paths::config_dir();
-        let quickshell = checks::default_quickshell(&path_var);
         Self {
             host: Host::detect(Path::new("/")),
             compositor: checks::compositor(|name| std::env::var_os(name)),
-            quickshell: checks::read_quickshell_version(&quickshell, &path_var),
+            ui: nova_paths::find_program(checks::GPUI_UI, &path_var),
             daemon: reach(socket),
             config: checks::read_config(&config_dir.join("config.toml"), &checks::default_themes_dir()),
             features: features(&nova_features::default_dir(), &nova_paths::config_files("features.toml"), &path_var),
@@ -113,8 +83,6 @@ impl Facts {
     }
 }
 
-/// Asks fontconfig, as both UIs do, which families it draws for the look's
-/// fonts ([`nova_theme_info::FONTS`]).
 fn match_fonts(path_var: &str) -> Result<Vec<(&'static str, String)>, String> {
     nova_theme_info::FONTS
         .into_iter()
@@ -128,15 +96,12 @@ fn match_fonts(path_var: &str) -> Result<Vec<(&'static str, String)>, String> {
         .collect()
 }
 
-/// Tells "not running" from "stuck" by how the one connection fails
-/// ([`Client::reach`]), so the doctor never makes a second connection that
-/// could wait on a stuck novad.
 fn reach(socket: &Path) -> Daemon {
     match Client::reach(socket) {
         Err(Unreachable::NotRunning) => Daemon::NotRunning,
         Err(Unreachable::NoAnswer(problem)) => Daemon::NoAnswer(problem),
         Ok(mut client) => {
-            // Only for a warning: a novad too old to answer is still running.
+            let ui = client.status().ok().map(|status| status.ui);
             let events = client.current(vec![nova_tray_api::TOPIC]).unwrap_or_default();
             let tray = events
                 .into_iter()
@@ -145,7 +110,7 @@ fn reach(socket: &Path) -> Daemon {
                     _ => None,
                 })
                 .unwrap_or_default();
-            Daemon::Running { version: client.daemon_version, tray }
+            Daemon::Running { version: client.daemon_version, tray, ui }
         }
     }
 }
@@ -156,12 +121,11 @@ fn features(manifests_dir: &Path, selection: &[PathBuf], path_var: &str) -> Resu
     Ok(checks::feature_states(&manifests, &selection, path_var))
 }
 
-/// All the lines for `facts`, in the order they print.
 pub fn lines(facts: &Facts) -> Vec<Line> {
     let mut lines = vec![
         system(&facts.host),
         compositor(facts.compositor),
-        quickshell(&facts.quickshell, &Range::supported()),
+        ui(facts.ui.as_deref(), &facts.daemon),
         daemon(&facts.daemon),
         config(&facts.config),
         fonts(&facts.fonts, &facts.host.distro),
@@ -172,7 +136,6 @@ pub fn lines(facts: &Facts) -> Vec<Line> {
     lines
 }
 
-/// `nova doctor`. Fails when any line does.
 pub fn run(socket: &Path) -> Result<(), String> {
     let lines = lines(&Facts::gather(socket));
     for line in &lines {
@@ -227,12 +190,24 @@ fn compositor(name: Option<&str>) -> Line {
     }
 }
 
-fn quickshell(version: &Result<String, String>, range: &Range) -> Line {
-    match version {
-        Err(problem) => Line::new(Level::Fail, "quickshell", format!("{problem}; install it with `{SETUP_COMMAND}`")),
-        Ok(version) => match range.problem(version) {
-            Some(problem) => Line::new(Level::Fail, "quickshell", problem),
-            None => Line::new(Level::Ok, "quickshell", format!("{version} (tested: {range})")),
+fn ui(program: Option<&Path>, daemon: &Daemon) -> Line {
+    let since = |status: &UiStatus| status.since.as_deref().map(|since| format!(" since {since}")).unwrap_or_default();
+    match daemon {
+        Daemon::Running { ui: Some(status), .. } => match status.state {
+            UiState::Running => {
+                let pid = status.pid.map(|pid| format!(", pid {pid}")).unwrap_or_default();
+                Line::new(Level::Ok, "ui", format!("running{}{pid}", since(status)))
+            }
+            UiState::Restarting => {
+                let problem = status.problem.as_deref().unwrap_or("novad is starting it again");
+                Line::new(Level::Fail, "ui", format!("not running{}: {problem}", since(status)))
+            }
+            UiState::Disabled => Line::new(Level::Warn, "ui", "novad runs without its UI (--no-ui)"),
+            UiState::NotNeeded => Line::new(Level::Ok, "ui", "not running: no feature with a UI is on"),
+        },
+        _ => match program {
+            Some(program) => Line::new(Level::Ok, "ui", program.display().to_string()),
+            None => Line::new(Level::Fail, "ui", format!("{} isn't on PATH, so Nova has no UI", checks::GPUI_UI)),
         },
     }
 }
@@ -255,8 +230,6 @@ fn daemon(daemon: &Daemon) -> Line {
     }
 }
 
-/// A file that doesn't parse fails: novad ignores all of it. A theme that
-/// won't load only warns: novad shows its default theme instead.
 fn config(read: &Result<Vec<String>, String>) -> Line {
     match read {
         Err(problem) => Line::new(Level::Fail, "config", format!("{problem}; novad ignores it until it's fixed")),
@@ -265,8 +238,6 @@ fn config(read: &Result<Vec<String>, String>) -> Line {
     }
 }
 
-/// A missing font only warns: the UI draws fontconfig's nearest match (often
-/// DejaVu), which works but isn't the look.
 fn fonts(matched: &Result<Vec<(&'static str, String)>, String>, distro: &Distro) -> Line {
     let matched = match matched {
         Ok(matched) => matched,
@@ -274,7 +245,6 @@ fn fonts(matched: &Result<Vec<(&'static str, String)>, String>, distro: &Distro)
             return Line::new(Level::Warn, "fonts", format!("{problem}, so the look's fonts weren't checked"));
         }
     };
-    // fontconfig lists a face's families comma-separated (`Inter,Inter Display`).
     let missing: Vec<String> = matched
         .iter()
         .filter(|(family, drawn)| !drawn.split(',').any(|name| name.trim().eq_ignore_ascii_case(family)))
@@ -294,7 +264,6 @@ fn fonts(matched: &Result<Vec<(&'static str, String)>, String>, distro: &Distro)
     Line::new(Level::Warn, "fonts", format!("{} not installed; {install}", missing.join(", ")))
 }
 
-/// One line for all features when they're fine, one per feature that isn't.
 fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro) -> Vec<Line> {
     let features = match features {
         Ok(features) => features,
@@ -327,7 +296,6 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro)
             )
         })
     });
-    // Features whose hosts are all unknown are warned about above.
     let unhosted =
         features.iter().filter(|feature| nova_features::has_no_host(feature, features)).filter_map(|feature| {
             let mut owners: Vec<&FeatureState> = feature
@@ -364,9 +332,6 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro)
     vec![Line::new(Level::Ok, "features", format!("{} on, nothing missing", on.join(", ")))]
 }
 
-/// While the lock is on: a compositor that won't let the lock screen lock
-/// again after it crashed (Hyprland without Nova's rules) leaves the user
-/// locked out, with no bar, until a TTY.
 fn lock_restore_line(facts: &Facts) -> Option<Line> {
     let on = facts.features.as_ref().is_ok_and(|features| {
         features.iter().any(|feature| feature.id == nova_lock::FEATURE_ID && feature.status != FeatureStatus::Off)
@@ -399,8 +364,6 @@ fn lock_restore_line(facts: &Facts) -> Option<Line> {
     }
 }
 
-/// Tray apps the compositor starts at login, which may come up before the
-/// tray and miss it.
 fn login_apps_line(daemon: &Daemon, startup: &[StartupCommand]) -> Option<Line> {
     let Daemon::Running { tray, .. } = daemon else { return None };
     let found = login_apps::tray_apps(startup, tray);
@@ -442,8 +405,8 @@ mod tests {
         Facts {
             host: host(Distro::Arch, vec![Gpu::Amd], false),
             compositor: Some("niri"),
-            quickshell: Ok("0.3.2".into()),
-            daemon: Daemon::Running { version: env!("CARGO_PKG_VERSION").into(), tray: vec![] },
+            ui: Some(PathBuf::from("/usr/bin/nova-ui")),
+            daemon: Daemon::Running { version: env!("CARGO_PKG_VERSION").into(), tray: vec![], ui: None },
             config: Ok(vec![]),
             features: Ok(vec![
                 feature("ai-usage", FeatureStatus::Ready, &[]),
@@ -476,6 +439,7 @@ mod tests {
                 has_menu: false,
                 is_menu: false,
             }],
+            ui: None,
         };
         let text = rendered(&facts);
         assert!(
@@ -517,13 +481,13 @@ mod tests {
 
     #[test]
     fn a_healthy_machine_is_all_ok() {
-        let (range, version) = (Range::supported(), env!("CARGO_PKG_VERSION"));
+        let version = env!("CARGO_PKG_VERSION");
         assert_eq!(
             rendered(&healthy()),
             format!(
                 "ok    system      Arch, AMD\n\
                  ok    compositor  niri\n\
-                 ok    quickshell  0.3.2 (tested: {range})\n\
+                 ok    ui          /usr/bin/nova-ui\n\
                  ok    novad       running {version}\n\
                  ok    config      config.toml reads fine\n\
                  ok    fonts       Inter, JetBrains Mono, Instrument Serif\n\
@@ -558,21 +522,44 @@ mod tests {
     }
 
     #[test]
-    fn quickshell_outside_the_range_or_missing_fails() {
-        let range = Range::supported();
-        assert_eq!(quickshell(&Ok("0.2.0".into()), &range).level, Level::Fail);
-        assert_eq!(quickshell(&Ok("0.4.0".into()), &range).level, Level::Fail);
-        assert_eq!(quickshell(&Ok("0.3.9".into()), &range).level, Level::Ok);
-        let missing = quickshell(&Err("couldn't run quickshell --version: not found".into()), &range);
-        assert_eq!(missing.level, Level::Fail);
-        assert!(missing.detail.contains("nova setup"), "{missing}");
+    fn a_missing_nova_ui_fails() {
+        let missing = rendered(&Facts { ui: None, ..healthy() });
+        assert!(missing.contains("FAIL  ui          nova-ui isn't on PATH, so Nova has no UI"), "{missing}");
+    }
+
+    #[test]
+    fn the_ui_line_asks_novad() {
+        let with_ui = |state, problem: Option<&str>| {
+            let ui = UiStatus {
+                state,
+                pid: (state == UiState::Running).then_some(7),
+                pss_kib: None,
+                restarts: 0,
+                last_crash: None,
+                since: Some("2026-11-23T21:00:00.000Z".into()),
+                problem: problem.map(str::to_owned),
+            };
+            let daemon = Daemon::Running { version: env!("CARGO_PKG_VERSION").into(), tray: vec![], ui: Some(ui) };
+            rendered(&Facts { daemon, ..healthy() })
+        };
+        let running = with_ui(UiState::Running, None);
+        assert!(running.contains("ok    ui          running since 2026-11-23T21:00:00.000Z, pid 7"), "{running}");
+        let missing = with_ui(UiState::Restarting, Some("it didn't start: couldn't start /nonexistent/nova-ui"));
+        assert!(
+            missing.contains(
+                "FAIL  ui          not running since 2026-11-23T21:00:00.000Z: it didn't start: couldn't start /nonexistent/nova-ui"
+            ),
+            "{missing}"
+        );
+        let not_needed = with_ui(UiState::NotNeeded, None);
+        assert!(not_needed.contains("ok    ui          not running: no feature with a UI is on"), "{not_needed}");
     }
 
     #[test]
     fn novad_down_warns_and_stuck_fails() {
         assert_eq!(daemon(&Daemon::NotRunning).level, Level::Warn);
         assert_eq!(daemon(&Daemon::NoAnswer("novad didn't say hello".into())).level, Level::Fail);
-        let old = daemon(&Daemon::Running { version: "0.0.1".into(), tray: vec![] });
+        let old = daemon(&Daemon::Running { version: "0.0.1".into(), tray: vec![], ui: None });
         assert_eq!(old.level, Level::Warn);
         assert!(old.detail.contains("nova restart"), "{old}");
     }
@@ -582,14 +569,10 @@ mod tests {
         let root = FakeRoot::new("doctor-reach", "", &[], false);
         let socket = root.0.join("novad.sock");
         assert!(matches!(reach(&socket), Daemon::NotRunning));
-        // A socket file left by a novad that died.
         drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
-        // A child another test forks meanwhile holds the listener until it
-        // runs its program.
         let refused = || std::os::unix::net::UnixStream::connect(&socket).is_err();
         nova_test_support::wait_until(std::time::Duration::from_secs(5), "the listener to close", refused);
         assert!(matches!(reach(&socket), Daemon::NotRunning));
-        // Listening but never answering: times out on hello.
         std::fs::remove_file(&socket).unwrap();
         let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         assert!(matches!(reach(&socket), Daemon::NoAnswer(_)));
@@ -618,9 +601,6 @@ mod tests {
         assert!(text.contains("recording needs gpu-screen-recorder or wf-recorder; Nova's Nix module installs it with `programs.nova.features.recording.enable = true;` and a rebuild"), "{text}");
     }
 
-    /// A slot naming a host Nova doesn't have, and a feature whose hosts'
-    /// feature is off (now playing with the bar off), each warn; with
-    /// everything off the doctor says the UI doesn't run.
     #[test]
     fn slots_with_nowhere_to_show_warn() {
         let slot = |host: &str, view: &str| nova_features::Slot { host: host.into(), view: view.into(), order: 0 };
@@ -638,14 +618,12 @@ mod tests {
             "{text}"
         );
 
-        // Only an unknown host: one line, not a second "nowhere to show".
         let stray = FeatureState {
             slots: vec![slot("bar.middle", "stray.pill")],
             ..feature("stray", FeatureStatus::Ready, &[])
         };
         let text = rendered(&Facts { features: Ok(vec![stray]), ..healthy() });
         assert!(!text.contains("nowhere to show"), "{text}");
-        // A host's feature that's on but missing something isn't "off".
         let sound = FeatureState {
             slots: vec![slot("quick-settings.sliders", "sound.slider")],
             ..feature("sound", FeatureStatus::Ready, &[])
@@ -685,8 +663,6 @@ mod tests {
         super::config(&checks::read_config(path, themes))
     }
 
-    /// The readers novad uses, on real files: a theme that doesn't exist and
-    /// a feature whose binary isn't on PATH.
     #[test]
     fn settings_are_read_the_way_novad_reads_them() {
         let root = FakeRoot::new("doctor-settings", "ID=arch\n", &[], false);

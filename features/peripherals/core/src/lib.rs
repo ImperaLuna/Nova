@@ -1,41 +1,3 @@
-//! Wireless devices and their batteries (feature `peripherals`): mice,
-//! keyboards, headsets and controllers that report a charge, for the quick
-//! settings sidebar.
-//!
-//! Each source of devices is a module of its own behind [`Source`], run on
-//! threads of its own, and sends its whole list to [`Report`] whenever it
-//! changes: `upower` follows UPower on the system bus (the kernel's drivers
-//! and BlueZ, event-driven), `hidpp` asks Logitech devices over HID++ when
-//! the kernel left their receiver to `hid-generic` (every [`hidpp::POLL`],
-//! when hidraw nodes come or go and when a device says something),
-//! `keychron` listens for the battery report that Keychron keyboards on
-//! the community battery firmware send over raw HID (by themselves over
-//! their dongle, when asked on their cable) and asks Keychron mice over
-//! their vendor interface (`keychron_mouse`), and `headsetcontrol` runs
-//! HeadsetControl for the headsets the kernel can't read (every
-//! [`headsetcontrol::POLL`] and when a USB device comes or goes). A
-//! source that isn't there (no UPower, no HeadsetControl, no access to a
-//! receiver's node) just reports nothing.
-//!
-//! The lists are merged into one [`Event::Peripherals`]: a device two
-//! sources report (the same USB vendor and product, and serial when both
-//! know it, or for one on Bluetooth and its dongle at once, the same kind
-//! and name) is listed once, as the source first in [`PRIORITY`] (UPower,
-//! the kernel's reading, then HID++ and Keychron's) has it, with the
-//! other's battery only when it has none. Changes that come together are
-//! published once they settle, and only when the list differs from the
-//! last one sent.
-//!
-//! When a device's battery runs low, `alerts` says so with a notification
-//! (feature `notifications`, through its api's `Post` port), at 20%, 10%
-//! and 5%.
-//!
-//! Only devices that are connected and on now are listed: one that's off
-//! (a headset whose dongle stays plugged in) or not present leaves the
-//! list. Devices that report no battery anywhere (a keyboard on stock
-//! firmware behind its dongle) aren't listed either: finding them would
-//! take a HID enumeration of its own.
-
 mod alerts;
 #[cfg(test)]
 mod fake_hidraw;
@@ -64,34 +26,20 @@ use std::time::{Duration, Instant};
 
 pub const FEATURE_ID: &str = "peripherals";
 const LOG_SOURCE: &str = "peripherals";
-/// Changes that come together (a device's charge and its state, a source's
-/// first list) are published once they pause this long...
 const SETTLE: Duration = Duration::from_millis(250);
-/// ...or this long after the first of them, if they never pause.
 const MAX_DELAY: Duration = Duration::from_secs(1);
-/// The sources, the one whose reading wins first.
 const PRIORITY: [PeripheralSource; 4] =
     [PeripheralSource::Upower, PeripheralSource::Hidpp, PeripheralSource::Keychron, PeripheralSource::Headsetcontrol];
-/// The most devices one source lists: more than any desk has.
 const MAX_DEVICES: usize = 32;
-/// Device names are cut to this many characters.
 const MAX_NAME_CHARS: usize = 100;
 
-/// Where devices are read from: the machine's, or stand-ins in tests.
 #[derive(Clone)]
 pub struct Sources {
-    /// The bus UPower is on.
     pub upower: Bus,
-    /// `/sys`, where a UPower device's connection and hidraw nodes are
-    /// looked up.
     pub sys_root: PathBuf,
-    /// `/dev`, where hidraw nodes are.
     pub dev: PathBuf,
-    /// Opens a hidraw node.
     pub open_hidraw: hidraw::Opener,
-    /// Searched for `headsetcontrol`.
     pub path_var: String,
-    /// `/dev/bus/usb`, whose device nodes come and go with USB devices.
     pub usb_devices: PathBuf,
 }
 
@@ -108,7 +56,6 @@ impl Sources {
     }
 }
 
-/// A USB vendor and product id, like `1038:2253`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsbId {
     pub vendor: u16,
@@ -121,18 +68,14 @@ impl std::fmt::Display for UsbId {
     }
 }
 
-/// A device as one source found it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Found {
     pub device: Peripheral,
-    /// The USB ids it's reached through, to know it when another source
-    /// reports it too.
     pub usb_ids: Vec<UsbId>,
     pub serial: Option<String>,
 }
 
 impl Found {
-    /// Whether `other`, from another source, is this device.
     fn same_as(&self, other: &Found) -> bool {
         let serials_differ = matches!((&self.serial, &other.serial), (Some(mine), Some(theirs)) if mine != theirs);
         self.device.source != other.device.source
@@ -140,11 +83,6 @@ impl Found {
             && self.usb_ids.iter().any(|id| other.usb_ids.contains(id))
     }
 
-    /// Whether `other` is this device reached the other way: a headset
-    /// paired over Bluetooth and on its USB dongle at once. No USB id
-    /// leads from Bluetooth to the dongle, so the same kind and a name
-    /// that holds the other's (`SteelSeries Arctis Nova 5X` and `Arctis
-    /// Nova 5X`) tell.
     fn same_over_bluetooth(&self, other: &Found) -> bool {
         let bluetooth = |found: &Found| found.device.link == Some(PeripheralLink::Bluetooth);
         bluetooth(self) != bluetooth(other)
@@ -153,14 +91,11 @@ impl Found {
     }
 }
 
-/// Whether two kinds can be one device: sources call a headset headphones
-/// as often as a headset.
 fn same_kind(a: PeripheralKind, b: PeripheralKind) -> bool {
     let audio = |kind| matches!(kind, PeripheralKind::Headset | PeripheralKind::Headphones);
     a == b || (audio(a) && audio(b))
 }
 
-/// Whether one name's words, any case, run in order inside the other's.
 fn names_match(a: &str, b: &str) -> bool {
     let words = |name: &str| name.split_whitespace().map(str::to_lowercase).collect::<Vec<_>>();
     let (a, b) = (words(a), words(b));
@@ -168,20 +103,14 @@ fn names_match(a: &str, b: &str) -> bool {
     !short.is_empty() && long.windows(short.len()).any(|run| run == short.as_slice())
 }
 
-/// A source of devices.
 trait Source {
-    /// Starts following devices on threads of its own, sending each whole
-    /// list to `report`, until the returned handle stops it.
     fn start(self: Box<Self>, report: Report) -> Box<dyn Running>;
 }
 
-/// A started [`Source`].
 trait Running: Send + Sync {
-    /// Ends it; it reports nothing after this.
     fn stop(&self);
 }
 
-/// Where one source sends what it found.
 #[derive(Clone)]
 pub struct Report {
     shared: Arc<Shared>,
@@ -189,7 +118,6 @@ pub struct Report {
 }
 
 impl Report {
-    /// `devices` is all the source has now.
     fn found(&self, mut devices: Vec<Found>) {
         devices.sort_by(|a, b| a.device.id.cmp(&b.device.id));
         if devices.len() > MAX_DEVICES {
@@ -222,28 +150,21 @@ pub struct Peripherals {
 
 struct Shared {
     state: Mutex<State>,
-    /// Wakes the publisher when a source reported, or it should stop.
     wake: Condvar,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
-    /// Where low battery alerts go, while notifications are on.
     notifications: Mutex<Option<Weak<dyn Post>>>,
 }
 
 struct State {
-    /// Each source's devices, in [`PRIORITY`] order.
     found: Vec<(PeripheralSource, Vec<Found>)>,
-    /// The last event published.
     sent: PeripheralsEvent,
-    /// When the first and the last change not yet published came.
     pending: Option<(Instant, Instant)>,
     stopped: bool,
     alerts: alerts::Alerts,
 }
 
 impl Peripherals {
-    /// Starts every source and the publisher. Returns at once: devices are
-    /// published as the sources find them.
     pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
@@ -258,8 +179,6 @@ impl Peripherals {
             logger,
             notifications: Mutex::new(None),
         });
-        // Clients that heard an earlier run's list (the feature was off a
-        // while) start from nothing again, even if nothing is found now.
         shared.hub.publish(&Event::Peripherals(PeripheralsEvent { devices: Vec::new() }));
         let publisher = Arc::clone(&shared);
         std::thread::spawn(move || publisher.publish_when_settled());
@@ -301,7 +220,6 @@ impl Peripherals {
         Arc::new(Self { shared, running })
     }
 
-    /// Stops the sources and publishes nothing more.
     pub fn stop(&self) {
         lock(&self.shared.state).stopped = true;
         self.shared.wake.notify_all();
@@ -310,8 +228,6 @@ impl Peripherals {
         }
     }
 
-    /// Where low battery alerts go from now on: nowhere while
-    /// notifications are off.
     pub fn set_notifications(&self, notifications: Option<&Arc<dyn Post>>) {
         let notifications = notifications.map(Arc::downgrade);
         let changed = match (&*lock(&self.shared.notifications), &notifications) {
@@ -319,7 +235,6 @@ impl Peripherals {
             (was, now) => was.is_some() != now.is_some(),
         };
         *lock(&self.shared.notifications) = notifications;
-        // Devices already low are alerted now, not at their next change.
         if changed {
             let mut state = lock(&self.shared.state);
             let now = Instant::now();
@@ -328,9 +243,6 @@ impl Peripherals {
         }
     }
 
-    /// Sends a new subscriber, client `id`, the devices last published,
-    /// under the lock that publishing takes, so a newer event can't arrive
-    /// before it.
     pub fn send_state(&self, id: ClientId) {
         let state = lock(&self.shared.state);
         self.shared.hub.send_to(id, &Event::Peripherals(state.sent.clone()));
@@ -338,7 +250,6 @@ impl Peripherals {
 }
 
 impl Shared {
-    /// Publishes the merged list once changes settle, until stopped.
     fn publish_when_settled(&self) {
         let mut state = lock(&self.state);
         loop {
@@ -361,14 +272,11 @@ impl Shared {
                 self.hub.publish(&Event::Peripherals(event.clone()));
                 state.sent = event;
             }
-            // Only while notifications are on: alerts nobody can see aren't
-            // counted as said. Also when only that changed (`set_notifications`).
             let Some(notifications) = lock(&self.notifications).as_ref().and_then(Weak::upgrade) else { continue };
             let State { alerts, sent, .. } = &mut *state;
             let alerts = alerts.update(&sent.devices);
             if !alerts.is_empty() {
                 let held = state.alerts.notifications();
-                // Sent unlocked: the notification server takes locks of its own.
                 drop(state);
                 let sent = self.alert(&*notifications, alerts, held);
                 state = lock(&self.state);
@@ -379,16 +287,11 @@ impl Shared {
         }
     }
 
-    /// Sends `alerts` and says which notification each became. `held` are
-    /// the notifications devices known now sent.
     fn alert(&self, notifications: &dyn Post, alerts: Vec<alerts::Alert>, mut held: Vec<u32>) -> Vec<(String, u32)> {
         alerts
             .into_iter()
-            // Stopped meanwhile: no more.
             .take_while(|_| !lock(&self.state).stopped)
             .map(|mut alert| {
-                // After a restart nothing says which row is the device's;
-                // one another device of its name holds isn't.
                 if alert.own.replaces == 0 {
                     let row = notifications.listed(&|row| !held.contains(&row.id) && alerts::row_of(row, &alert.own));
                     alert.own.replaces = row.unwrap_or(0);
@@ -402,10 +305,6 @@ impl Shared {
     }
 }
 
-/// One list from every source's: each device once, as the first source in
-/// [`PRIORITY`] that reports it has it, with a later source's battery when
-/// it has none, and a later source's link when the first knows none or
-/// only says wired.
 fn merge(found: &[(PeripheralSource, Vec<Found>)]) -> PeripheralsEvent {
     let mut kept: Vec<&Found> = Vec::new();
     let mut devices: Vec<Peripheral> = Vec::new();
@@ -414,9 +313,6 @@ fn merge(found: &[(PeripheralSource, Vec<Found>)]) -> PeripheralsEvent {
             && !kept.iter().any(|known| known.same_as(candidate))
             && candidate.device.link != Some(PeripheralLink::Bluetooth)
         {
-            // A headset on Bluetooth and on its dongle: the dongle's entry
-            // names it, so its id (and the alerts kept by id) stays put
-            // while the Bluetooth link comes and goes.
             let bluetooth = std::mem::replace(&mut devices[index], candidate.device.clone());
             if devices[index].battery.is_none() {
                 devices[index].battery = bluetooth.battery;
@@ -436,8 +332,6 @@ fn merge(found: &[(PeripheralSource, Vec<Found>)]) -> PeripheralsEvent {
                     device.battery = candidate.device.battery;
                     device.charging = candidate.device.charging;
                 }
-                // sysfs can't tell a headset's USB dongle from a cable: a
-                // source that knows it's wireless says how it connects.
                 if matches!(device.link, None | Some(PeripheralLink::Wired)) && candidate.device.link.is_some() {
                     device.link = candidate.device.link;
                 }
@@ -451,8 +345,6 @@ fn merge(found: &[(PeripheralSource, Vec<Found>)]) -> PeripheralsEvent {
     PeripheralsEvent { devices }
 }
 
-/// A device's name from text another program gave: trimmed, cut to
-/// [`MAX_NAME_CHARS`], `None` when empty.
 fn name(text: &str) -> Option<String> {
     let trimmed = text.trim();
     (!trimmed.is_empty()).then(|| trimmed.chars().filter(|c| !c.is_control()).take(MAX_NAME_CHARS).collect())

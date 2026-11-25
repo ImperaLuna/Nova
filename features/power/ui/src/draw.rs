@@ -1,13 +1,3 @@
-//! Draws the open power menu: "Session" and the uptime, a row per action,
-//! and why the last action failed. `ui/power/PowerMenu.qml`'s rows and
-//! `PowerRow.qml` in today's shell; the stage draws the glass, its fillets
-//! and the motion.
-//!
-//! A row is its icon and label, filled with the accent while selected.
-//! Waiting for its second click it asks "Shut down?" with the seconds left
-//! and a line draining along its bottom; running, it shows a spinner.
-//! Dimmed with the reason under it when it can't run.
-
 use crate::choice::{ENTRIES, Entry};
 use crate::menu::{Menu, problem_width};
 use crate::tokens::{BUSY_OPACITY, ROW_GAP};
@@ -24,7 +14,6 @@ use nova_look::{Glyph, Icon, Spinner, Theme, fade_color};
 use nova_power_api::PowerAction;
 use std::time::Instant;
 
-/// An action's line icon (POWER is shutting down).
 fn glyph(action: PowerAction) -> Glyph {
     match action {
         PowerAction::Lock => Glyph::LOCK,
@@ -35,15 +24,11 @@ fn glyph(action: PowerAction) -> Glyph {
     }
 }
 
-/// How a row is drawn this frame.
 struct RowState {
     selected: bool,
     available: bool,
-    /// Waiting for its second click: how much of the wait is left (1 to 0)
-    /// and the whole seconds.
     armed: Option<(f32, u64)>,
     running: bool,
-    /// Another row is running.
     busy: bool,
     reason: String,
 }
@@ -52,7 +37,6 @@ impl Menu {
     fn row_state(&self, action: PowerAction, now: Instant) -> RowState {
         let choice = &self.choice;
         let armed = (choice.armed(now) == Some(action)).then(|| (choice.armed_left(now), choice.seconds_left(now)));
-        // An action still running after the menu closed shows nothing.
         let running = self.open && choice.running == Some(action);
         RowState {
             selected: choice.selected == action,
@@ -131,13 +115,10 @@ impl Menu {
     }
 }
 
-/// The line along an armed row's bottom, `left` of its width.
 fn drain(left: f32, ink: Hsla) -> impl IntoElement {
     div().absolute().left_0().bottom_0().w(relative(left)).h(DRAIN_HEIGHT).bg(ink.alpha(DRAIN_OPACITY))
 }
 
-/// What a selected row shows at its end: "↵", the seconds left to
-/// confirm, or a spinner while it runs.
 fn end(state: &RowState, ink: Hsla) -> Option<AnyElement> {
     if state.running {
         return Some(Spinner::new().color(ink).into_any_element());
@@ -155,7 +136,6 @@ fn end(state: &RowState, ink: Hsla) -> Option<AnyElement> {
 impl Render for Menu {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = Instant::now();
-        // The draining line and the spinner move.
         let spinning = self.open && self.choice.running.is_some();
         if self.choice.armed(now).is_some() || spinning {
             window.request_animation_frame();

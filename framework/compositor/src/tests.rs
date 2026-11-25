@@ -1,11 +1,3 @@
-//! The backends against what real niri and Hyprland sent, recorded in a NixOS
-//! VM (by `e2e/vm/record.py`, removed with the VM tests in IMP-422; it is in
-//! git history): `recorded/<compositor>/events.txt`
-//! is the event stream, `steps.json` says how far into it each step of the
-//! script had got, and `<step>/` holds the compositor's answers to its
-//! queries at that point. `recorded/hyprland-<version>/` holds one set of
-//! answers from a newer Hyprland, taken on a real desktop.
-
 use super::*;
 use nova_desktop_info::FocusedWindow;
 
@@ -30,22 +22,18 @@ impl Recording {
         Self { events: read("events.txt"), steps: serde_json::from_str(&read("steps.json")).unwrap(), dir }
     }
 
-    /// The event lines that arrived during step `index`.
     fn lines(&self, index: usize) -> impl Iterator<Item = &str> {
         let start = index.checked_sub(1).map_or(0, |previous| self.steps[previous].events_bytes);
         self.events[start..self.steps[index].events_bytes].lines()
     }
 
-    /// The compositor's answer to `query` at the end of step `index`.
     fn answer(&self, index: usize, query: &str) -> String {
         std::fs::read_to_string(self.dir.join(format!("{index:02}")).join(format!("{query}.json"))).unwrap()
     }
 }
 
-/// The desktop after each step, from the backend following the events.
 type Followed = Vec<(String, Desktop)>;
 
-/// niri's answer to `Outputs` at the end of step `index`.
 fn niri_ask(recording: &Recording, index: usize) -> impl FnMut() -> Result<serde_json::Value, String> + '_ {
     move || Ok(serde_json::from_str(&recording.answer(index, "outputs")).unwrap())
 }
@@ -54,7 +42,6 @@ fn follow_niri(recording: &Recording) -> Followed {
     let mut state = niri::State::default();
     let mut followed = Vec::new();
     for (index, step) in recording.steps.iter().enumerate() {
-        // niri's answer to the event stream request comes first.
         for line in recording.lines(index).filter(|line| *line != NIRI_HANDLED) {
             state.apply(line).unwrap();
         }
@@ -64,7 +51,6 @@ fn follow_niri(recording: &Recording) -> Followed {
     followed
 }
 
-/// What niri itself reports at step `index`, through the same model.
 fn niri_answer(recording: &Recording, index: usize) -> Desktop {
     let mut state = niri::State::default();
     let event = |name: &str, field: &str, query: &str| {
@@ -92,15 +78,12 @@ fn follow_hyprland(recording: &Recording) -> Followed {
         for line in recording.lines(index) {
             state.apply(line);
         }
-        // What the events asked novad to look up, answered as Hyprland did then.
         state.catch_up(&mut hyprland_ask(recording, index)).unwrap();
         followed.push((step.name.clone(), state.desktop()));
     }
     followed
 }
 
-/// What Hyprland itself reports at step `index`. Urgency is only ever in
-/// events, so this has none.
 fn hyprland_answer(recording: &Recording, index: usize) -> Desktop {
     hyprland::State::load(&mut hyprland_ask(recording, index)).unwrap().desktop()
 }
@@ -112,8 +95,6 @@ fn without_urgency(mut desktop: Desktop) -> Desktop {
     desktop
 }
 
-/// Without the counts of windows moving: only events count them, so an
-/// answer to a query always says 0.
 fn without_layout(mut desktop: Desktop) -> Desktop {
     for output in &mut desktop.outputs {
         output.layout = 0;
@@ -132,7 +113,6 @@ fn step<'a>(followed: &'a Followed, name: &str) -> &'a Desktop {
     &followed.iter().find(|(step, _)| step == name).unwrap_or_else(|| panic!("no step {name:?}")).1
 }
 
-/// What the recorded script did, as the bar should see it, on any compositor.
 fn check_the_script(followed: &Followed) {
     let first = window(step(followed, "open first window")).expect("the first window is focused");
     assert_eq!((first.app_id.as_str(), first.title.as_str()), ("nova-first", "First window"));
@@ -180,8 +160,6 @@ fn check_the_script(followed: &Followed) {
     assert!(before.iter().all(|(_, desktop)| fullscreen(desktop).is_empty()), "fullscreen too early: {before:#?}");
     let full = step(followed, "fullscreen the focused window");
     assert_eq!(fullscreen(full), [focused_workspace(full).name.clone()], "{full:#?}");
-    // Its window grew: the screen's layout count goes up, for glass to copy
-    // the screen again.
     let layout = |desktop: &Desktop| desktop.outputs.iter().find(|output| output.focused).map(|output| output.layout);
     assert!(layout(full) > layout(&before.last().unwrap().1), "{full:#?}");
 
@@ -194,7 +172,6 @@ fn special(desktop: &Desktop) -> Vec<&Workspace> {
     desktop.outputs.iter().flat_map(|output| &output.workspaces).filter(|w| w.special).collect()
 }
 
-/// Hyprland's special workspace, from the end of the recorded script.
 fn check_the_special_workspace(followed: &Followed) {
     let before = step(followed, "close the focused window");
     assert!(special(before).is_empty(), "no special workspace yet: {before:#?}");
@@ -234,8 +211,6 @@ fn niri_events_add_up_to_what_niri_reports() {
         assert_eq!(without_layout(desktop.clone()), niri_answer(&recording, index), "after {name:?}");
     }
     check_the_script(&followed);
-    // A Nova panel holding the keyboard leaves no window focused; the
-    // workspace still says which one focus goes back to.
     let opened = step(&followed, "open first window");
     assert_eq!(focused_workspace(opened).active_window, window(opened).map(|window| window.id));
 }
@@ -257,9 +232,6 @@ fn hyprland_events_add_up_to_what_hyprland_reports() {
 
 #[test]
 fn hyprland_0_57_without_a_special_workspace_id_still_loads() {
-    // Answers from a real Hyprland 0.57 desktop with two outputs, kept in
-    // `recorded/hyprland-0.57/`: its monitors leave out the special
-    // workspace's `id` when none shows.
     let desktop = hyprland_0_57("hyprland-0.57").desktop();
     let names: Vec<&str> = desktop.outputs.iter().map(|output| output.name.as_str()).collect();
     assert_eq!(names, ["DP-1", "DP-2"]);
@@ -267,7 +239,6 @@ fn hyprland_0_57_without_a_special_workspace_id_still_loads() {
     assert_eq!(focused_workspace(&desktop).name, "1");
 }
 
-/// Hyprland 0.57 as it answers from `recorded/<dir>/`.
 fn hyprland_0_57(dir: &str) -> hyprland::State {
     let dir = recorded_dir().join(dir);
     let mut ask = |request: &str| {
@@ -279,10 +250,6 @@ fn hyprland_0_57(dir: &str) -> hyprland::State {
 
 #[test]
 fn hyprland_0_57_shows_its_special_workspace() {
-    // Answers from the same desktop on Hyprland 0.57, kept in
-    // `recorded/hyprland-0.57-special/`: `special:magic` shows on DP-1 with a
-    // fullscreen window, and DP-2 has focus. Special workspaces and their
-    // windows have no `id` there, only an address.
     let desktop = hyprland_0_57("hyprland-0.57-special").desktop();
     let [here, there] = &desktop.outputs[..] else { panic!("{desktop:#?}") };
 
@@ -314,9 +281,6 @@ fn the_compositor_comes_from_its_variables() {
 
 #[test]
 fn hyprland_says_whether_a_new_lock_screen_may_take_the_lock_over() {
-    // As Hyprland's `getoption` formats them (src/ipc/s1/Commands.cpp,
-    // 0.57.2): an INTEGER option on 0.56, a BOOL one on 0.57's Lua config.
-    // Not recorded: Hyprland can't run in a cloud session.
     let int = |value| format!(r#"{{"option": "misc:allow_session_lock_restore", "int": {value}, "set": false }}"#);
     let boolean = |value| format!(r#"{{"option": "misc:allow_session_lock_restore", "bool": {value}, "set": true }}"#);
     assert_eq!(hyprland::lock_restore_in(&int(0)), Ok(false));
@@ -342,11 +306,9 @@ fn stepping_skips_the_special_workspace() {
     let followed = follow_hyprland(&Recording::load("hyprland"));
     let desktop = step(&followed, "show the special workspace");
     let output = &desktop.outputs[0].name;
-    // From the workspace under it, never onto it.
     assert_eq!(neighbour(desktop, output, Step::Previous).unwrap(), None, "{desktop:#?}");
     let next = neighbour(desktop, output, Step::Next).unwrap();
     assert!(next.is_none_or(|workspace| !workspace.special));
-    // Hidden, it comes first in the list; stepping back from 1 stays there.
     let hidden = step(&followed, "hide a window in the special workspace");
     assert!(hidden.outputs[0].workspaces[0].special, "{hidden:#?}");
     assert_eq!(neighbour(hidden, output, Step::Previous).unwrap(), None);
@@ -354,8 +316,6 @@ fn stepping_skips_the_special_workspace() {
 
 #[test]
 fn a_column_as_tall_as_the_output_is_not_fullscreen() {
-    // With no gaps, once the bar gives its space up an ordinary column is
-    // as tall as the output; only one as wide too is fullscreen.
     let recording = Recording::load("niri");
     let fullscreen_step = recording.steps.iter().position(|step| step.name == "fullscreen the focused window").unwrap();
     let mut state = niri::State::default();
@@ -375,7 +335,6 @@ fn a_column_as_tall_as_the_output_is_not_fullscreen() {
     assert!(!shown(&state.desktop()));
 }
 
-/// The id of the window niri lists as focused at the end of step `index`.
 fn focused_window_id(recording: &Recording, index: usize) -> u64 {
     let window: serde_json::Value = serde_json::from_str(&recording.answer(index, "focused-window")).unwrap();
     window["id"].as_u64().unwrap()
@@ -383,8 +342,6 @@ fn focused_window_id(recording: &Recording, index: usize) -> u64 {
 
 #[test]
 fn a_fullscreen_column_scrolled_out_of_view_is_not_fullscreen() {
-    // RyzenShine (IMP-112): a fullscreen browser two columns right of the
-    // focused window, out of view, hid the bar.
     let recording = Recording::load("niri");
     let fullscreen_step = recording.steps.iter().position(|step| step.name == "fullscreen the focused window").unwrap();
     let mut state = niri::State::default();
@@ -400,8 +357,6 @@ fn a_fullscreen_column_scrolled_out_of_view_is_not_fullscreen() {
     let full = focused_window_id(&recording, fullscreen_step);
     let workspace = focused_workspace(&state.desktop()).id;
     let (width, height) = (1280.0, 800.0);
-    // Another window in column 1 becomes the one the view follows, then the
-    // fullscreen one moves to column 2 (beside it, maybe on screen) and 3.
     let other = full + 100;
     let window = |id: u64, column: usize, tile: (f64, f64)| {
         serde_json::json!({"WindowOpenedOrChanged": {"window": {
@@ -420,12 +375,10 @@ fn a_fullscreen_column_scrolled_out_of_view_is_not_fullscreen() {
     assert!(!shown(&state), "two columns away, it's out of view");
 }
 
-/// A compositor following `backend`, last reported `desktop`.
 fn compositor(backend: Box<dyn Backend>, desktop: Option<Desktop>) -> Compositor {
     Compositor { backend, desktop: Mutex::new(desktop), hub: Arc::default(), output_listeners: Mutex::default() }
 }
 
-/// Remembers the workspaces it was asked to show.
 #[derive(Default)]
 struct Shown(Mutex<Vec<WorkspaceId>>);
 
@@ -471,7 +424,6 @@ impl Backend for Arc<Shown> {
 
 #[test]
 fn focusing_an_output_shows_its_workspace_unless_it_has_focus() {
-    // The recorded desktop, plus a second output without focus.
     let mut desktop = follow_niri(&Recording::load("niri")).pop().unwrap().1;
     let mut other = desktop.outputs[0].clone();
     other.name = "DP-2".into();
@@ -494,8 +446,6 @@ fn focusing_an_output_shows_its_workspace_unless_it_has_focus() {
 
 #[test]
 fn a_special_workspace_shows_on_one_output_and_is_listed_on_every_one() {
-    // The recording's single output, plus a second one without focus or
-    // workspaces of its own, at the step that shows the special workspace.
     let recording = Recording::load("hyprland");
     let index = recording.steps.iter().position(|step| step.name == "show the special workspace").unwrap();
     let mut ask = |request: &str| {
@@ -534,19 +484,16 @@ fn output_listeners_hear_only_of_output_changes() {
     compositor.update(desktop.clone());
     let first: Vec<String> = desktop.outputs.iter().map(|output| output.name.clone()).collect();
     assert_eq!(*lock(&heard), [first]);
-    // A workspace change alone isn't an output change.
     let mut moved = desktop.clone();
     moved.keyboard_layout = Some("Romanian".into());
     compositor.update(moved);
     assert_eq!(lock(&heard).len(), 1);
-    // A second output is.
     let mut plugged = desktop.clone();
     let mut other = plugged.outputs[0].clone();
     other.name = "ZZ-1".into();
     plugged.outputs.push(other);
     compositor.update(plugged);
     assert_eq!(lock(&heard).last().unwrap().last().unwrap(), "ZZ-1");
-    // One that listens later hears of the outputs at once.
     let late = Arc::new(Mutex::new(Vec::new()));
     let hearing = Arc::clone(&late);
     compositor.on_outputs(move |names| lock(&hearing).push(names));

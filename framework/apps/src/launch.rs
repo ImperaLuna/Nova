@@ -1,15 +1,3 @@
-//! Starting an app from its desktop entry, alone or with a file to open.
-//! Apps must outlive novad, and some ask the kernel to kill them when their
-//! parent goes (bubblewrap's `--die-with-parent`, which Claude Desktop's
-//! wrapper uses): an app is never novad's child, nor a child of the thread
-//! that started it.
-//!
-//! With a systemd user manager each app runs as a service of its own
-//! (`app-nova-<id>-<n>.service`, the freedesktop.org naming) that the
-//! manager starts: it's not part of `nova.service`, and `systemctl --user`
-//! shows it by name. Without one it's forked twice, so it ends up a child of
-//! init, in a session of its own. Either way nothing it prints reaches novad.
-
 use crate::desktop_entry::Entry;
 use nova_log::Logger;
 use nova_paths::find_program;
@@ -24,13 +12,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 const LOG_SOURCE: &str = "launcher";
-/// How long a launch waits to hear the app started.
 const START_TIMEOUT: Duration = Duration::from_secs(2);
-/// Runs a command in a terminal, the way the freedesktop.org proposal says.
 const TERMINAL_EXEC: &str = "xdg-terminal-exec";
-/// The user's terminal, for systems without xdg-terminal-exec.
 const TERMINAL_VAR: &str = "TERMINAL";
-/// What systemd sets for novad itself, which an app mustn't take for its own.
 const SERVICE_VARS: [&str; 7] = [
     nova_process::notify::SOCKET_VAR,
     "INVOCATION_ID",
@@ -41,18 +25,13 @@ const SERVICE_VARS: [&str; 7] = [
     "LISTEN_PID",
 ];
 
-/// How apps are started.
 #[derive(Clone, Debug)]
 pub enum Runner {
-    /// As services of their own, with this `systemd-run`.
     Service(PathBuf),
-    /// Forked twice, in a session of their own.
     Direct,
 }
 
 impl Runner {
-    /// A service when the user's systemd manager runs and `systemd-run` is on
-    /// `path_var`.
     pub fn detect(path_var: &str) -> Self {
         let manager = std::env::var_os("XDG_RUNTIME_DIR")
             .map(|runtime| Path::new(&runtime).join("systemd/private"))
@@ -64,12 +43,10 @@ impl Runner {
     }
 }
 
-/// Starts `entry`'s app.
 pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logger>) -> Result<(), String> {
     start(entry, entry.exec.iter().map(OsString::from).collect(), runner, path_var, logger)
 }
 
-/// Starts `entry`'s app as `argv`.
 fn start(
     entry: &Entry,
     mut argv: Vec<OsString>,
@@ -80,19 +57,15 @@ fn start(
     if entry.terminal {
         argv.splice(0..0, terminal(path_var)?.into_iter().map(OsString::from));
     }
-    // The program comes from the entry's own text, so it's UTF-8.
     let name = argv[0].to_string_lossy().into_owned();
     let program = find_program(&name, path_var).ok_or_else(|| format!("{name} isn't installed"))?;
     let home = nova_paths::home();
-    // A folder that isn't there would fail the start.
     let dir = entry.path.clone().into_iter().chain(home).find(|dir| dir.is_dir()).unwrap_or_else(|| "/".into());
     let mut command = match runner {
         Runner::Service(systemd_run) => {
             let mut command = Command::new(systemd_run);
             command
                 .args(["--user", "--quiet", "--collect", "--service-type=exec"])
-                // What the app leaves running when its first process ends
-                // (a launcher script's app) keeps running.
                 .args([
                     "--property=KillMode=process",
                     "--property=StandardOutput=null",
@@ -100,10 +73,8 @@ fn start(
                 ])
                 .arg(format!("--unit={}", unit_name(&entry.id)))
                 .arg(format!("--working-directory={}", dir.display()));
-            // novad's environment (Wayland's display, the session bus), by
-            // name: systemd-run reads the values from its own. A name
-            // systemd might refuse (a shell's `BASH_FUNC_x%%`) would fail
-            // the start, so it's left out.
+            // systemd refuses an environment name that isn't a plain variable name (a shell's `BASH_FUNC_x%%`) and the start fails:
+            // https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#Environment=
             for (name, _) in std::env::vars_os() {
                 if let Some(name) =
                     name.to_str().filter(|name| plain_name(name) && !SERVICE_VARS.contains(name) && *name != "PATH")
@@ -111,22 +82,14 @@ fn start(
                     command.arg(format!("--setenv={name}"));
                 }
             }
-            // The session's PATH, below.
-            // systemd expands `$NAME` in the command line again; doubled,
-            // each `$` reaches the app as it was written.
+            // systemd expands `$NAME` in a command line again, so each `$` is doubled:
+            // https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#Command%20lines
             command.arg("--setenv=PATH").arg("--").arg(&program).args(argv[1..].iter().map(|arg| doubled_dollars(arg)));
             command
         }
         Runner::Direct => {
             let mut command = Command::new(&program);
             command.args(&argv[1..]);
-            // Its own session, without novad's terminal: Ctrl+C on `nova
-            // daemon` in a terminal doesn't reach it, and an app that
-            // touches the terminal (Electron does) isn't stopped as a
-            // background job of it. The fork's first half exits at once, and
-            // the app waits for that before it execs: an app that asks to die
-            // with its parent (bubblewrap's --die-with-parent) would die with
-            // the first half if it asked first.
             // SAFETY: setsid, getpid, fork, getppid, sched_yield and _exit
             // are async-signal-safe and touch no memory.
             unsafe {
@@ -138,6 +101,8 @@ fn start(
                     match libc::fork() {
                         -1 => Err(std::io::Error::last_os_error()),
                         0 => {
+                            // An app's own PR_SET_PDEATHSIG (bubblewrap's --die-with-parent) set before this would fire as the first half exits:
+                            // https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html
                             while libc::getppid() == first_half {
                                 libc::sched_yield();
                             }
@@ -154,13 +119,10 @@ fn start(
         command.env_remove(name);
     }
     command.env("PATH", path_var).current_dir(&dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-    // What novad waits on: systemd-run, which returns once the app has
-    // started or failed to, or the fork's first half, which returns at once.
     let mut child = command.spawn().map_err(|e| format!("can't start {}: {e}", program.display()))?;
     match child::wait_within(&mut child, START_TIMEOUT) {
         Ok(Some(status)) if status.success() => {}
         Ok(Some(status)) => return Err(format!("{} didn't start ({status})", program.display())),
-        // Taking long: its answer is only logged.
         Ok(None) => {
             let logger = Arc::clone(logger);
             let id = entry.id.clone();
@@ -176,12 +138,8 @@ fn start(
     Ok(())
 }
 
-/// The program that opens a file or folder in the user's default app.
 const OPENER: &str = "xdg-open";
 
-/// Opens `target`, a file or folder, in the user's default app (the
-/// screenshot card's Open and Folder). It's started like an app: it may run
-/// for as long as the user keeps it open, so it's never novad's child.
 pub fn open(target: &Path, path_var: &str, logger: &Arc<Logger>) -> Result<(), String> {
     let opener = Entry {
         id: format!("{OPENER}.desktop"),
@@ -201,8 +159,6 @@ pub fn open(target: &Path, path_var: &str, logger: &Arc<Logger>) -> Result<(), S
     launch(&opener, &Runner::detect(path_var), path_var, logger)
 }
 
-/// `arg` with each `$` doubled, byte by byte, so a file name that isn't
-/// UTF-8 keeps its bytes.
 fn doubled_dollars(arg: &OsStr) -> OsString {
     let mut doubled = Vec::with_capacity(arg.len());
     for &byte in arg.as_bytes() {
@@ -214,14 +170,12 @@ fn doubled_dollars(arg: &OsStr) -> OsString {
     OsString::from_vec(doubled)
 }
 
-/// A name of letters, digits and `_`, not starting with a digit.
 fn plain_name(name: &str) -> bool {
     !name.starts_with(|c: char| c.is_ascii_digit())
         && !name.is_empty()
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// What runs a terminal app: xdg-terminal-exec, else `$TERMINAL -e`.
 fn terminal(path_var: &str) -> Result<Vec<String>, String> {
     if find_program(TERMINAL_EXEC, path_var).is_some() {
         return Ok(vec![TERMINAL_EXEC.into()]);
@@ -232,9 +186,6 @@ fn terminal(path_var: &str) -> Result<Vec<String>, String> {
     }
 }
 
-/// `app-nova-<id>-<n>.service`, the id without `.desktop` and escaped the way
-/// systemd escapes unit names (`-` separates the parts, so it's `\x2d`
-/// inside one), `n` different for every launch.
 fn unit_name(id: &str) -> String {
     static LAUNCHES: AtomicU64 = AtomicU64::new(0);
     let app = id.strip_suffix(".desktop").unwrap_or(id);
@@ -273,7 +224,6 @@ mod tests {
             categories: vec![],
         };
         let path_var = std::env::var("PATH").unwrap_or_default();
-        // A systemd-run that fails, as one does when the app can't start.
         let failing = find_program("false", &path_var).unwrap();
         let error = launch(&entry, &Runner::Service(failing), &path_var, &logger).unwrap_err();
         assert!(error.contains("didn't start"), "{error}");
@@ -287,7 +237,6 @@ mod tests {
         assert!(!plain_name("BASH_FUNC_x%%") && !plain_name("1A") && !plain_name(""));
     }
 
-    /// systemd expands `$` again; a name that isn't UTF-8 keeps its bytes.
     #[test]
     fn dollars_are_doubled_byte_for_byte() {
         let arg = OsStr::from_bytes(b"/tmp/caf\xe9 $HOME.png");

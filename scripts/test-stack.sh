@@ -114,7 +114,7 @@ expect "failing check exit" "1" "$status"
 expect "failing check names the branch" "1" "$(grep -c '^b: `.*` fails after merging a' <<<"$out")"
 expect "failing check pushes nothing" "$before" "$(git ls-remote origin b c)"
 expect "the default check needs the dev shell" "2" \
-  "$(NOVA_QML_IMPORTS='' STACK_CHECK='just check-branch' "$script" restack -n a b c >/dev/null 2>&1; echo $?)"
+  "$(IN_NIX_SHELL='' STACK_CHECK='just check-branch' "$script" restack -n a b c >/dev/null 2>&1; echo $?)"
 expect "a passing check pushes" "exit 0" "$(STACK_CHECK='test -f b.txt' "$script" restack a b c >/dev/null 2>&1; echo "exit $?")"
 
 # mark: a stand-in gh answers the open PR list from $work/pulls.json, keeps

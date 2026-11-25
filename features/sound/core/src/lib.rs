@@ -1,29 +1,3 @@
-//! Sound (feature `sound`, its messages in `nova-sound-api`): every output
-//! and input, the apps playing, their volume and mute, which devices are in
-//! use and who records from the mic.
-//!
-//! It follows PipeWire through the PulseAudio socket `pipewire-pulse`
-//! serves ([`server`]), with two connections: one only waits for the
-//! server to say something changed, the other asks for the whole listing
-//! again each time, which [`reading`] turns into the feature's
-//! [`Sound`](Reading), and carries the feature's commands ([`changes`]).
-//! A command's effect comes back like anyone else's change: as the
-//! server's word that something changed. Changes that come while a listing is read cost one
-//! more listing, however many they are. What clients get is published only
-//! when it differs from the last one.
-//!
-//! Without the server (no `pipewire-pulse`, or it went away) the feature
-//! says so (`available: false`) and tries again with a doubling wait, since
-//! a server that isn't there sends nothing to wait on.
-//!
-//! While novad does the volume keys and the Bluetooth follow for the UI
-//! (the GPUI UI; Quickshell's shell does them itself), [`Sound::press`]
-//! steps the output in use and a Bluetooth device that appears becomes the
-//! one in use.
-//!
-//! novad runs it as a module (its wiring adapts [`Sound`] to novad's
-//! `Module` trait).
-
 mod changes;
 #[cfg(test)]
 mod fake_pulse;
@@ -49,30 +23,18 @@ use std::time::Duration;
 pub const FEATURE_ID: &str = "sound";
 const LOG_SOURCE: &str = "sound";
 
-/// The waits between tries while the server isn't there.
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const MAX_RETRY: Duration = Duration::from_secs(30);
 
-/// What a command is answered while the server isn't there.
 const NO_SERVER: &str = "there is no sound server";
-/// What a command is answered when the server it was meant for went and
-/// another answers now: its ids may name other things there.
 const SERVER_CAME_BACK: &str = "the sound server restarted, look at the sound again";
-/// Why following ended when nothing else says.
 const CLOSED: &str = "the connection closed";
 
 pub struct Sound {
     sources: Sources,
-    /// A Bluetooth device that appears becomes the one in use.
-    follows_bluetooth: bool,
     state: Mutex<State>,
-    /// The connection that asks, with its count, while there is one. Never
-    /// taken while `state` is held.
     asking: Mutex<Option<(Link, u64)>>,
-    /// Held through a key's press, so two keys at once step one after
-    /// the other.
     pressing: Mutex<()>,
-    /// Wakes the follower: something changed, the server went, or stop.
     wake: Condvar,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
@@ -81,33 +43,18 @@ pub struct Sound {
 #[derive(Default)]
 struct State {
     stopped: bool,
-    /// What clients were last told, and a new one is.
     reading: Reading,
-    /// What the server last listed, which commands' ids name things in,
-    /// and the connection that listed it: a server that came back may give
-    /// the same ids to other things.
     listing: Option<(Listing, u64)>,
-    /// The connections now, counted so one that already went can't end
-    /// the next.
     connection: u64,
-    /// The server changed something since the last listing was asked for.
     changed: bool,
-    /// The newest connection that went, by its count: never lowered, so
-    /// an older one going late can't hide it.
     gone: u64,
-    /// The socket that waits for changes, to end its wait with.
     waiting: Option<UnixStream>,
 }
 
 impl Sound {
-    /// Starts following the server. With `follows_bluetooth` (while novad
-    /// does what today's shell's `VolumeService.qml` does, for the GPUI UI),
-    /// a Bluetooth output or input that appears becomes the one in use
-    /// ([`changes::arrived_bluetooth`]).
-    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>, follows_bluetooth: bool) -> Arc<Self> {
+    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let sound = Arc::new(Self {
             sources,
-            follows_bluetooth,
             state: Mutex::new(State::default()),
             asking: Mutex::new(None),
             pressing: Mutex::new(()),
@@ -120,7 +67,6 @@ impl Sound {
         sound
     }
 
-    /// Ends following; nothing is published after this returns.
     pub fn stop(&self) {
         let mut state = lock(&self.state);
         state.stopped = true;
@@ -130,22 +76,15 @@ impl Sound {
         self.wake.notify_all();
     }
 
-    /// Sends `client` the sound as it is now.
     pub fn send_state(&self, client: ClientId) {
         let state = lock(&self.state);
         self.hub.send_to(client, &Event::Sound(state.reading.clone()));
     }
 
-    /// Does `command`. What it changed is published when the server says
-    /// so, not when this returns.
     pub fn change(&self, command: &Command) -> Result<(), String> {
         self.ask(|listing| changes::requests(listing, command))
     }
 
-    /// Does what a volume key asks of the output in use
-    /// ([`changes::press`]), as [`Self::change`] does a command. The kept
-    /// listing takes the change at once ([`changes::apply`]), so the next
-    /// key steps from it.
     pub fn press(&self, key: VolumeKey) -> Result<(), String> {
         let _pressing = lock(&self.pressing);
         let (requests, listed_by) = match &lock(&self.state).listing {
@@ -161,8 +100,6 @@ impl Sound {
         Ok(())
     }
 
-    /// Sends the server the requests `requests` makes of the latest
-    /// listing.
     fn ask(&self, requests: impl FnOnce(&Listing) -> Result<Vec<Request>, String>) -> Result<(), String> {
         let (requests, listed_by) = match &lock(&self.state).listing {
             Some((listing, connection)) => (requests(listing)?, *connection),
@@ -171,7 +108,6 @@ impl Sound {
         self.send(&requests, listed_by)
     }
 
-    /// Sends `requests`, made of what connection `listed_by` listed.
     fn send(&self, requests: &[Request], listed_by: u64) -> Result<(), String> {
         let mut asking = lock(&self.asking);
         let Some((link, connection)) = asking.as_mut() else {
@@ -191,7 +127,6 @@ impl Sound {
                 Err(Failed::Broken(reason)) => {
                     *asking = None;
                     drop(asking);
-                    // The follower finds out now, not at the next change.
                     let mut state = lock(&self.state);
                     state.gone = state.gone.max(connection);
                     drop(state);
@@ -203,20 +138,14 @@ impl Sound {
         Ok(())
     }
 
-    /// Connects, follows until the connection goes, and again, waiting
-    /// longer each time the server isn't there.
     fn run(self: Arc<Self>) {
         let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
-        // The last reason said, so a server that stays away is logged once.
         let mut said: Option<String> = None;
         loop {
             if lock(&self.state).stopped {
                 return;
             }
             let reason = match self.connect() {
-                // A server that answered is one worth trying again soon,
-                // and news when it goes; one that connects but never
-                // lists keeps the longer waits and is said once.
                 Ok(connection) => self.follow(connection, || {
                     retry.reset();
                     said = None;
@@ -234,9 +163,6 @@ impl Sound {
         }
     }
 
-    /// Both connections: the one that asks, and the one that waits for
-    /// changes, on its own thread from here. Returns this connection's
-    /// count.
     fn connect(self: &Arc<Self>) -> Result<u64, String> {
         let asking = Link::connect(&self.sources)?;
         let mut waiting = Link::connect(&self.sources)?;
@@ -249,7 +175,6 @@ impl Sound {
         state.connection += 1;
         let connection = state.connection;
         state.waiting = Some(socket);
-        // Following began before this listing, so nothing is missed.
         state.changed = true;
         drop(state);
         *lock(&self.asking) = Some((asking, connection));
@@ -258,7 +183,6 @@ impl Sound {
         Ok(connection)
     }
 
-    /// Passes each change on to the follower, until the connection goes.
     fn wait_for_changes(&self, mut waiting: Link, connection: u64) {
         loop {
             let change = waiting.next_change();
@@ -275,9 +199,6 @@ impl Sound {
         }
     }
 
-    /// Reads the listing whenever something changed and publishes what
-    /// differs, until `connection` goes or the feature stops. Returns why.
-    /// `answered` runs once, after the first listing.
     fn follow(&self, connection: u64, answered: impl FnMut()) -> String {
         let reason = self.follow_until_gone(connection, answered);
         let mut asking = lock(&self.asking);
@@ -323,20 +244,12 @@ impl Sound {
         }
     }
 
-    /// What makes a Bluetooth device in `listing` that the last listing
-    /// from the same connection didn't have the one in use, while it
-    /// follows Bluetooth.
     fn arrived_bluetooth(&self, listing: &Listing, connection: u64) -> Vec<Request> {
-        if !self.follows_bluetooth {
-            return Vec::new();
-        }
         let state = lock(&self.state);
         let before = state.listing.as_ref().filter(|(_, listed_by)| *listed_by == connection);
         changes::arrived_bluetooth(before.map(|(listing, _)| listing), listing)
     }
 
-    /// Sends what [`Self::arrived_bluetooth`] made. Its effect comes back
-    /// as the server's word that something changed, like any other.
     fn use_arrived(&self, requests: &[Request], connection: u64) {
         for request in requests {
             let (what, name) = match request {
@@ -354,9 +267,6 @@ impl Sound {
         }
     }
 
-    /// Keeps `listing` (none without a server) and publishes what clients
-    /// see of it when that differs from the last time. False once the
-    /// feature stopped: nothing is published then.
     fn tell(&self, listing: Option<(Listing, u64)>) -> bool {
         let reading = listing.as_ref().map(|(listing, _)| reading::sound(listing)).unwrap_or_default();
         let mut state = lock(&self.state);
@@ -366,18 +276,14 @@ impl Sound {
         state.listing = listing;
         if state.reading != reading {
             state.reading = reading;
-            // Published under the state lock, so readings reach clients in
-            // order and a `stop` can't be overtaken by one.
             self.hub.publish(&Event::Sound(state.reading.clone()));
         }
         true
     }
 }
 
-/// Ends the wait for changes: its thread sees the socket close and leaves.
 fn end_wait(state: &mut State) {
     if let Some(socket) = state.waiting.take() {
-        // Already closed by the server is fine.
         let _ = socket.shutdown(Shutdown::Both);
     }
 }

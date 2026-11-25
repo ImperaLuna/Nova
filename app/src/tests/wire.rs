@@ -1,15 +1,8 @@
-//! The wire format: every message shape novad and its clients exchange, as
-//! one snapshot, and the rules every request line is read by. The types are
-//! the ones novad serves: its own (`nova-daemon-info`), the -info crates'
-//! and each feature's api crate's.
-
 use nova_app_info::App;
 use nova_bar_api::Panel;
 use nova_carrier::log::{LogEntry, LogLevel, Logs, UI_LOG_SOURCE};
 use nova_carrier::{Envelope, Outcome, Published, Request, Response, encode};
-use nova_daemon_info::{
-    Command, Crash, Event, FeatureState, FeatureStatus, Slot, Status, UiProgram, UiState, UiStatus, topics,
-};
+use nova_daemon_info::{Command, Crash, Event, FeatureState, FeatureStatus, Slot, Status, UiState, UiStatus, topics};
 use nova_desktop_info::{Capability, FocusedWindow, Output, Workspace};
 use nova_desktop_info::{Desktop, Step};
 use nova_host_info::Host;
@@ -24,8 +17,6 @@ use nova_theme_info::{Color, Palette, ThemeMode};
 use nova_volume_osd_api::VolumeKey;
 use serde_json::json;
 
-/// Every message shape on the wire. A change here changes the protocol:
-/// accept with `cargo insta review`, then run `just protocol-js`.
 mod rules;
 mod samples;
 use samples::*;
@@ -52,14 +43,11 @@ fn wire_format() {
     ];
     let all: String = lines.into_iter().flatten().map(Result::unwrap).collect();
     assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
-    // The snapshot keeps the name and folder-relative file it had in
-    // nova-protocol, so the file is unchanged by the move.
     insta::with_settings!({ prepend_module_to_snapshot => false }, {
         insta::assert_snapshot!("nova_protocol__tests__wire_format", all);
     });
 }
 
-/// novad's own messages, the -info crates' and the shared envelope's.
 fn own_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(Event::Hello { daemon: "0.1.0".into() }),
@@ -136,7 +124,6 @@ fn own_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The AI usage feature's own messages (`nova-ai-usage-api`), and what follows them.
 fn ai_usage_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_ai_usage_api::Event::AiUsage(ai_usage())),
@@ -161,7 +148,6 @@ fn ai_usage_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The lock feature's own messages (`nova-lock-api`), and what follows them.
 fn lock_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_carrier::Request { id: Some(16), command: nova_lock_api::Command::Lock }),
@@ -172,7 +158,6 @@ fn lock_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The power feature's own messages (`nova-power-api`), and what follows them.
 fn power_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_carrier::Request { id: Some(18), command: nova_power_api::Command::PowerOptions }),
@@ -204,7 +189,6 @@ fn power_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The screenshot feature's own messages (`nova-screenshot-api`), and what follows them.
 fn screenshot_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_carrier::Request {
@@ -249,7 +233,6 @@ fn screenshot_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The recording feature's own messages (`nova-recording-api`), and what follows them.
 fn recording_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_carrier::Request { id: Some(35), command: nova_recording_api::Command::Record }),
@@ -291,7 +274,6 @@ fn recording_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The sound feature's own messages (`nova-sound-api`).
 fn sound_lines() -> Vec<serde_json::Result<String>> {
     use nova_sound_api::{Command, Kind};
     vec![
@@ -313,7 +295,6 @@ fn sound_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The resources feature's own messages (`nova-resources-api`), and what follows them.
 fn resources_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_carrier::Request {
@@ -328,7 +309,6 @@ fn resources_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The quick settings toggle and the launcher's own messages (`nova-launcher-api`).
 fn launcher_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(Request { id: None, command: nova_bar_api::Command::Toggle { panel: Panel::QuickSettings } }),
@@ -408,7 +388,6 @@ fn launcher_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The tray feature's own messages (`nova-tray-api`), and what follows them.
 fn tray_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_carrier::Request {
@@ -445,7 +424,6 @@ fn tray_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The notifications feature's own messages (`nova-notifications-api`), and what follows them.
 fn notifications_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_notifications_api::Event::Notifications(notifications())),
@@ -473,7 +451,6 @@ fn notifications_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The wallpaper feature's own messages (`nova-wallpaper-api`), and what follows them.
 fn wallpaper_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_carrier::Request {
@@ -519,7 +496,6 @@ fn wallpaper_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The media feature's own messages (`nova-media-api`), and what follows them.
 fn media_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_media_api::Event::Media(media())),
@@ -568,7 +544,6 @@ fn media_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The peripherals feature's own messages (`nova-peripherals-api`), and what follows them.
 fn peripherals_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_peripherals_api::Event::Peripherals(peripherals())),
@@ -576,7 +551,6 @@ fn peripherals_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The network feature's own messages (`nova-network-api`), and what follows them.
 fn network_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_network_api::Event::Network(network())),
@@ -622,7 +596,6 @@ fn network_lines() -> Vec<serde_json::Result<String>> {
     ]
 }
 
-/// The Bluetooth feature's own messages (`nova-bluetooth-api`), and what follows them.
 fn bluetooth_lines() -> Vec<serde_json::Result<String>> {
     vec![
         encode(nova_bluetooth_api::Event::Bluetooth(bluetooth())),

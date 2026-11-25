@@ -1,28 +1,19 @@
-//! When a panel's content shows. Opening, it waits until the panel has
-//! grown part of the way, then fades in; closing, it follows the morph
-//! back, all at once. `MorphReveal` in today's shell.
-
 use nova_look::tokens::{DURATION_FADE, DURATION_PANEL, REVEAL_CONTENT};
 use std::time::Instant;
 
-/// The opacity of a panel's content, from when it last turned round.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Reveal {
     opening: bool,
     turned: Instant,
-    /// Its opacity, and how far the panel had grown, when it turned round.
     opacity_then: f32,
     morph_then: f32,
 }
 
 impl Reveal {
-    /// Hidden, in a closed panel.
     pub fn hidden(now: Instant) -> Self {
         Self { opening: false, turned: now, opacity_then: 0.0, morph_then: 0.0 }
     }
 
-    /// Heads for shown or hidden from where it is. `morph` is how far the
-    /// panel has grown (0..1) at `now`.
     pub fn set_open(&mut self, open: bool, morph: f32, now: Instant) {
         if open == self.opening {
             return;
@@ -35,7 +26,6 @@ impl Reveal {
 
     pub fn opacity(&self, morph: f32, now: Instant) -> f32 {
         if !self.opening {
-            // Down with the panel: gone when it is closed.
             let left = if self.morph_then > 0.0 { (morph / self.morph_then).clamp(0.0, 1.0) } else { 0.0 };
             return self.opacity_then * left;
         }
@@ -45,8 +35,6 @@ impl Reveal {
         self.opacity_then + (1.0 - self.opacity_then) * faded
     }
 
-    /// Whether it needs no more frames of its own: closing, it only
-    /// follows the morph.
     pub fn settled(&self, now: Instant) -> bool {
         !self.opening
             || now.saturating_duration_since(self.turned) >= DURATION_PANEL.mul_f32(REVEAL_CONTENT) + DURATION_FADE

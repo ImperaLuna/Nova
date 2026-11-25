@@ -12,7 +12,7 @@ expression: all
 {"v":2,"id":11,"cmd":"quit"}
 {"v":2,"event":"logs","data":{"backlog":true,"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}
 {"v":2,"event":"logs","data":{"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}
-{"v":2,"id":10,"result":{"daemon":"0.1.0","features":[{"id":"bar","status":"ready"}],"log_dir":"/home/me/.local/state/nova","pid":100,"pss_kib":4096,"quickshell":"0.3.2","ui":{"last_crash":{"log":"/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log","time":"2026-10-22T13:40:00.000Z"},"pid":101,"program":"quickshell","pss_kib":180000,"restarts":1,"state":"running"},"uptime_secs":42}}
+{"v":2,"id":10,"result":{"daemon":"0.1.0","features":[{"id":"bar","status":"ready"}],"log_dir":"/home/me/.local/state/nova","pid":100,"pss_kib":4096,"ui":{"last_crash":{"log":"/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log","time":"2026-10-22T13:40:00.000Z"},"pid":101,"pss_kib":180000,"restarts":1,"since":"2026-10-22T13:40:01.000Z","state":"running"},"uptime_secs":42}}
 {"v":2,"id":7,"result":"pong"}
 {"v":2,"event":"ai_usage","data":{"shown":"claude","providers":[{"provider":"claude","state":"ready","limits":[{"window":"session","percent":42,"resets_at":"2026-10-23T11:00:00Z"},{"window":"weekly","percent":61}]},{"provider":"codex","state":"unavailable","hint":"No Codex sessions yet."}]}}
 {"v":2,"id":12,"cmd":"show_ai_usage","args":{"provider":"codex"}}
@@ -129,7 +129,7 @@ expression: all
 {"v":2,"id":65,"cmd":"bluetooth_answer","args":{"id":3,"answer":"accept"}}
 {"v":2,"id":66,"cmd":"bluetooth_answer","args":{"id":4,"answer":{"code":"0000"}}}
 {"v":2,"id":8,"error":"bad request"}
-{"v":2,"event":"sound","data":{"available":true,"outputs":[{"id":52,"name":"Arctis Nova 7","kind":"headphones","link":"usb","volume":0.4,"muted":false,"current":true},{"id":61,"name":"ALC1220 Analog","kind":"speakers","volume":0.4,"muted":false,"current":false}],"inputs":[{"id":53,"name":"Arctis Nova 7","kind":"headphones","link":"usb","volume":0.4,"muted":false,"current":true}],"apps":[{"id":77,"name":"Firefox","volume":1.0,"muted":true}],"recorders":["Discord"]}}
+{"v":2,"event":"sound","data":{"available":true,"outputs":[{"id":52,"name":"Arctis Nova 7","kind":"headphones","link":"usb","volume":0.4,"muted":false,"current":true},{"id":61,"name":"ALC1220 Analog","kind":"speakers","volume":0.4,"muted":false,"current":false}],"inputs":[{"id":53,"name":"Arctis Nova 7","kind":"headphones","link":"usb","volume":0.4,"muted":false,"current":true}],"apps":[{"id":77,"name":"Firefox","icon_name":"firefox","program":"firefox","volume":1.0,"muted":true}],"recorders":["Discord"]}}
 {"v":2,"id":24,"cmd":"set_sound_volume","args":{"of":"output","id":52,"volume":0.4}}
 {"v":2,"id":25,"cmd":"set_sound_muted","args":{"of":"app","id":77,"muted":true}}
 {"v":2,"id":28,"cmd":"set_sound_level","args":{"of":"output","id":52,"volume":0.7}}

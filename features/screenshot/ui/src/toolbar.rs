@@ -1,13 +1,3 @@
-//! The region picker's toolbar, where the central pill sits: a switch
-//! between a screenshot and a recording (while both are on and nothing
-//! records), what to take (a region or the whole screen), for a recording
-//! the sound too (the desktop's, the mic's), and close. It grows in from
-//! the pill's height as the picker opens, its glass and what is on it
-//! together. The sound buttons slide in on the right, so whatever is left
-//! of them stays put: the toolbar is placed by its width with them in.
-//! `ui/capture/CaptureToolbar.qml`, `CaptureSwitch.qml` and
-//! `CaptureButton.qml` in today's shell.
-
 use crate::tokens::{BAR_HEIGHT, BUTTON_HEIGHT, BUTTON_PAD, SWITCH_PAD, SWITCH_WIDTH};
 use gpui::{
     App, Bounds, CursorStyle, Div, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, SharedString,
@@ -20,11 +10,9 @@ use nova_look::tokens::{
 use nova_look::{Glass, Glyph, Icon, Theme, mix};
 use nova_screenshot_api::CaptureMode;
 
-/// What a toolbar button asks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ask {
     Mode(CaptureMode),
-    /// The switch: a recording (true) or a screenshot.
     Video(bool),
     DesktopAudio,
     MicAudio,
@@ -36,29 +24,21 @@ const MODES: [(CaptureMode, Glyph, &str); 2] =
 const SOUNDS: [(Ask, Glyph, &str); 2] =
     [(Ask::DesktopAudio, Glyph::SPEAKER, "Desktop"), (Ask::MicAudio, Glyph::MIC, "Mic")];
 
-/// The toolbar's widths at full size.
 pub struct Layout {
-    /// The switch shows.
     switch: bool,
     modes: [Pixels; 2],
     sounds: [Pixels; 2],
-    /// Its width with the sound buttons out, and what they add when in.
     base: Pixels,
     extras: Pixels,
-    /// Its width with them in where they can come in: what places it.
     full: Pixels,
 }
 
 impl Layout {
-    /// The toolbar with the switch (`switch`), for a recording (`video`)
-    /// or with the switch the sound buttons may slide in.
     pub fn of(switch: bool, video: bool, window: &Window) -> Self {
         let wide = |label: &str| ICON_SIZE + ICON_GAP + label_width(label, window) + BUTTON_PAD * 2.0;
         let modes = MODES.map(|(_, _, label)| wide(label));
         let sounds = SOUNDS.map(|(_, _, label)| wide(label));
         let switched = if switch { SWITCH_WIDTH + BAR_GAP + DIVIDER_WIDTH + BAR_GAP } else { Pixels::ZERO };
-        // The gaps at its ends, the switch, the modes, and close after a
-        // divider.
         let base = BAR_GAP
             + switched
             + modes[0]
@@ -74,21 +54,16 @@ impl Layout {
         Self { switch, modes, sounds, base, extras, full }
     }
 
-    /// Where the glass is on a screen `screen_width` wide, grown in to
-    /// `grown` (0 at the pill's height, 1 full), with the sound buttons in
-    /// to `sounds`.
     pub fn bounds(&self, screen_width: Pixels, grown: f32, sounds: f32) -> Bounds<Pixels> {
         let scale = scale(grown);
         let now = self.base + self.extras * sounds;
         let (width, height) = (now * scale, BAR_HEIGHT * scale);
-        // Placed on whole pixels at full size, as the QML rounds its x.
         let left = ((screen_width - self.full) / 2.0).round();
         let center = point(left + now / 2.0, BAR_GAP + BAR_HEIGHT / 2.0);
         bounds(point(center.x - width / 2.0, center.y - height / 2.0), size(width, height))
     }
 }
 
-/// The scale the toolbar is at, grown in to `grown`.
 fn scale(grown: f32) -> f32 {
     let from = f32::from(PILL_HEIGHT) / f32::from(BAR_HEIGHT);
     from + (1.0 - from) * grown
@@ -108,29 +83,20 @@ fn label_width(label: &str, window: &Window) -> Pixels {
     window.text_system().shape_line(SharedString::from(label), FONT_SIZE, &[run], None).width
 }
 
-/// How the toolbar is drawn this frame.
 #[derive(Debug, Clone, Copy)]
 pub struct Look {
-    /// Where its glass is ([`Layout::bounds`]).
     pub glass: Bounds<Pixels>,
-    /// How far it has grown in, and faded in.
     pub grown: f32,
     pub shown: f32,
-    /// The mode picked, and the kind: a recording when `video`.
     pub mode: CaptureMode,
     pub video: bool,
-    /// The switch's knob (0 under the camera, 1 under the video), and how
-    /// far the sound buttons are in.
     pub knob: f32,
     pub sounds: f32,
-    /// The sound picked for a recording.
     pub desktop_audio: bool,
     pub mic_audio: bool,
-    /// A pick is being saved or counted down: the switch takes no click.
     pub busy: bool,
 }
 
-/// The toolbar as `look` says; `ask` runs what a button asks.
 pub fn toolbar(
     layout: &Layout,
     look: &Look,
@@ -184,8 +150,6 @@ pub fn toolbar(
         }
         row = row.child(button(id, width, *each == mode, *glyph, Some(*label), Ask::Mode(*each)));
     }
-    // The sound buttons, with the gap before them inside: nothing is left
-    // of them when they're out.
     let picked = [look.desktop_audio, look.mic_audio];
     let mut sounds = div().flex_none().w(at(layout.extras)).flex().items_center().child(gap()).child(divider());
     for (((asked, glyph, label), width), picked) in SOUNDS.iter().zip(layout.sounds).zip(picked) {
@@ -213,9 +177,6 @@ pub fn toolbar(
         .child(row)
 }
 
-/// The switch between a screenshot (the camera, left) and a recording (the
-/// video, right), like a phone's: the accent knob slides under the one
-/// that's on, and a click anywhere on it asks for the other.
 fn switch(
     look: &Look,
     at: impl Fn(Pixels) -> Pixels,
@@ -227,7 +188,6 @@ fn switch(
     let (video, busy, knob) = (look.video, look.busy, look.knob);
     let hover = theme.hover();
     let side = |on_video: bool| {
-        // Lit while the knob is under it.
         let lit = if on_video { knob } else { 1.0 - knob };
         let ink = mix(theme.fg_soft(), theme.on_accent, lit);
         let left = SWITCH_PAD + if on_video { knob_width } else { Pixels::ZERO };
@@ -252,8 +212,6 @@ fn switch(
         .bg(theme.surface_raised())
         .hover(move |style| style.bg(hover))
         .cursor(CursorStyle::PointingHand)
-        // Its rim as a layer of its own: a border would move what is
-        // placed inside.
         .child(div().absolute().inset_0().rounded_full().border(at(DIVIDER_WIDTH)).border_color(theme.outline()))
         .child(
             div()

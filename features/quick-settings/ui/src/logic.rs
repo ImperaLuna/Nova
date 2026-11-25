@@ -1,8 +1,3 @@
-//! What `quick_settings.js` and the drawer's QML worked out, with no GPUI
-//! drawing in it: the greeting, which logo, the button's badge,
-//! when each section shows as the drawer opens, and where a page sits as
-//! pages swap.
-
 use crate::tokens::{BADGE_MAX, DURATION_PAGE, PAGE_SLIDE, REVEAL_FIRST, REVEAL_RISE, REVEAL_STAGGER};
 use gpui::{Pixels, px};
 use nova_host_info::OperatingSystem;
@@ -10,11 +5,8 @@ use nova_look::motion::ease;
 use nova_look::tokens::DURATION_PANEL;
 use std::time::Duration;
 
-/// The drawer's first page, as `Stage::page` gives it: none.
 pub const FIRST_PAGE: Option<&str> = None;
 
-/// "Good morning" until noon, "Good afternoon" until 6 pm, then "Good
-/// evening" until 5 am.
 pub fn greeting(hour: i8) -> &'static str {
     match hour {
         5..=11 => "Good morning",
@@ -23,22 +15,15 @@ pub fn greeting(hour: i8) -> &'static str {
     }
 }
 
-/// Distributions with a logo of Nova's own (`ui/quick_settings/logos`).
 const BUNDLED_LOGOS: [&str; 1] = ["nixos"];
 
-/// Where the header's logo comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Logo {
-    /// One of Nova's own, by distribution id.
     Bundled(&'static str),
-    /// The icon theme's file for os-release's `LOGO`, which novad found.
     File(String),
-    /// Nova's own mark.
     Mark,
 }
 
-/// The logo for the distribution `os`: Nova's own for it or one it derives
-/// from (`ID_LIKE`), else the icon theme's, else Nova's mark.
 pub fn logo(os: Option<&OperatingSystem>) -> Logo {
     let Some(os) = os else { return Logo::Mark };
     let ids = std::iter::once(&os.id).chain(&os.id_like);
@@ -50,9 +35,6 @@ pub fn logo(os: Option<&OperatingSystem>) -> Logo {
     os.logo.clone().map_or(Logo::Mark, Logo::File)
 }
 
-/// The greeting's size: its own where `wide` (the greeting and name at
-/// `size`) fits `width`, else smaller, down to `least`. The name is cut
-/// short after that.
 pub fn greeting_size(size: Pixels, least: Pixels, wide: Pixels, width: Pixels) -> Pixels {
     if wide <= width || wide <= px(0.0) {
         return size;
@@ -60,18 +42,12 @@ pub fn greeting_size(size: Pixels, least: Pixels, wide: Pixels, width: Pixels) -
     (size * (width / wide)).floor().max(least)
 }
 
-/// What the button's badge shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Badge {
-    /// How many are unread: "3", or "9+" past `BADGE_MAX`.
     Count(String),
-    /// Do not disturb: a grey crossed-out bell.
     Quiet,
 }
 
-/// The badge while quick settings is `open` or not: none while open (the
-/// list shows them), do not disturb before a count, a count only when
-/// something is unread.
 pub fn badge(unread: usize, do_not_disturb: bool, open: bool) -> Option<Badge> {
     match (open, do_not_disturb, unread) {
         (true, _, _) => None,
@@ -82,33 +58,25 @@ pub fn badge(unread: usize, do_not_disturb: bool, open: bool) -> Option<Badge> {
     }
 }
 
-/// How far the `order`th section of the first page has come in (0 to 1)
-/// `since` the drawer started to open: it waits its turn, a share of the
-/// morph, then eases in over a morph's time (`Reveal.qml`).
 pub fn section_shown(order: usize, since: Duration) -> f32 {
     let delay = DURATION_PANEL.mul_f32(REVEAL_FIRST + REVEAL_STAGGER * order as f32);
     let along = since.saturating_sub(delay).as_secs_f32() / DURATION_PANEL.as_secs_f32();
     ease(along.clamp(0.0, 1.0))
 }
 
-/// How long the `count` sections take to be all in.
 pub fn sections_take(count: usize) -> Duration {
     DURATION_PANEL.mul_f32(REVEAL_FIRST + REVEAL_STAGGER * count.saturating_sub(1) as f32) + DURATION_PANEL
 }
 
-/// How far below its place a section is while `shown` (0 to 1).
 pub fn section_drop(shown: f32) -> Pixels {
     REVEAL_RISE * (1.0 - shown)
 }
 
-/// Where a page sits while it is `shown` (0 out, 1 in place), across from
-/// its place: the first page off to the left, the others to the right.
 pub fn page_offset(first: bool, shown: f32) -> Pixels {
     let away = if first { -PAGE_SLIDE } else { PAGE_SLIDE };
     away * (1.0 - shown)
 }
 
-/// How long pages take to swap.
 pub const fn page_takes() -> Duration {
     DURATION_PAGE
 }

@@ -1,10 +1,3 @@
-//! `tray.card`: every tray app in quick settings, hidden ones too and
-//! faded, in a grid a few rows high that scrolls. A left click on one with
-//! a menu shows that menu over the drawer, below its icon; on any other it
-//! runs the app and closes quick settings. A right click shows the menu, a
-//! middle click is the app's secondary action. `TrayCard.qml` and
-//! `TrayCardSlot.qml` in today's shell.
-
 use crate::menu::TrayMenu;
 use crate::model::{self, Entry};
 use crate::strip::attention_dot;
@@ -14,11 +7,11 @@ use crate::tokens::{
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Anchor, AnyElement, AppContext, Bounds, Context, Entity, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Window, anchored, canvas, deferred, div, point,
+    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, Styled, Subscription, Window, anchored, canvas,
+    deferred, div, point,
 };
 use nova_look::tokens::{DIM_OPACITY, DIVIDER_WIDTH, GAP, MENU_PAD, PAD, RADIUS_CARD, RADIUS_CONTROL};
-use nova_look::{AppIcon, CardTitle, Theme};
+use nova_look::{AppIcon, CardTitle, Theme, wheel_list};
 use nova_stage::{Screen, Shown, Stage};
 use nova_tray_api::{Command, Event, TOPIC, Tray};
 use nova_ui_client::{Daemon, Live};
@@ -26,7 +19,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// Quick settings' drawer, by its name, which running an app closes.
 const QUICK_SETTINGS: &str = "quick-settings";
 
 pub struct Card {
@@ -34,15 +26,9 @@ pub struct Card {
     shown: Shown,
     tray: Entity<Live<Tray>>,
     apps: Vec<Entry>,
-    /// The menu drawn over the drawer, this card's own.
     menu: Entity<TrayMenu>,
-    /// Where it shows: below the middle of the icon clicked, in the
-    /// window.
     menu_at: Point<Pixels>,
-    /// Each icon's middle in the window, as it was last drawn.
     middles: Rc<RefCell<HashMap<String, Point<Pixels>>>>,
-    /// The card's own box in the window, as it was last drawn: the menu
-    /// stays within its width, as the drawer's pages are.
     bounds: Rc<Cell<Bounds<Pixels>>>,
     _followed: Vec<Subscription>,
 }
@@ -53,7 +39,6 @@ impl Card {
         let menu = cx.new(|_| TrayMenu::in_drawer(screen));
         let mut followed =
             vec![cx.observe(&tray, |card, _, cx| card.read(cx)), cx.observe(&menu, |_, _, cx| cx.notify())];
-        // Quick settings closed or on another page: the menu goes with it.
         followed.extend(Stage::observe_panels(cx, |card: &mut Self, cx| {
             let screen = card.screen.id;
             if !Stage::is_open(QUICK_SETTINGS, screen, cx) || Stage::page(QUICK_SETTINGS, screen, cx).is_some() {
@@ -75,21 +60,17 @@ impl Card {
         card
     }
 
-    /// Takes novad's latest tray: every app, in the order they came.
     fn read(&mut self, cx: &mut Context<Self>) {
         self.apps = self.tray.read(cx).get().map(model::entries).unwrap_or_default();
-        // The app whose menu shows left the tray: its menu goes with it.
         let gone = self.menu.read(cx).showing().is_some_and(|key| !self.apps.iter().any(|app| app.key == key));
         if gone {
             self.menu.update(cx, |menu, cx| menu.dismiss(cx));
         }
-        // The drawer redraws when this shows or hides the card.
         self.shown.set(!self.apps.is_empty(), cx);
         cx.notify();
     }
 
     fn clicked(&mut self, app: &Entry, button: MouseButton, cx: &mut Context<Self>) {
-        // Its menu shows: a second press on its icon closes it.
         if self.menu.read(cx).showing() == Some(app.key.as_str()) && button != MouseButton::Middle {
             self.menu.update(cx, |menu, cx| menu.dismiss(cx));
             return;
@@ -153,8 +134,6 @@ impl Card {
         cell.into_any_element()
     }
 
-    /// The menu below the icon clicked, over everything else in the
-    /// drawer; a click beside it closes it.
     fn menu(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         if !self.menu.read(cx).is_showing() {
             return None;
@@ -173,8 +152,6 @@ impl Card {
             .border(DIVIDER_WIDTH)
             .border_color(theme.outline())
             .on_mouse_down_out(move |event: &MouseDownEvent, _, cx| {
-                // A press on the menu's own icon is left to the icon, which
-                // closes it.
                 let on_its_icon =
                     menu.read(cx).showing().and_then(|key| middles.borrow().get(key).copied()).is_some_and(|middle| {
                         let half = TRAY_GRID_CELL / 2.0;
@@ -190,7 +167,7 @@ impl Card {
 }
 
 impl Render for Card {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let count = self.apps.len();
         let apps = self.apps.clone();
         let cells: Vec<AnyElement> = apps.iter().map(|app| self.icon(app, cx)).collect();
@@ -203,7 +180,6 @@ impl Render for Card {
                 .take(TRAY_GRID_COLUMNS)
                 .map(|cell| div().flex_1().min_w_0().child(cell).into_any_element())
                 .collect();
-            // A short last row keeps the columns' width.
             row.resize_with(TRAY_GRID_COLUMNS, || div().flex_1().into_any_element());
             rows.push(div().flex().gap(TRAY_GRID_GAP).children(row));
         }
@@ -221,23 +197,13 @@ impl Render for Card {
             .child(
                 div().flex().justify_between().child(CardTitle::new("Tray")).child(CardTitle::new(apps_count(count))),
             )
-            .child(
-                div().p(MENU_PAD).rounded(RADIUS_CARD).bg(theme.surface_raised()).child(
-                    div()
-                        .id("tray-grid")
-                        .max_h(most)
-                        .overflow_y_scroll()
-                        .flex()
-                        .flex_col()
-                        .gap(TRAY_GRID_GAP)
-                        .children(rows),
-                ),
-            )
+            .child(div().p(MENU_PAD).rounded(RADIUS_CARD).bg(theme.surface_raised()).child(
+                wheel_list("tray-grid", window, cx).max_h(most).flex().flex_col().gap(TRAY_GRID_GAP).children(rows),
+            ))
             .children(self.menu(cx))
     }
 }
 
-/// "1 app", "7 apps".
 fn apps_count(count: usize) -> String {
     match count {
         1 => "1 app".to_owned(),

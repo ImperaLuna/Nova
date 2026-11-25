@@ -1,14 +1,7 @@
-//! The wire names a message type accepts, read from serde itself:
-//! deserializing an unknown variant makes serde report every name the enum
-//! accepts ([`Variants`] catches that list), so `rename_all` and new
-//! variants carry over with no list to keep. The protocol file for QML and
-//! the router read their names here.
-
 use serde::Deserialize;
 use serde::de::value::{MapDeserializer, StrDeserializer};
 use std::fmt;
 
-/// An error that keeps the names serde says an enum accepts.
 #[derive(Debug)]
 struct Variants(Option<&'static [&'static str]>);
 
@@ -30,16 +23,12 @@ impl serde::de::Error for Variants {
     }
 }
 
-/// A name no enum accepts, so serde lists the ones it does.
 const UNKNOWN: &str = "";
 
-/// Every wire name of a plain enum (`"focus_workspace"`, ...), in
-/// declaration order.
 pub fn names_of<'de, T: Deserialize<'de>>() -> &'static [&'static str] {
     caught::<T>(T::deserialize(StrDeserializer::<Variants>::new(UNKNOWN)).err())
 }
 
-/// Every wire name of an enum tagged by `tag` (`#[serde(tag = "cmd")]`).
 pub fn tagged_names_of<'de, T: Deserialize<'de>>(tag: &'static str) -> &'static [&'static str] {
     let message = MapDeserializer::<_, Variants>::new(std::iter::once((tag, UNKNOWN)));
     caught::<T>(T::deserialize(message).err())

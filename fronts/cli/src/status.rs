@@ -1,7 +1,5 @@
-//! `nova status` and `nova version`.
-
 use crate::client::{Client, RESTART_COMMAND};
-use nova_daemon_info::{FeatureStatus, Status, UiProgram, UiState};
+use nova_daemon_info::{FeatureStatus, Status, UiState};
 use nova_desktop_info::Desktop;
 use std::path::Path;
 
@@ -17,8 +15,6 @@ pub fn show(socket: &Path, json: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Prints nova's version. A running novad from another version is pointed
-/// out, since it keeps running the old code until it's restarted.
 pub fn version(socket: &Path) {
     let version = env!("CARGO_PKG_VERSION");
     println!("nova {version}");
@@ -48,23 +44,16 @@ fn describe(status: &Status) -> String {
     if let Some(kib) = ui.pss_kib {
         line += &format!(", {}", megabytes(kib));
     }
-    // Only when it isn't the default: which program runs.
-    if ui.program == UiProgram::Gpui {
-        line += ", GPUI";
-    }
     if ui.restarts > 0 {
         line += &format!(", restarted {} time{}", ui.restarts, if ui.restarts == 1 { "" } else { "s" });
     }
     out += &row("UI", &line);
+    if let (UiState::Restarting, Some(problem)) = (ui.state, &ui.problem) {
+        let since = ui.since.as_deref().map(|since| format!(" {}", ago(since))).unwrap_or_default();
+        out += &row("", &format!("stopped{since}: {problem}"));
+    }
     if let Some(crash) = &ui.last_crash {
         out += &row("", &format!("last crash {}: see `nova logs --crash`", ago(&crash.time)));
-    }
-
-    // Only when it's a problem: a supported Quickshell isn't worth a row.
-    if let Some(problem) =
-        status.quickshell.as_deref().and_then(|version| nova_quickshell::Range::supported().problem(version))
-    {
-        out += &row("warning", &problem);
     }
 
     out += &describe_desktop(status.desktop.as_ref());
@@ -85,7 +74,6 @@ fn describe(status: &Status) -> String {
     out
 }
 
-/// The compositor, its workspaces per output and the focused window.
 fn describe_desktop(desktop: Option<&Desktop>) -> String {
     let Some(desktop) = desktop else {
         return row("compositor", "none followed (Nova knows niri and Hyprland)");
@@ -128,8 +116,6 @@ fn describe_desktop(desktop: Option<&Desktop>) -> String {
     out + &row("window", &window)
 }
 
-/// `text` with control characters escaped (`\u{1b}`), so text from apps,
-/// like a web page's title, can't send the terminal escape sequences.
 pub fn printable(text: &str) -> String {
     text.chars().map(|c| if c.is_control() { c.escape_unicode().to_string() } else { c.to_string() }).collect()
 }
@@ -142,7 +128,6 @@ fn megabytes(kib: u64) -> String {
     format!("{} MB", kib / KIB_PER_MB)
 }
 
-/// `2h 3m`, `5m 10s`, `42s`.
 fn duration(secs: u64) -> String {
     let (hours, minutes, seconds) = (secs / 3600, secs / 60 % 60, secs % 60);
     match (hours, minutes) {
@@ -152,7 +137,6 @@ fn duration(secs: u64) -> String {
     }
 }
 
-/// `3m 5s ago` from an RFC 3339 time, or the time itself if it won't parse.
 fn ago(time: &str) -> String {
     match time.parse::<jiff::Timestamp>() {
         Ok(then) => {
@@ -248,14 +232,14 @@ mod tests {
             pid: 10,
             uptime_secs: 65,
             pss_kib: Some(10 * 1024),
-            quickshell: Some("0.3.2".into()),
             ui: UiStatus {
-                program: UiProgram::Quickshell,
                 state: UiState::Running,
                 pid: Some(11),
                 pss_kib: Some(180 * 1024),
                 restarts: 2,
                 last_crash: Some(Crash { time: "not a time".into(), log: "/x.log".into() }),
+                since: None,
+                problem: None,
             },
             features: vec![
                 FeatureState {
@@ -288,17 +272,16 @@ mod tests {
         assert!(text.contains("UI         running, pid 11, 180 MB, restarted 2 times"), "{text}");
         assert!(text.contains("last crash not a time: see `nova logs --crash`"), "{text}");
         assert!(text.contains("features   bar on, nova-files on (full), recording missing wf-recorder"), "{text}");
-        assert!(!text.contains("warning"), "a supported Quickshell gets no row: {text}");
         assert!(text.contains("compositor none followed"), "{text}");
+        assert!(!text.contains("stopped"), "a running UI has no problem line: {text}");
 
-        assert!(!text.contains("GPUI"), "the default UI program isn't named: {text}");
-
-        let on_gpui = Status { ui: UiStatus { program: UiProgram::Gpui, ..status.ui.clone() }, ..status.clone() };
-        let text = describe(&on_gpui);
-        assert!(text.contains("UI         running, pid 11, 180 MB, GPUI, restarted 2 times"), "{text}");
-
-        let untested = Status { quickshell: Some("0.1.0".into()), ..status };
-        let text = describe(&untested);
-        assert!(text.contains("warning    Quickshell 0.1.0 is older than Nova is tested with"), "{text}");
+        let mut stopped = status;
+        stopped.ui.state = UiState::Restarting;
+        stopped.ui.pid = None;
+        stopped.ui.since = Some("not a time".into());
+        stopped.ui.problem = Some("it didn't start: no nova-ui".into());
+        let text = describe(&stopped);
+        assert!(text.contains("UI         stopped, starting again"), "{text}");
+        assert!(text.contains("stopped not a time: it didn't start: no nova-ui"), "{text}");
     }
 }

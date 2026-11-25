@@ -1,18 +1,3 @@
-//! The power menu's actions (feature `power`): lock, suspend, log out,
-//! restart and shut down, and whether each can run now. Its messages are
-//! `nova-power-api`'s.
-//!
-//! Lock goes to the lock screen (feature `lock`) and log out to the
-//! compositor, which quits; the app's wiring runs those two. Suspend, restart and shut down ask logind over
-//! the system bus (systemd-logind, or elogind without systemd), the same
-//! calls `loginctl` makes, so they need no root: logind and polkit allow them
-//! for the active session. logind's `Can*` answers decide which ones the
-//! menu dims.
-//!
-//! [`follow`] (the logind helper, [`logind`]) locks the screen when logind
-//! asks and before the machine sleeps, through the [`LockScreen`] port the
-//! app fills with the lock screen.
-
 pub mod logind;
 
 pub use logind::{LockScreen, follow};
@@ -23,14 +8,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
-/// The feature's id in `features/`.
 pub const FEATURE_ID: &str = "power";
 const LOG_SOURCE: &str = "power";
 
-/// How long logind gets to connect and answer one call.
 const LOGIND_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The logind methods behind an action, `None` for actions logind doesn't run.
 fn logind_methods(action: PowerAction) -> Option<(&'static str, &'static str)> {
     match action {
         PowerAction::Suspend => Some(("CanSuspend", "Suspend")),
@@ -40,10 +22,6 @@ fn logind_methods(action: PowerAction) -> Option<(&'static str, &'static str)> {
     }
 }
 
-/// What logind's `Can*` answer means for the menu, in a few words that fit
-/// under its row; why logind couldn't answer goes to the log. "challenge"
-/// means polkit would ask for a password first; the action stays, and polkit
-/// says no if no agent asks.
 fn from_can(action: PowerAction, answer: Result<String, String>, logger: &Logger) -> PowerOption {
     let (available, reason) = match answer.as_deref() {
         Ok("yes" | "challenge") => (true, None),
@@ -58,8 +36,6 @@ fn from_can(action: PowerAction, answer: Result<String, String>, logger: &Logger
     PowerOption { action, available, reason }
 }
 
-/// Every action, in the menu's order. `lock` and `log_out` say whether the
-/// lock screen and the compositor can do theirs; logind answers the rest.
 pub fn options(lock: Result<(), String>, log_out: Result<(), String>, logger: &Logger) -> Vec<PowerOption> {
     PowerAction::ALL
         .into_iter()
@@ -79,20 +55,13 @@ pub fn options(lock: Result<(), String>, log_out: Result<(), String>, logger: &L
         .collect()
 }
 
-/// Runs a logind action (suspend, restart, shut down).
 pub fn run_logind(action: PowerAction) -> Result<(), String> {
     let (_, method) = logind_methods(action).ok_or_else(|| format!("logind doesn't {action:?}"))?;
-    // false: no polkit prompt; the menu has already asked the user.
     ask_logind(method, Some(false)).map(drop)
 }
 
-/// Calls `method` on logind's manager, with `interactive` as its one
-/// argument when it takes one, on its own thread so the deadline holds even
-/// while connecting. Returns a `Can*` method's answer, or "" for the others.
 fn ask_logind(method: &'static str, interactive: Option<bool>) -> Result<String, String> {
     let (done, answer) = mpsc::sync_channel(1);
-    // Set once the caller stops waiting, so a slow connection can't still
-    // suspend or shut down after the menu was told it failed.
     let abandoned = Arc::new(AtomicBool::new(false));
     let too_late = Arc::clone(&abandoned);
     std::thread::spawn(move || {

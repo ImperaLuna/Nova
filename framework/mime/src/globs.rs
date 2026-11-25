@@ -1,58 +1,31 @@
-//! File names to MIME types: the shared MIME database's `globs2` files
-//! (`weight:type:pattern[:flags]`), merged across the data folders.
-//!
-//! Patterns come in three kinds, looked up as the spec says: a literal name
-//! (`makefile`) first, then suffixes (`*.tar.gz`) and other globs
-//! (`*.so.[0-9]*`) together, the highest weight winning and, among those,
-//! the longest pattern. Most patterns are `*.<extension>`, kept in a map by
-//! their last extension, so a lookup is a hash lookup plus a short scan,
-//! with no allocation: a folder of 100,000 files is typed this way.
-//! Patterns match without regard to ASCII case unless flagged `cs`.
-
 use std::collections::{HashMap, HashSet};
 
-/// The flag that makes a pattern case-sensitive.
 const CASE_SENSITIVE: &str = "cs";
-/// A type listed with this pattern drops the patterns lower folders gave it.
 const NO_GLOBS: &str = "__NOGLOBS__";
 
-/// One pattern and the type it names.
 #[derive(Debug, Clone)]
 struct Glob {
     weight: u32,
     mime: String,
     pattern: String,
-    /// The pattern's characters, for matching it as a shell glob.
     chars: Vec<char>,
     case_sensitive: bool,
-    /// Which `add` gave it, counting up: a later folder outranks an
-    /// earlier one where their patterns tie.
     folder: u32,
 }
 
-/// The patterns of every data folder.
 #[derive(Debug, Default)]
 pub struct Globs {
-    /// Whole names, lower case, to their patterns.
     literals: HashMap<String, Vec<Glob>>,
-    /// `*.<suffix>` patterns, by the suffix's last extension in lower case
-    /// (`gz` for `*.tar.gz`).
     extensions: HashMap<String, Vec<Glob>>,
-    /// Every other pattern (`*~`, `*.so.[0-9]*`, `sconscript.*`).
     others: Vec<Glob>,
-    /// How many folders were added.
     folders: u32,
 }
 
-/// What a name matched: the best weight's types, the longest pattern first.
 pub struct Matches<'a> {
     pub types: Vec<&'a str>,
 }
 
 impl Globs {
-    /// Adds a folder's `globs2` text. Folders come in from the least
-    /// important to the most, so a folder's `__NOGLOBS__` drops what came
-    /// before it.
     pub fn add(&mut self, text: &str) {
         self.folders += 1;
         let folder = self.folders;
@@ -105,9 +78,6 @@ impl Globs {
         self.others.retain(|glob| glob.mime != mime);
     }
 
-    /// The types `name` (a file name, not a path) matches: a literal name
-    /// decides alone; otherwise the best weight wins, then the longest
-    /// pattern. Empty when nothing matches; several when that's a tie.
     pub fn find(&self, name: &str) -> Matches<'_> {
         let literal: Vec<&Glob> = lookup(&self.literals, name)
             .into_iter()
@@ -123,27 +93,21 @@ impl Globs {
             .into_iter()
             .flatten()
             .filter(|glob| ends_with(name, &glob.pattern[1..], glob.case_sensitive));
-        // The name's characters, once for all the shell globs.
         let name_chars: Vec<char> = if self.others.is_empty() { Vec::new() } else { name.chars().collect() };
         let others = self.others.iter().filter(|glob| matches(&glob.chars, &name_chars, glob.case_sensitive));
         best(by_extension.chain(others).collect())
     }
 }
 
-/// `map`'s entry for `key` in lower case; only a key with upper case in it
-/// is copied to look it up.
 fn lookup<'a>(map: &'a HashMap<String, Vec<Glob>>, key: &str) -> Option<&'a Vec<Glob>> {
     if key.bytes().any(|byte| byte.is_ascii_uppercase()) { map.get(&key.to_ascii_lowercase()) } else { map.get(key) }
 }
 
-/// The types of the best weight, then the longest pattern; among those,
-/// a more important folder's first.
 fn best(found: Vec<&Glob>) -> Matches<'_> {
     let Some(weight) = found.iter().map(|glob| glob.weight).max() else { return Matches { types: vec![] } };
     let heaviest = found.iter().filter(|glob| glob.weight == weight);
     let longest = heaviest.clone().map(|glob| glob.pattern.len()).max().unwrap_or(0);
     let mut tied: Vec<&Glob> = heaviest.filter(|glob| glob.pattern.len() == longest).copied().collect();
-    // Stable: within a folder, the order it listed them.
     tied.sort_by_key(|glob| std::cmp::Reverse(glob.folder));
     let mut types: Vec<&str> = Vec::new();
     for glob in tied {
@@ -168,12 +132,8 @@ fn ends_with(name: &str, suffix: &str, case_sensitive: bool) -> bool {
         }
 }
 
-/// Whether `name` matches the shell glob `pattern` (`*`, `?`, `[...]`,
-/// `[!...]`), as fnmatch does without flags.
 fn matches(pattern: &[char], name: &[char], case_sensitive: bool) -> bool {
     let same = |a: char, b: char| if case_sensitive { a == b } else { a.eq_ignore_ascii_case(&b) };
-    // Where to go back to when a later part fails: just after the last `*`,
-    // with it swallowing one more character.
     let (mut p, mut n) = (0, 0);
     let mut star: Option<(usize, usize)> = None;
     while n < name.len() {
@@ -204,11 +164,7 @@ fn matches(pattern: &[char], name: &[char], case_sensitive: bool) -> bool {
     pattern[p..].iter().all(|&c| c == '*')
 }
 
-/// Where the pattern goes on after the class opening at `open`, if `c` is
-/// in it.
 fn class(pattern: &[char], open: usize, c: char, case_sensitive: bool) -> Option<usize> {
-    // The forms of `c` that count: any ASCII case unless the pattern is
-    // case-sensitive.
     let forms = if case_sensitive { [c; 3] } else { [c, c.to_ascii_lowercase(), c.to_ascii_uppercase()] };
     let mut i = open + 1;
     let negated = matches!(pattern.get(i), Some('!' | '^'));

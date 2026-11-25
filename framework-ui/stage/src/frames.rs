@@ -1,27 +1,13 @@
-//! Counting frames: how many each motion on a stage drew and how many came
-//! late, and how many a window draws while nothing should move (a line at
-//! most each second, and none while it draws nothing).
-//! Both only log (novad keeps the UI's lines), and only when asked for
-//! (`StageOptions::log_frames`): they are how a port thread or the
-//! checkpoint sees that a pill at rest costs no frames.
-//!
-//! These count the frames GPUI rendered. What reached the screen is counted
-//! from the surface's commits (`WAYLAND_DEBUG=client`), as the prototype
-//! did.
-
 use crate::tokens::{FRAME_REPORT, LATE_FRAME_REFRESHES};
 use std::time::{Duration, Instant};
 
-/// The frames of one stage window.
 #[derive(Debug)]
 pub struct FrameLog {
-    /// The screen it is on, as the log names it.
     screen: String,
     refresh: Duration,
     motion: Motion,
     motions: u32,
     total: Totals,
-    /// Frames drawn since the last report, and when that was.
     drawn: u32,
     reported: Instant,
 }
@@ -32,7 +18,6 @@ struct Totals {
     late: u64,
 }
 
-/// The frames of the motion under way.
 #[derive(Debug, Default)]
 struct Motion {
     previous: Option<Instant>,
@@ -54,14 +39,10 @@ impl FrameLog {
         }
     }
 
-    /// A frame was rendered at `now`; `moving` says whether something on
-    /// the stage was still on its way. Returns the lines to log.
     pub fn frame(&mut self, moving: bool, now: Instant) -> Vec<String> {
         let mut lines = Vec::new();
         let since = now.saturating_duration_since(self.reported);
         if since >= FRAME_REPORT {
-            // The frames up to this one. A stage at rest draws none, so
-            // the line says how long they took: no line comes meanwhile.
             lines.push(format!("frames screen={} drawn={} in={:.1}s", self.screen, self.drawn, since.as_secs_f64()));
             self.drawn = 0;
             self.reported = now;
@@ -86,7 +67,6 @@ impl FrameLog {
         lines
     }
 
-    /// The motion's line, once it has arrived.
     fn settle(&mut self) -> String {
         let motion = std::mem::take(&mut self.motion);
         self.motions += 1;

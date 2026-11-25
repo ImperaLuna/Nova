@@ -1,45 +1,31 @@
-//! What the sound server lists ([`Listing`]) as the feature's [`Sound`]:
-//! which sinks, sources and streams are outputs, inputs and apps, what each
-//! is called, what kind of device it is and how it's connected. Plain
-//! functions of the listing, so the same listing always reads the same.
-//!
-//! The properties are PipeWire's (`pw-cli i <id>`), which its PulseAudio
-//! socket passes on; a device's own (form factor, bus) come spelled the
-//! PulseAudio way (`device.form_factor`) from ALSA cards and the PipeWire
-//! way (`device.form-factor`) from others, so both are read.
-
 use crate::server::Listing;
 use nova_sound_api::{App, Device, DeviceKind, Link, Sound};
 use pulseaudio::protocol::{ChannelVolume, Props, SinkInputInfo, Volume};
 use std::ffi::CStr;
 
 const APPLICATION_NAME: &CStr = c"application.name";
+const APPLICATION_ICON_NAME: &CStr = c"application.icon-name";
+const APPLICATION_PROGRAM: &CStr = c"application.process.binary";
 const DEVICE_API: &CStr = c"device.api";
 const DEVICE_BUS: &CStr = c"device.bus";
 const DEVICE_PROFILE_NAME: &CStr = c"device.profile.name";
 const NODE_DESCRIPTION: &CStr = c"node.description";
 const NODE_NAME: &CStr = c"node.name";
 const NODE_NICK: &CStr = c"node.nick";
-/// Where a device says what it is: its form factor or its icon's name.
 const SAYS_WHAT_IT_IS: &[&CStr] =
     &[c"device.form-factor", c"device.form_factor", c"device.icon-name", c"device.icon_name", c"node.icon-name"];
 
-/// BlueZ's devices, by `device.api` and by how their nodes are named.
 const BLUEZ_API: &str = "bluez5";
 pub const BLUEZ_OUTPUT: &str = "bluez_output.";
 pub const BLUEZ_INPUT: &str = "bluez_input.";
 const BLUEZ_NAMES: &[&str] = &[BLUEZ_OUTPUT, BLUEZ_INPUT];
 const USB_BUS: &str = "usb";
 const USB_NAMES: &[&str] = &["alsa_output.usb-", "alsa_input.usb-"];
-/// What headphones and headsets call themselves.
 const HEAD_WORN: &[&str] = &["headphone", "headset"];
-/// What a monitor's or TV's sound calls itself, in lower case.
 const DISPLAY_PORTS: &[&str] = &["hdmi", "displayport"];
 
-/// The volume of what plays untouched: 100%.
 const FULL: f32 = 1.0;
 
-/// What a client sees of `listing`.
 pub fn sound(listing: &Listing) -> Sound {
     let default_output = listing.server.default_sink_name.as_deref();
     let default_input = listing.server.default_source_name.as_deref();
@@ -47,8 +33,6 @@ pub fn sound(listing: &Listing) -> Sound {
         let named = Named { name: &sink.name, description: sink.description.as_deref(), props: &sink.props };
         named.device(sink.index, &sink.cvolume, sink.muted, default_output)
     });
-    // A source that only repeats what an output plays (its monitor) isn't
-    // somewhere to record from.
     let microphones = listing.sources.iter().filter(|source| source.monitor_of_sink_index.is_none());
     let inputs = microphones.clone().map(|source| {
         let named = Named { name: &source.name, description: source.description.as_deref(), props: &source.props };
@@ -75,7 +59,6 @@ pub fn sound(listing: &Listing) -> Sound {
     }
 }
 
-/// A sink or source, by what names it.
 struct Named<'a> {
     name: &'a CStr,
     description: Option<&'a CStr>,
@@ -102,9 +85,6 @@ impl Named<'_> {
         }
     }
 
-    /// Headphones and headsets say so themselves and win over how they're
-    /// connected; a monitor or TV says so in its name, description or
-    /// profile.
     fn kind(&self, node_name: &str, description: &str) -> DeviceKind {
         let says = |keys: &[&CStr], words: &[&str]| {
             keys.iter().filter_map(|key| prop(self.props, key)).any(|value| contains_any(value, words))
@@ -137,15 +117,10 @@ impl Named<'_> {
     }
 }
 
-/// One entry per app, in the order their first streams come: an app often
-/// plays more than one (a browser's tabs).
 fn apps(streams: &[SinkInputInfo]) -> Vec<App> {
-    // Each with its loudest stream that has a volume, if any has.
     let mut apps: Vec<(App, Option<f32>)> = Vec::new();
     for stream in streams {
         let name = stream_name(&stream.props, &stream.name);
-        // A stream without a volume of its own (one passed through
-        // untouched) plays as it is: it doesn't pull the app's slider.
         let volume = stream.has_volume.then(|| level(&stream.cvolume));
         match apps.iter_mut().find(|(app, _)| app.name == name) {
             Some((app, loudest)) => {
@@ -155,13 +130,19 @@ fn apps(streams: &[SinkInputInfo]) -> Vec<App> {
                 };
                 app.muted = app.muted && stream.muted;
             }
-            None => apps.push((App { id: stream.index, name, volume: 0.0, muted: stream.muted }, volume)),
+            None => {
+                let said = |key| prop(&stream.props, key).unwrap_or_default().to_owned();
+                let (icon_name, program) = (said(APPLICATION_ICON_NAME), said(APPLICATION_PROGRAM));
+                apps.push((
+                    App { id: stream.index, name, icon_name, program, volume: 0.0, muted: stream.muted },
+                    volume,
+                ));
+            }
         }
     }
     apps.into_iter().map(|(app, loudest)| App { volume: loudest.unwrap_or(FULL), ..app }).collect()
 }
 
-/// The ids of the streams that make up the app `id` names in `streams`.
 pub fn app_streams(streams: &[SinkInputInfo], id: u32) -> Vec<u32> {
     let name_of = |stream: &SinkInputInfo| stream_name(&stream.props, &stream.name);
     let Some(app) = streams.iter().find(|stream| stream.index == id).map(name_of) else {
@@ -170,8 +151,6 @@ pub fn app_streams(streams: &[SinkInputInfo], id: u32) -> Vec<u32> {
     streams.iter().filter(|stream| name_of(stream) == app).map(|stream| stream.index).collect()
 }
 
-/// The app a stream belongs to, as people know it; else what the stream
-/// calls itself.
 fn stream_name(props: &Props, name: &CStr) -> String {
     [APPLICATION_NAME, NODE_DESCRIPTION, NODE_NAME]
         .into_iter()
@@ -180,8 +159,6 @@ fn stream_name(props: &Props, name: &CStr) -> String {
         .map_or_else(|| name.to_string_lossy().into_owned(), str::to_owned)
 }
 
-/// The volume people see for `channels`: their average, where 1 is 100%.
-/// It's the server's own scale, the one `wpctl` and `pactl` print.
 pub fn level(channels: &ChannelVolume) -> f32 {
     let channels = channels.channels();
     if channels.is_empty() {
@@ -191,8 +168,6 @@ pub fn level(channels: &ChannelVolume) -> f32 {
     (sum / channels.len() as f64 / f64::from(Volume::NORM.as_u32())) as f32
 }
 
-/// `channels` moved to read `volume` ([`level`]), each keeping its share of
-/// the whole, so a balance set elsewhere stays.
 pub fn at_level(channels: &ChannelVolume, volume: f32) -> ChannelVolume {
     let norm = f64::from(Volume::NORM.as_u32());
     let now = f64::from(level(channels));
@@ -204,7 +179,6 @@ pub fn at_level(channels: &ChannelVolume, volume: f32) -> ChannelVolume {
     moved
 }
 
-/// The text of the property `key`: the server ends each with a NUL.
 fn prop<'a>(props: &'a Props, key: &CStr) -> Option<&'a str> {
     let bytes = props.get_bytes(key)?;
     std::str::from_utf8(bytes.strip_suffix(&[0]).unwrap_or(bytes)).ok()

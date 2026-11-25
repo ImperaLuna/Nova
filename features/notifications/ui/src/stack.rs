@@ -1,44 +1,23 @@
-//! The pop-ups' stack without drawing, so it is tested alone: newest on
-//! top, each in a slot of its own, at most [`SHOWN`] at once; the rest wait
-//! under a "+N" chip and come up as room frees. A new one grows out of the
-//! quick settings button and, when its time runs out, folds back into it;
-//! one that's clicked, dismissed or closed elsewhere slides away. A new one
-//! waits, taking no room, until whoever draws the stack opens it
-//! ([`Stack::open_arrivals`]): the window grows first, so no motion starts
-//! with a resize. Several opened at once take their slots in one move, then
-//! open into them top to bottom, [`STAGGER`] apart. The same notification
-//! again (progress) updates its pop-up.
-//! `ui/notifications/NotificationStack.qml` in today's shell.
-
 use crate::logic;
 use crate::tokens::{SHOWN, STAGGER, TIMEOUT};
 use nova_look::motion::Eased;
 use nova_notifications_api::Notification;
 use std::time::{Duration, Instant};
 
-/// How a pop-up leaves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Leaving {
-    /// Back into the quick settings button: its time ran out, or another
-    /// took its place.
     Fold,
-    /// Slid aside: clicked, dismissed or closed elsewhere.
     Away,
 }
 
-/// A card's time left: it drains while it runs and stands while held.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Countdown {
-    /// Zero for one that stays until it's closed.
     duration: Duration,
-    /// Time counted before the current run.
     spent: Duration,
-    /// When the current run started; `None` while held.
     since: Option<Instant>,
 }
 
 impl Countdown {
-    /// A full one that doesn't run yet.
     fn held(duration: Duration) -> Self {
         Self { duration, spent: Duration::ZERO, since: None }
     }
@@ -67,7 +46,6 @@ impl Countdown {
         self.spent + self.since.map_or(Duration::ZERO, |since| now.saturating_duration_since(since))
     }
 
-    /// The share of its time left, 1 to 0; 1 for one that never runs out.
     pub fn remaining(&self, now: Instant) -> f32 {
         if self.duration.is_zero() {
             return 1.0;
@@ -88,32 +66,20 @@ impl Countdown {
     }
 }
 
-/// A pop-up on the stack, shown or leaving.
 #[derive(Debug, Clone)]
 pub struct Entry {
-    /// Its own id in the stack: the same notification can come back as a
-    /// new entry after it left.
     pub key: u64,
     pub notification: Notification,
-    /// Seen in the list novad keeps, so leaving it means it was closed.
     listed: bool,
     pub leaving: Option<Leaving>,
-    /// Its slot, 0 none to 1 its card's room: taken when it's opened, by
-    /// all that open together at once, so they push the others down in one
-    /// move, and given back as its card leaves.
     pub room: Eased,
-    /// Its card, 0 gone to 1 in place.
     pub presence: Eased,
-    /// When it starts opening into its slot, once it was told to.
     opens_at: Option<Instant>,
     pub countdown: Countdown,
-    /// The pointer is on it: its time stands.
     pub held: bool,
 }
 
 impl Entry {
-    /// The list has it, as novad last sent it: its time starts over only
-    /// when the new one asks for another.
     fn refresh(&mut self, item: &Notification, now: Instant) {
         self.listed = true;
         if *item != self.notification {
@@ -140,7 +106,6 @@ impl Entry {
         }
     }
 
-    /// It has started opening and isn't leaving: it takes clicks.
     pub fn open(&self, now: Instant) -> bool {
         self.leaving.is_none() && self.opens_at.is_some_and(|at| now >= at)
     }
@@ -149,7 +114,6 @@ impl Entry {
         !self.room.settled(now) || !self.presence.settled(now)
     }
 
-    /// Its time runs while it's open and not held.
     fn keep_time(&mut self, now: Instant) {
         if self.open(now) && !self.held {
             self.countdown.run(now);
@@ -159,29 +123,21 @@ impl Entry {
     }
 }
 
-/// How long a pop-up of `notification` stays: what the app asked, else
-/// [`TIMEOUT`]. Zero is until it's closed: critical ones, and progress
-/// still running.
 pub fn timeout(notification: &Notification) -> Duration {
     logic::timeout(notification, TIMEOUT)
 }
 
-/// One waiting for room, held.
 #[derive(Debug, Clone)]
 struct Waiting {
     notification: Notification,
     listed: bool,
 }
 
-/// The pop-ups.
 #[derive(Debug, Default)]
 pub struct Stack {
-    /// Shown and leaving, top to bottom.
     entries: Vec<Entry>,
-    /// Newest first.
     waiting: Vec<Waiting>,
     next_key: u64,
-    /// Those not opened yet, oldest first.
     arriving: Vec<u64>,
 }
 
@@ -194,22 +150,18 @@ impl Stack {
         self.waiting.len()
     }
 
-    /// Anything left to draw.
     pub fn busy(&self) -> bool {
         !self.entries.is_empty() || !self.waiting.is_empty()
     }
 
-    /// Something is on its way: draw the next frame.
     pub fn moving(&self, now: Instant) -> bool {
         self.entries.iter().any(|entry| entry.moving(now) || entry.opens_at.is_some_and(|at| at > now))
     }
 
-    /// Those waiting to be opened, which take no room yet.
     pub fn arrivals(&self) -> &[u64] {
         &self.arriving
     }
 
-    /// A card's time is running: its line drains.
     pub fn counting(&self) -> bool {
         self.entries.iter().any(|entry| entry.countdown.running())
     }
@@ -223,14 +175,11 @@ impl Stack {
         self.next_key
     }
 
-    /// Takes in a notification to pop up. [`Stack::open_arrivals`] opens it,
-    /// with the others that came at the same time.
     pub fn add(&mut self, notification: Notification, now: Instant) {
         let id = notification.id;
         if let Some(entry) =
             self.entries.iter_mut().find(|entry| entry.leaving.is_none() && entry.notification.id == id)
         {
-            // Its time starts over.
             entry.countdown.restart(timeout(&notification), now);
             entry.notification = notification;
             return;
@@ -239,7 +188,6 @@ impl Stack {
             held.notification = notification;
             return;
         }
-        // The oldest shown one waits for room again.
         if self.shown().count() + 1 > SHOWN
             && let Some(oldest) = self.shown().last().map(|entry| entry.key)
         {
@@ -253,8 +201,6 @@ impl Stack {
         self.arriving.push(key);
     }
 
-    /// Those waiting take their room at once and open, the newest (top)
-    /// first.
     pub fn open_arrivals(&mut self, now: Instant) {
         let arriving = std::mem::take(&mut self.arriving);
         let mut delay = Duration::ZERO;
@@ -268,8 +214,6 @@ impl Stack {
         }
     }
 
-    /// Takes pop-up `key` away, and brings in the next one waiting, to be
-    /// opened like any new one.
     pub fn remove(&mut self, key: u64, how: Leaving, now: Instant) {
         if self.take(key, how, now).is_none() {
             return;
@@ -282,25 +226,19 @@ impl Stack {
         }
     }
 
-    /// Starts `key` leaving, and returns it as it was.
     fn take(&mut self, key: u64, how: Leaving, now: Instant) -> Option<Entry> {
         let entry = self.entries.iter_mut().find(|entry| entry.key == key && entry.leaving.is_none())?;
         self.arriving.retain(|arriving| *arriving != key);
         let before = entry.clone();
         entry.leaving = Some(how);
         entry.room.set_target(0.0, now);
-        // One that never opened goes from where it is, at once.
         entry.presence.set_target(0.0, now);
         entry.countdown.hold(now);
         Some(before)
     }
 
-    /// The notifications open now (the list's items and transient ones): a
-    /// pop-up shows its notification as it is there, and goes once it has
-    /// left (dismissed in quick settings, closed by its app).
     pub fn sync(&mut self, items: &[Notification], now: Instant) {
         let find = |id: u32| items.iter().find(|item| item.id == id);
-        // Waiting ones first, so none that has gone comes up in a freed place.
         for held in &mut self.waiting {
             if let Some(item) = find(held.notification.id) {
                 held.listed = true;
@@ -321,7 +259,6 @@ impl Stack {
         }
     }
 
-    /// Every pop-up folds away (quick settings opened, with the list).
     pub fn clear(&mut self, now: Instant) {
         self.waiting.clear();
         let keys: Vec<u64> = self.shown().map(|entry| entry.key).collect();
@@ -330,7 +267,6 @@ impl Stack {
         }
     }
 
-    /// The pointer came onto pop-up `key`, or left it.
     pub fn set_held(&mut self, key: u64, held: bool, now: Instant) {
         if let Some(entry) = self.entries.iter_mut().find(|entry| entry.key == key) {
             entry.held = held;
@@ -338,8 +274,6 @@ impl Stack {
         }
     }
 
-    /// Moves the stack on to `now`: cards whose time came open, those whose
-    /// time ran out fold away, those that have left go.
     pub fn step(&mut self, now: Instant) {
         let expired: Vec<u64> = self
             .entries
@@ -390,7 +324,6 @@ mod tests {
         stack.shown().map(|entry| entry.notification.id).collect()
     }
 
-    /// Long enough for any motion to end.
     fn later(now: Instant) -> Instant {
         now + DURATION_PANEL + STAGGER * SHOWN as u32
     }
@@ -426,7 +359,6 @@ mod tests {
         stack.open_arrivals(waited);
         stack.step(waited);
         assert!(stack.arrivals().is_empty() && stack.moving(waited) && stack.counting());
-        // One that left before it was opened isn't opened after all.
         stack.add(notification(2), waited);
         stack.clear(waited);
         assert!(stack.arrivals().is_empty());
@@ -459,7 +391,6 @@ mod tests {
         stack.step(now);
         let key = stack.entries()[0].key;
         stack.set_held(key, true, now + TIMEOUT / 2);
-        // Held well past its time, it stays.
         stack.step(now + TIMEOUT * 3);
         assert_eq!(ids(&stack), [1]);
         stack.set_held(key, false, now + TIMEOUT * 3);
@@ -491,7 +422,6 @@ mod tests {
         stack.add(notification(1), now);
         stack.add(notification(2), now);
         stack.open_arrivals(now);
-        // Not listed yet: a list without it says nothing.
         stack.sync(&[notification(2)], now);
         assert_eq!(ids(&stack), [2, 1]);
         let mut changed = notification(1);

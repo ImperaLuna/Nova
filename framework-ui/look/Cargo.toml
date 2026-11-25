@@ -6,6 +6,7 @@
 #
 # Allowed outside crates:
 # - gpui
+# - image
 # - serde
 # - toml
 # - unicode-segmentation
@@ -26,6 +27,8 @@ workspace = "../../app-ui"
 
 [dependencies]
 gpui.workspace = true
+# Decodes app icons at the size they are drawn (app_icon.rs).
+image.workspace = true
 nova-theme-info.workspace = true
 serde.workspace = true
 toml.workspace = true

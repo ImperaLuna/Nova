@@ -1,20 +1,3 @@
-//! The central pill (view `central-pill` in `bar.center`), ported from
-//! `ui/central_pill/CentralPill.qml` and `CentralPillSlot.qml`.
-//!
-//! Left to right: the search button while the launcher is ready, then the
-//! parts of `central-pill.parts` in slot order (the workspace numbers, the
-//! day and the time), a divider between each two. The pill's ends sit as
-//! far from the first and last thing as that thing asks ([`nova_stage::Part::inset`]):
-//! round cells closer than text. The clock part keeps its time at the
-//! screen's middle (`nova_stage::middle`), so the pill grows to the left as
-//! workspaces come and go; without the clock the pill is centered. With
-//! nothing to show the stage leaves it out.
-//!
-//! Scrolling anywhere over it steps through the screen's workspaces, one
-//! per wheel notch, while the compositor can (capability
-//! `focus_workspace`). The button only toggles the launcher, which fades in
-//! where it stands, not out of this pill.
-
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     ParentElement, Render, ScrollEvent, StatefulInteractiveElement, Styled, Subscription, Window, div,
@@ -31,16 +14,13 @@ use nova_ui_client::{Daemon, Live};
 use nova_workspaces_api::Command as WorkspacesCommand;
 use std::time::Instant;
 
-/// Its view id, which the launcher's panel names to grow out of it.
 const VIEW: &str = "central-pill";
-/// The host its parts come from.
 const PARTS: &str = "central-pill.parts";
 
 pub(crate) fn register(cx: &mut App) {
     nova_stage::pill(VIEW, cx, |screen, cx| {
         let shown = Shown::new(false);
         let pill = cx.new(|cx| CentralPill::new(screen, shown.clone(), cx));
-        // Its own buttons decide what a click does.
         Pill::new(pill).opens_on_click(false).shown_while(shown)
     });
 }
@@ -49,9 +29,7 @@ struct CentralPill {
     screen: Screen,
     parts: Parts,
     desktop: Entity<Live<Desktop>>,
-    /// Whether it has something to show, for the stage.
     shown: Shown,
-    /// The search button's hover wash: 0 none, 1 full.
     search_hover: Eased,
     wheel: Wheel,
     _observers: Vec<Subscription>,
@@ -60,7 +38,6 @@ struct CentralPill {
 impl CentralPill {
     fn new(screen: &Screen, shown: Shown, cx: &mut Context<Self>) -> Self {
         let desktop = Live::follow(nova_desktop_info::TOPIC, cx, |DesktopEvent::Compositor(desktop)| Some(desktop));
-        // The launcher's panel comes and goes with its feature.
         let mut observers: Vec<Subscription> =
             Stage::observe_panels(cx, |pill, cx| pill.changed(cx)).into_iter().collect();
         if let Some(slots) = Stage::slots(cx) {
@@ -69,7 +46,6 @@ impl CentralPill {
                 pill.changed(cx);
             }));
         }
-        // A part came or went (`Part::shown_while`).
         observers.push(Shown::observe(cx, |pill, cx| {
             if pill.parts.shown_changed() {
                 cx.notify();
@@ -88,8 +64,6 @@ impl CentralPill {
         pill
     }
 
-    /// The launcher's panel is on this screen's stage (its feature is
-    /// ready and its ui registered it), so the search button shows.
     fn can_search(&self, cx: &App) -> bool {
         Stage::has_panel(BarPanel::Launcher.name(), self.screen.id, cx)
     }
@@ -103,7 +77,6 @@ impl CentralPill {
         self.can_search(cx) || !self.parts.is_empty()
     }
 
-    /// The panels or the parts changed.
     fn changed(&mut self, cx: &mut Context<Self>) {
         self.shown.set(self.has_content(cx), cx);
         cx.notify();
@@ -114,7 +87,6 @@ impl CentralPill {
         if notches == 0 || self.screen.name.is_empty() || !self.can_step(cx) {
             return;
         }
-        // Down (below zero) goes to the next workspace, as today.
         let step = if notches < 0 { Step::Next } else { Step::Previous };
         for _ in 0..notches.unsigned_abs() {
             let output = self.screen.name.to_string();
@@ -130,7 +102,6 @@ impl CentralPill {
         }
     }
 
-    /// The round search button, washed while the pointer is on it.
     fn search(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let now = Instant::now();
         if !self.search_hover.settled(now) {
@@ -161,7 +132,6 @@ impl CentralPill {
 
 impl Render for CentralPill {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // What it shows, each with how far it keeps from the pill's end.
         let mut shown: Vec<(AnyElement, gpui::Pixels)> = Vec::new();
         if self.can_search(cx) {
             shown.push((self.search(window, cx), WORKSPACE_INSET));

@@ -1,11 +1,3 @@
-//! Runs the tray feature (`nova-tray`, in `features/tray`) in novad: its
-//! module and the answers to its commands. Wiring only: it adapts the
-//! feature's core to novad's `Module` trait and `Daemon`, and all of the
-//! tray's work and state stay in the core. A click on an item, or a pick
-//! from its menu, also focuses its app's window, which the launcher and the
-//! compositor do: novad joins them here, since one feature's core never
-//! uses another's.
-
 use crate::Daemon;
 use nova_carrier::Outcome;
 use nova_hub::ClientId;
@@ -16,7 +8,6 @@ use std::sync::Arc;
 
 use nova_tray::FEATURE_ID;
 
-/// The feature's core, as novad's module.
 pub struct Tray(Arc<nova_tray::Tray>);
 
 impl std::ops::Deref for Tray {
@@ -27,8 +18,6 @@ impl std::ops::Deref for Tray {
     }
 }
 
-/// The answer to one of the feature's commands from `caller`, the route
-/// `requests::router` gives them.
 pub fn answer(daemon: &Daemon, _caller: &Caller, command: &Command) -> Answer {
     match command {
         Command::HideTrayApp { id, hidden } => {
@@ -53,15 +42,6 @@ pub fn answer(daemon: &Daemon, _caller: &Caller, command: &Command) -> Answer {
     }
 }
 
-/// A click on the tray item at `address`: focuses the window its app
-/// has open, then asks the item to show (or hide) its window
-/// (`Activate`). Apps get no activation token from a tray click, so niri
-/// wouldn't move focus to it themselves. An app with no window open is
-/// focused once its window shows, or else started again and focused once
-/// its window shows, as the launcher does: Claude Desktop ignores
-/// `Activate` but shows its window when started again. An open window
-/// means nothing starts, so an icon that hides its app on a click still
-/// can.
 fn activate_item(daemon: &Daemon, address: &str) -> Answer {
     let tray = match daemon.module::<Tray>() {
         Ok(tray) => tray,
@@ -79,8 +59,6 @@ fn activate_item(daemon: &Daemon, address: &str) -> Answer {
             let (Some((launcher, ids, app)), Some(compositor)) = (found, compositor.as_deref()) else {
                 return tray.activate(&address);
             };
-            // A terminal app's window can't be told apart; an error can't
-            // tell whether one is open, so nothing starts either way.
             let open = ids.is_empty() || compositor.focus_app(&ids, None).unwrap_or(true);
             tray.activate(&address)?;
             let shown = |wait| {
@@ -102,13 +80,6 @@ fn activate_item(daemon: &Daemon, address: &str) -> Answer {
     })
 }
 
-/// An entry of the menu of the tray item at `address` is about to run:
-/// when its app has no window open now, one that shows within a while
-/// takes focus (the menu's "Show" entry), as the app gets no activation
-/// token from a menu either. An open window is left be: the entry may
-/// be anything, like pausing a song. Answers once it has looked, so the
-/// UI runs the entry after, and a window it shows can't be taken for
-/// one that was open.
 fn menu_picked(daemon: &Daemon, address: &str) -> Answer {
     let found = daemon.module::<Tray>().and_then(|tray| tray.app_at(address)).map(|app| {
         let launcher = daemon.module::<crate::launcher::Launcher>().ok()?;
@@ -138,9 +109,6 @@ fn menu_picked(daemon: &Daemon, address: &str) -> Answer {
     Answer::Now(Outcome::Result(serde_json::Value::Null))
 }
 
-/// Entry `id` of the menu of the tray item at `address` was picked in the
-/// GPUI UI, which has no menu of its own to run it: notes the app's
-/// windows as `menu_picked` does, then clicks the entry.
 fn run_menu_entry(daemon: &Daemon, address: &str, id: i32, revision: u32) -> Answer {
     if let Answer::Now(Outcome::Error(e)) = menu_picked(daemon, address) {
         return Answer::Now(Outcome::Error(e));
@@ -150,8 +118,6 @@ fn run_menu_entry(daemon: &Daemon, address: &str, id: i32, revision: u32) -> Ans
     Answer::later(move || done(tray.and_then(|tray| tray.run_menu_entry(&address, id, revision))))
 }
 
-/// Started before the UI, which settings start ahead of, so apps it
-/// autostarts find the watcher. No options.
 impl nova_modules::Module for Tray {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;

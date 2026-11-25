@@ -1,25 +1,3 @@
-//! Notifications (feature `notifications`): novad is the session's
-//! notification server, `org.freedesktop.Notifications`, so notifications
-//! sent while the UI restarts aren't lost and the list survives it.
-//!
-//! Each notification is kept for the quick settings list (at most
-//! [`MAX_NOTIFICATIONS`], for a week, saved across restarts) and published as an
-//! [`Event::Notifications`]; one that should pop up is also published as an
-//! [`Event::NotificationPopup`]. Clicking one keeps it, read, and so does
-//! its app closing it; only dismissing or clearing takes it off. Apps can be muted (their
-//! notifications hidden until they're unmuted, new ones not kept) and do
-//! not disturb holds back every pop-up but critical ones. Transient
-//! notifications only pop up and aren't listed.
-//!
-//! The list is saved to a file at most once every [`SAVE_EVERY`], on a
-//! thread of its own, so an app updating a notification many times a second
-//! (a download's progress) doesn't rewrite it each time.
-//!
-//! Anything on the session bus can send one, so what apps send is checked
-//! and cut down: text is made plain (`text`), pictures are checked and
-//! written out as PNGs (`image`), and lists are capped. App icons given by
-//! name are looked up as files (`nova_icons`), so the UI only loads images.
-
 mod bus;
 mod image;
 mod sent;
@@ -59,48 +37,30 @@ const LOG_SOURCE: &str = "notifications";
 pub const BUS_NAME: &str = "org.freedesktop.Notifications";
 const PATH: &str = "/org/freedesktop/Notifications";
 
-/// Summaries are cut to this many characters, app names and button labels
-/// to [`MAX_LABEL_CHARS`], bodies to this.
 const MAX_SUMMARY_CHARS: usize = 256;
 const MAX_BODY_CHARS: usize = 2048;
 const MAX_LABEL_CHARS: usize = 64;
-/// More buttons than a notification has room for; the rest are dropped.
 const MAX_ACTIONS: usize = 8;
-/// Apps on the settings page; past it, the oldest unmuted one goes.
 const MAX_APPS: usize = 64;
-/// How many apps can be muted.
 const MAX_MUTED: usize = MAX_APPS;
-/// Transient notifications kept for their pop-ups' clicks.
 const MAX_TRANSIENT: usize = 8;
-/// Desktop entry ids and icon names are at most this long.
 const MAX_NAME_LEN: usize = 255;
-/// Notifications older than this (a week, in seconds) leave the list.
 const KEEP_SECS: i64 = 7 * 24 * 60 * 60;
-/// How long novad waits for the bus to answer.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
-/// The state file is written at most this often. A change in the last one
-/// is lost when novad is killed before it's written.
 const SAVE_EVERY: Duration = Duration::from_secs(1);
 
-/// Why a notification closed, as `NotificationClosed` tells its app.
 #[derive(Clone, Copy)]
 enum Closed {
     Dismissed = 2,
-    /// The app closed it (`CloseNotification`).
     ByApp = 3,
-    /// Pushed off the end of the list.
     Other = 4,
 }
 
-/// Where the server is, and what it keeps.
 #[derive(Clone)]
 pub struct Sources {
     pub bus: Bus,
-    /// The list, do not disturb and the muted apps.
     pub state_file: PathBuf,
-    /// Pictures apps sent as pixels, as PNGs.
     pub images: PathBuf,
-    /// Where apps' icons are found.
     pub icons: Arc<Icons>,
 }
 
@@ -115,13 +75,9 @@ impl Sources {
     }
 }
 
-/// What a click on a notification ([`Notifications::click`]) did.
 #[derive(Debug, PartialEq)]
 pub struct Clicked {
-    /// The app that sent it, by its desktop file id, when it said.
     pub app_id: Option<String>,
-    /// Its app heard of the click (`ActionInvoked`): it's still there and
-    /// does something when the notification is clicked.
     pub heard: bool,
 }
 
@@ -131,17 +87,12 @@ pub struct Notifications {
 
 struct Shared {
     state: Mutex<State>,
-    /// Wakes the saver (`save_later`) when the list changed or novad stops.
     changed: Condvar,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     sources: Sources,
-    /// The installed apps, whose names and icons a notification naming its
-    /// desktop entry shows.
     apps: Arc<AppIndex>,
-    /// The server's connection, once it's up, to tell apps about clicks.
     connection: Mutex<Option<Connection>>,
-    /// The next picture's revision (`image::save`).
     revision: AtomicU64,
     stop: Stop,
 }
@@ -149,22 +100,14 @@ struct Shared {
 #[derive(Default)]
 struct State {
     saved: Saved,
-    /// Notifications that pop up but aren't listed, the newest last.
     transient: VecDeque<Notification>,
-    /// Ids of notifications that stay when one of their buttons is clicked.
     resident: HashSet<u32>,
-    /// Which connection on the bus sent each live notification; when it
-    /// goes, its notifications can't be clicked through to it any more.
     senders: HashMap<u32, String>,
-    /// The last list published, so an unchanged one isn't sent again.
     sent: Option<NotificationList>,
-    /// What the state file holds, so an unchanged list isn't written again,
-    /// and when it was written.
     written: Option<Saved>,
     written_at: Option<Instant>,
 }
 
-/// What survives a restart.
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Saved {
     #[serde(default)]
@@ -179,7 +122,6 @@ struct Saved {
     items: Vec<Notification>,
 }
 
-/// A notification as an app sends it with `Notify`.
 pub struct Sent {
     pub app_name: String,
     pub replaces_id: u32,
@@ -192,9 +134,6 @@ pub struct Sent {
 }
 
 impl Notifications {
-    /// Claims the server's name on the bus and serves it on a thread of its
-    /// own. Returns once the name is claimed, queued behind another server,
-    /// or connecting failed (logged).
     pub fn start(sources: Sources, apps: Arc<AppIndex>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let saved = load(&sources, &logger);
         let shared = Arc::new(Shared {
@@ -205,7 +144,6 @@ impl Notifications {
             sources,
             apps,
             connection: Mutex::new(None),
-            // From the clock, so a revision is never one an earlier run used.
             revision: AtomicU64::new(jiff::Timestamp::now().as_millisecond().unsigned_abs()),
             stop: Stop::default(),
         });
@@ -219,13 +157,10 @@ impl Notifications {
             }
             let _ = ready.send(());
         });
-        // Waits as long as connecting may take; a timed-out call fails sooner.
         let _ = started.recv_timeout(2 * CALL_TIMEOUT);
         Arc::new(Self { shared })
     }
 
-    /// Shows a notification of Nova's own, as if an app sent it, and
-    /// returns its id (0 once stopped).
     pub fn send_own(&self, own: Own) -> u32 {
         let mut hints = HashMap::new();
         if own.critical
@@ -250,15 +185,10 @@ impl Notifications {
         id
     }
 
-    /// The newest listed notification `matches` picks, by id: the one a
-    /// notification of Nova's own takes the place of when it knows no
-    /// earlier id, such as after a restart.
     pub fn listed(&self, matches: impl Fn(&Notification) -> bool) -> Option<u32> {
         lock(&self.shared.state).saved.items.iter().find(|kept| matches(kept)).map(|kept| kept.id)
     }
 
-    /// Writes what's still unsaved, lets go of the server's name and
-    /// publishes nothing more.
     pub fn stop(&self) {
         let mut state = lock(&self.shared.state);
         self.shared.save(&mut state);
@@ -266,21 +196,15 @@ impl Notifications {
         self.shared.changed.notify_all();
     }
 
-    /// Sends a new subscriber, client `id`, the list as it is, under the
-    /// lock that publishing takes, so a newer list can't arrive before it.
     pub fn send_state(&self, id: ClientId) {
         let state = lock(&self.shared.state);
         self.shared.hub.send_to(id, &Event::Notifications(list(&state)));
     }
 
-    /// The notification `id` itself was clicked: its app hears of it when
-    /// it can, and it's read either way. What novad does next, the click
-    /// taken or missed, goes by what's returned.
     pub fn click(&self, id: u32) -> Result<Clicked, String> {
         let app_id = find(&lock(&self.shared.state), id).ok_or_else(|| format!("no notification {id}"))?.app_id.clone();
         let heard = match self.action(id, None) {
             Ok(()) => true,
-            // Taken off the list meanwhile (dismissed, cleared): nothing to open.
             Err(e) if find(&lock(&self.shared.state), id).is_none() => return Err(e),
             Err(_) => false,
         };
@@ -290,11 +214,6 @@ impl Notifications {
         Ok(Clicked { app_id, heard })
     }
 
-    /// The notification `id` was clicked (`action` `None`) or one of its
-    /// buttons: its app hears of it, and it closes unless the app keeps it.
-    /// Either way it's read; closed, it stays on the list as one its app no
-    /// longer hears about (clicking it again opens the app). An error when its app can't
-    /// hear of it.
     pub fn action(&self, id: u32, action: Option<&str>) -> Result<(), String> {
         let (key, closes) = {
             let mut state = lock(&self.shared.state);
@@ -308,7 +227,6 @@ impl Notifications {
                 None if notification.has_default => "default".to_string(),
                 None => return Err(format!("notification {id} does nothing when clicked")),
             };
-            // A click on the notification itself always closes it.
             let closes = action.is_none() || !state.resident.contains(&id);
             if closes {
                 self.shared.retire(&mut state, id, true);
@@ -325,13 +243,10 @@ impl Notifications {
         Ok(())
     }
 
-    /// Closes the notification `id` and takes it off the list.
     pub fn dismiss(&self, id: u32) {
         self.close(|kept| kept.id == id, Closed::Dismissed);
     }
 
-    /// Takes every notification off the list, or only `app`'s; a muted
-    /// app's hidden ones stay for when it's unmuted.
     pub fn clear(&self, app: Option<&str>) {
         let gone = {
             let mut state = lock(&self.shared.state);
@@ -343,7 +258,6 @@ impl Notifications {
         }
     }
 
-    /// Marks every notification read, or only `id`.
     pub fn read(&self, id: Option<u32>) {
         let mut state = lock(&self.shared.state);
         let mut changed = false;
@@ -365,8 +279,6 @@ impl Notifications {
         }
     }
 
-    /// Mutes `app`, hiding its notifications, or unmutes it, showing them
-    /// again. Only an app on the settings page can be muted.
     pub fn mute(&self, app: &str, muted: bool) -> Result<(), String> {
         let mut state = lock(&self.shared.state);
         let at = state.saved.muted.iter().position(|kept| kept == app);
@@ -379,7 +291,6 @@ impl Notifications {
                     return Err(format!("at most {MAX_MUTED} apps can be muted"));
                 }
                 state.saved.muted.push(app.to_string());
-                // Shown again on unmuting, they've been seen.
                 for item in state.saved.items.iter_mut().filter(|item| item.app == app) {
                     item.unread = false;
                 }
@@ -393,8 +304,6 @@ impl Notifications {
         Ok(())
     }
 
-    /// Takes the notifications `matches` picks off the list (and pop-ups),
-    /// telling their apps why.
     fn close(&self, matches: impl Fn(&Notification) -> bool, why: Closed) {
         let gone = self.shared.remove(&mut lock(&self.shared.state), matches);
         for id in gone {
@@ -403,7 +312,6 @@ impl Notifications {
     }
 }
 
-/// The port other features post Nova's own notifications through.
 impl Post for Notifications {
     fn post(&self, own: Own) -> u32 {
         self.send_own(own)
@@ -415,9 +323,6 @@ impl Post for Notifications {
 }
 
 impl Shared {
-    /// Takes a notification an app, the bus connection `sender`, sent, or
-    /// Nova itself about `device`. Returns its id, and the ones it pushed
-    /// off the list, whose apps are to be told.
     fn notify(&self, sent: Sent, sender: Option<String>, device: Option<NotificationDevice>) -> (u32, Vec<u32>) {
         let now = jiff::Timestamp::now().as_second();
         let mut sent = sent;
@@ -434,7 +339,6 @@ impl Shared {
         .unwrap_or_else(|| next_id(&mut state));
         let notification = self.read(id, sent, now);
         let notification = Notification { unread: !transient, device, ..notification };
-        // A muted app's notification isn't kept, nor the one it replaces.
         if state.saved.muted.contains(&notification.app) {
             for old in state.saved.items.iter().chain(&state.transient).filter(|old| old.id == id) {
                 self.forget_image(old);
@@ -448,7 +352,6 @@ impl Shared {
             self.save_and_publish(&mut state);
             return (id, Vec::new());
         }
-        // A picture the one it replaces had, and it doesn't, goes.
         for old in state.saved.items.iter().chain(&state.transient) {
             if old.id == id && old.image != notification.image {
                 self.forget_image(old);
@@ -494,8 +397,6 @@ impl Shared {
         (id, gone)
     }
 
-    /// Takes the notifications `matches` picks off the list and pop-ups,
-    /// and says which of them have an app to tell.
     fn remove(&self, state: &mut State, matches: impl Fn(&Notification) -> bool) -> Vec<u32> {
         let mut gone = Vec::new();
         let (removed, kept) = std::mem::take(&mut state.saved.items).into_iter().partition::<Vec<_>, _>(&matches);
@@ -512,8 +413,6 @@ impl Shared {
         gone
     }
 
-    /// Notification `id` closed but stays listed, no longer its app's to
-    /// hear about, and `read` if so. A transient one, not listed, goes.
     fn retire(&self, state: &mut State, id: u32, read: bool) {
         if state.transient.iter().any(|kept| kept.id == id) {
             self.remove(state, |kept| kept.id == id);
@@ -528,8 +427,6 @@ impl Shared {
         self.save_and_publish(state);
     }
 
-    /// What novad keeps about `notification`, taken off the list: its
-    /// picture and who sent it. Its id, when its app is to be told.
     fn forget(&self, state: &mut State, notification: &Notification) -> Option<u32> {
         self.forget_image(notification);
         state.resident.remove(&notification.id);
@@ -537,7 +434,6 @@ impl Shared {
         notification.live.then_some(notification.id)
     }
 
-    /// Deletes the picture novad wrote for `notification`, if it wrote one.
     fn forget_image(&self, notification: &Notification) {
         if let Some(image) = notification.image.as_deref().map(Path::new)
             && image::is_saved(&self.sources.images, notification.id, image)
@@ -546,8 +442,6 @@ impl Shared {
         }
     }
 
-    /// The bus connection `name` went: the notifications it sent stay
-    /// listed, but clicking one opens its app instead.
     fn sender_gone(&self, name: &str) {
         let mut state = lock(&self.state);
         let ids: HashSet<u32> =
@@ -565,8 +459,6 @@ impl Shared {
         self.save_and_publish(&mut state);
     }
 
-    /// Publishes the list and has the saver write it, under the state lock
-    /// so changes reach the UI in the order they were made.
     fn save_and_publish(&self, state: &mut State) {
         if self.stop.stopped() {
             return;
@@ -579,8 +471,6 @@ impl Shared {
         }
     }
 
-    /// The saver's thread: writes the list once it changed, at most once
-    /// every [`SAVE_EVERY`], until novad stops.
     fn save_later(&self) {
         let mut state = lock(&self.state);
         while !self.stop.stopped() {
@@ -597,7 +487,6 @@ impl Shared {
         }
     }
 
-    /// Writes the list to the state file, unless it holds it already.
     fn save(&self, state: &mut State) {
         if state.written.as_ref() == Some(&state.saved) {
             return;
@@ -610,7 +499,6 @@ impl Shared {
         state.written_at = Some(Instant::now());
     }
 
-    /// Sends the signal `name` to every app on the bus.
     fn signal(&self, name: &str, body: &(u32, impl serde::Serialize + zbus::wire::Type)) {
         let Some(connection) = lock(&self.connection).clone() else { return };
         if let Err(e) = zbus::block_on(connection.emit_signal(None::<()>, PATH, BUS_NAME, name, body)) {
@@ -619,9 +507,6 @@ impl Shared {
     }
 }
 
-/// The saved list, or an empty one. Kept notifications' apps are gone, as
-/// are pictures that went with novad's last run; pictures of ones not kept
-/// (too old, or transient) are deleted.
 fn load(sources: &Sources, logger: &Logger) -> Saved {
     let mut saved: Saved = match std::fs::read_to_string(&sources.state_file) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
@@ -635,7 +520,6 @@ fn load(sources: &Sources, logger: &Logger) -> Saved {
     saved.items.truncate(MAX_NOTIFICATIONS);
     saved.apps.truncate(MAX_APPS);
     saved.muted.truncate(MAX_MUTED);
-    // Kept before icons were files, by name.
     let file = |icon: &mut Option<String>| *icon = icon.take().and_then(|icon| sent::icon(&icon, &sources.icons));
     for app in &mut saved.apps {
         file(&mut app.icon);
@@ -671,7 +555,6 @@ fn find(state: &State, id: u32) -> Option<&Notification> {
     state.saved.items.iter().chain(&state.transient).find(|kept| kept.id == id)
 }
 
-/// The next id no notification has; never 0, which means none.
 fn next_id(state: &mut State) -> u32 {
     loop {
         state.saved.next_id = state.saved.next_id.wrapping_add(1).max(1);
@@ -682,7 +565,6 @@ fn next_id(state: &mut State) -> u32 {
     }
 }
 
-/// Puts `notification`'s app first on the settings page.
 fn remember_app(saved: &mut Saved, notification: &Notification) {
     saved.apps.retain(|known| known.name != notification.app);
     let app = NotificationApp {

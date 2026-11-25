@@ -87,8 +87,8 @@ pub struct FeatureState {
 pub struct Slot {
     /// The host's name, like `bar.left` (`nova_features::HOSTS`).
     pub host: String,
-    /// The view's id, like `media.pill`: the UI maps it to its component
-    /// (ui/slots/Views.qml), so the manifest never names a file.
+    /// The view's id, like `media.pill`: the feature's UI registers a view
+    /// under it, so the manifest never names a file.
     pub view: String,
     /// Sort key inside the host, lowest first (leftmost in a row), counted
     /// in tens to leave room. Ties sort by feature id.
@@ -137,9 +137,6 @@ pub struct Status {
     /// Proportional memory use in KiB, when readable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pss_kib: Option<u64>,
-    /// `quickshell --version` of the Quickshell novad runs, when it answered.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quickshell: Option<String>,
     pub ui: UiStatus,
     pub features: Vec<FeatureState>,
     /// The folder novad writes its log and crash snapshots to.
@@ -152,9 +149,6 @@ pub struct Status {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UiStatus {
-    /// The program novad runs as the UI.
-    #[serde(default)]
-    pub program: UiProgram,
     pub state: UiState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
@@ -164,35 +158,15 @@ pub struct UiStatus {
     pub restarts: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_crash: Option<Crash>,
-}
-
-/// A program that draws Nova's UI. `features.toml` picks one by its wire
-/// name (`ui = "gpui"`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UiProgram {
-    /// The QML shell under `ui/`, run by Quickshell.
-    #[default]
-    Quickshell,
-    /// `nova-ui`, the GPUI program.
-    Gpui,
-}
-
-impl UiProgram {
-    pub const ALL: [Self; 2] = [Self::Quickshell, Self::Gpui];
-
-    /// Its name on the wire and in `features.toml`.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Quickshell => "quickshell",
-            Self::Gpui => "gpui",
-        }
-    }
-
-    /// The program `name` names, if any.
-    pub fn named(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|program| program.name() == name)
-    }
+    /// When the UI got to its state: when it started, while it runs, else
+    /// since when it hasn't run (RFC 3339, UTC). Missing from a novad that
+    /// hasn't tried to run it yet, or from before IMP-467.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
+    /// Why the UI isn't running while novad wants it: the last start's
+    /// error, or how it last exited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

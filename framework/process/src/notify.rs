@@ -1,21 +1,11 @@
-//! Telling systemd that novad is up (`Type=notify` in nova.service), the
-//! `sd_notify` protocol without libsystemd: one `READY=1` datagram to the
-//! socket in `NOTIFY_SOCKET`. Login apps wait for it (IMP-107): by then the
-//! tray's watcher name is claimed, so an app that looks for a tray once at
-//! startup (Electron) finds one.
-
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::{SocketAddr, UnixDatagram};
 
-/// The variable systemd sets for a `Type=notify` service.
 pub const SOCKET_VAR: &str = "NOTIFY_SOCKET";
 const READY: &[u8] = b"READY=1";
-/// How long the send may wait on a full socket before novad goes on without it.
 const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// Sends `READY=1` to `socket`, the value `NOTIFY_SOCKET` had: a path, or
-/// an abstract socket's name after `@`. False when there's none to tell.
 pub fn ready(socket: Option<&OsStr>) -> std::io::Result<bool> {
     let Some(socket) = socket.filter(|socket| !socket.is_empty()) else { return Ok(false) };
     let address = match socket.as_bytes().strip_prefix(b"@") {

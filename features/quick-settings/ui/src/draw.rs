@@ -1,13 +1,3 @@
-//! How the drawer looks: the pages against the right edge, their top row
-//! level with the pill's buttons, which it draws where the pill had them.
-//! The first page is the header (the distribution's logo, a greeting with
-//! the user's name, the host and its uptime), then what other features put
-//! in it: toggle tiles two to a row, sliders, cards, one view in the room
-//! left below them and one pinned at the foot. Its sections come in one
-//! after another as it opens. Every other page is a feature's, sliding in
-//! from the right. `ui/quick_settings/QuickSettings.qml`, `MainPage.qml`
-//! and `Header.qml` in today's shell.
-
 use crate::drawer::Drawer;
 use crate::logic::{self, Logo};
 use crate::tokens::WIDTH;
@@ -18,27 +8,19 @@ use gpui::{
 };
 use nova_look::tokens::QUICK_SETTINGS_PAD as PAD;
 use nova_look::tokens::{
-    BAR_GAP, BAR_HEIGHT, BAR_MARGIN, FONT_DISPLAY, FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP,
-    ICON_GAP, ICON_SIZE_MENU, ICON_SIZE_SMALL, LOGO_SIZE, PILL_BUTTON_GAP, PILL_BUTTON_INSET, QUICK_SETTINGS_GAP,
+    BAR_GAP, FONT_DISPLAY, FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE_MENU,
+    ICON_SIZE_SMALL, LOGO_SIZE, QUICK_SETTINGS_GAP,
 };
 use nova_look::{Glyph, Icon, LookStyled, Theme, Tile};
 use nova_stage::Part;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
-/// Nova's own logo for NixOS (`ui/quick_settings/logos`, see its CREDITS).
-static NIXOS_LOGO: LazyLock<Arc<Image>> = LazyLock::new(|| {
-    Arc::new(Image::from_bytes(
-        ImageFormat::Svg,
-        include_bytes!("../../../../ui/quick_settings/logos/nixos.svg").to_vec(),
-    ))
-});
+static NIXOS_LOGO: LazyLock<Arc<Image>> =
+    LazyLock::new(|| Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../logos/nixos.svg").to_vec())));
 
-/// What one of the first page's sections is, and the room it takes.
 enum Room {
-    /// As tall as its content.
     Fits,
-    /// The room left below the others.
     Rest,
 }
 
@@ -70,23 +52,10 @@ impl Render for Drawer {
             .relative()
             .body_text(cx)
             .child(div().absolute().left(PAD).right(PAD).top(BAR_GAP).bottom(PAD).children(pages))
-            .child(
-                div()
-                    .absolute()
-                    .top(BAR_GAP)
-                    .right(BAR_MARGIN)
-                    .h(BAR_HEIGHT)
-                    .px(PILL_BUTTON_INSET)
-                    .flex()
-                    .items_center()
-                    .gap(PILL_BUTTON_GAP)
-                    .children(self.buttons.views().cloned()),
-            )
     }
 }
 
 impl Drawer {
-    /// The first page, with its sections in as far as they came.
     fn first_page(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let mut sections: Vec<(AnyElement, Room)> = vec![(self.header(window, cx), Room::Fits)];
         if let Some(grid) = self.tile_grid() {
@@ -112,7 +81,6 @@ impl Drawer {
         if self.open && since < logic::sections_take(count) {
             window.request_animation_frame();
         }
-        // Closed, the stage fades it all with the drawer; sections stay in.
         let shown = |order: usize| if self.open { logic::section_shown(order, since) } else { 1.0 };
         let section = |order: usize, content: AnyElement, room: Room| {
             let shown = shown(order);
@@ -138,9 +106,6 @@ impl Drawer {
         div().size_full().flex().flex_col().gap(QUICK_SETTINGS_GAP).children(children).into_any_element()
     }
 
-    /// The tiles two to a row, each feature's in slot order; one whose
-    /// feature draws nothing here yet keeps its place, empty. None without
-    /// a tile.
     fn tile_grid(&self) -> Option<impl IntoElement + use<>> {
         let cell = (WIDTH - PAD * 2.0 - GAP) / 2.0;
         let tiles: Vec<AnyElement> = self
@@ -164,8 +129,6 @@ impl Drawer {
         Some(div().flex().flex_col().gap(GAP).children(rows))
     }
 
-    /// The logo, the greeting with the user's name, and the host with its
-    /// uptime under it, leaving room on the right for the pill's buttons.
     fn header(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
         let host = self.host(cx).cloned();
@@ -173,7 +136,7 @@ impl Drawer {
         let greeting = logic::greeting(now.hour());
         let name = host.as_ref().map(|host| host.user.clone()).unwrap_or_default();
         let greeting = if name.is_empty() { greeting.to_owned() } else { format!("{greeting}, ") };
-        let inset = nova_look::header_inset(self.buttons.views().count());
+        let inset = nova_look::header_inset(self.buttons.read(cx).count());
         let room = WIDTH - PAD * 2.0 - inset - LOGO_SIZE - nova_look::tokens::PAD;
         let wide = text_width(&greeting, false, window) + text_width(&name, true, window);
         let size = logic::greeting_size(FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, wide, room);
@@ -224,7 +187,6 @@ impl Drawer {
     }
 }
 
-/// The views of `parts` its features show now, in slot order.
 fn shown_views(parts: &nova_stage::Parts) -> Vec<AnyView> {
     parts.parts().filter(|part| part.is_shown()).map(|part| part.view().clone()).collect()
 }
@@ -233,8 +195,6 @@ fn logo_image(image: gpui::Img) -> AnyElement {
     image.size(LOGO_SIZE).object_fit(ObjectFit::Contain).into_any_element()
 }
 
-/// How wide `text` is in the greeting's face at its own size, italic for
-/// the name.
 fn text_width(text: &str, italic: bool, window: &Window) -> Pixels {
     if text.is_empty() {
         return px(0.0);

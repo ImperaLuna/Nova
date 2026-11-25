@@ -1,12 +1,7 @@
-//! Which features the UI may load: on in the user's selection and with all
-//! their binaries present.
-
 use nova_daemon_info::{FeatureState, FeatureStatus};
 use nova_features::{Manifest, Selection};
 use std::path::PathBuf;
 
-/// The user's choices in the first of `paths` that exists (`features.toml`,
-/// see [`nova_paths::config_files`]); none means each feature's default.
 pub fn read_selection(paths: &[PathBuf]) -> Result<Selection, String> {
     for path in paths {
         let text = match std::fs::read_to_string(path) {
@@ -19,8 +14,6 @@ pub fn read_selection(paths: &[PathBuf]) -> Result<Selection, String> {
     Ok(Selection::default())
 }
 
-/// Each feature's state (off, missing what it needs, or ready), its slots,
-/// for the UI to fill its hosts with, and its mode while it's on.
 pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> Vec<FeatureState> {
     manifests
         .iter()
@@ -37,14 +30,10 @@ pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> 
         .collect()
 }
 
-/// Whether feature `id` is on with all it needs, so the UI loads it and
-/// novad runs its service.
 pub fn is_ready(features: &[FeatureState], id: &str) -> bool {
     features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
 }
 
-/// Whether the UI has to run: some feature that draws (declares a slot) is
-/// ready.
 pub fn needs_ui(manifests: &[Manifest], features: &[FeatureState]) -> bool {
     manifests.iter().any(|manifest| manifest.has_ui() && is_ready(features, &manifest.id))
 }
@@ -101,8 +90,6 @@ mod tests {
         assert_eq!(bar.slots, manifests.iter().find(|m| m.id == "bar").unwrap().slots);
     }
 
-    /// nova-files runs in the mode `features.toml` picks, else its default,
-    /// and has none while it's off.
     #[test]
     fn states_carry_the_mode_while_on() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");

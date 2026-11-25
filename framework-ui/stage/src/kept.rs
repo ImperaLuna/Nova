@@ -1,14 +1,6 @@
-//! A host's views, kept across changes of its slots: when the features
-//! change, a view whose slot stays is the same view as before (with its
-//! state, like an open panel), a new slot's view is built, and a view
-//! whose slot left is dropped. `slots.js`'s `sync` in today's shell.
-
 use gpui::SharedString;
 
-/// The views of one host, in their slots' order, by view id.
 pub struct Kept<T> {
-    /// `None` for a view that could not be built (nothing registered it):
-    /// it isn't tried, and warned about, again on every change.
     items: Vec<(SharedString, Option<T>)>,
 }
 
@@ -19,9 +11,6 @@ impl<T> Default for Kept<T> {
 }
 
 impl<T> Kept<T> {
-    /// Makes this list `wanted` (view ids, in order): keeps what stays,
-    /// builds what is new with `build`, drops the rest. Returns whether
-    /// anything changed.
     pub fn sync(&mut self, wanted: &[SharedString], mut build: impl FnMut(&SharedString) -> Option<T>) -> bool {
         let before: Vec<SharedString> = self.items.iter().map(|(view, _)| view.clone()).collect();
         let mut old = std::mem::take(&mut self.items);
@@ -32,13 +21,10 @@ impl<T> Kept<T> {
         before != wanted
     }
 
-    /// The views that were built, in order.
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.items.iter().filter_map(|(_, item)| item.as_ref())
     }
 
-    /// Every view id in order, with its view, `None` for one nothing
-    /// registered.
     pub fn entries(&self) -> impl Iterator<Item = (&SharedString, Option<&T>)> {
         self.items.iter().map(|(view, item)| (view, item.as_ref()))
     }

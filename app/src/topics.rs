@@ -1,16 +1,7 @@
-//! Every topic novad serves, by its owner's constant: novad's own in
-//! `nova_daemon_info::topics`, each other one in the -info or api crate of
-//! the event it carries. A client may subscribe only to these
-//! (`subscribe`'s names are checked against [`TOPICS`] as the request is
-//! read), and `ui/daemon/protocol.js` names them in this order.
-//!
-//! A new topic goes at the end, where protocol.js adds it.
-
 use nova_carrier::Topic;
 use nova_daemon_info::topics;
 use std::sync::LazyLock;
 
-/// The topics, in protocol.js's order.
 pub const TOPICS: &[Topic] = &[
     topics::FEATURES,
     topics::LOGS,
@@ -34,16 +25,12 @@ pub const TOPICS: &[Topic] = &[
     nova_sound_api::TOPIC,
 ];
 
-/// Their wire names, for serde's "unknown variant" error.
 static NAMES: LazyLock<Vec<&'static str>> = LazyLock::new(|| TOPICS.iter().map(|topic| topic.name()).collect());
 
-/// The wire names of [`TOPICS`], in order.
 pub fn names() -> &'static [&'static str] {
     &NAMES
 }
 
-/// The topic called `name`, or serde's "unknown variant" error naming
-/// every topic, as a derived enum of them would give.
 pub fn named<E: serde::de::Error>(name: &str) -> Result<Topic, E> {
     TOPICS.iter().copied().find(|topic| topic.name() == name).ok_or_else(|| E::unknown_variant(name, names()))
 }

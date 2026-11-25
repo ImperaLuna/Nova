@@ -1,19 +1,9 @@
-//! The volume's icon, for an output: a solid speaker with no, one or two
-//! waves, crossed out while muted, struck through with no output,
-//! headphones with solid cups, the Bluetooth rune or a monitor (HDMI or
-//! DisplayPort audio). Quick settings' sound slider draws it, and the
-//! volume capsule will. `ui/volume/VolumeIcon.qml` and `volume.js`'s
-//! `icon` in today's shell.
-
 use crate::{Glyph, Icon};
 
-/// Which volume icon (see the module).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VolumeGlyph {
-    /// No output at all.
     None,
     Muted,
-    /// Speakers at no volume, below half and from half up.
     Off,
     Low,
     High,
@@ -22,7 +12,6 @@ pub enum VolumeGlyph {
     Display,
 }
 
-/// What an output is, for its icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputKind {
     Speakers,
@@ -32,8 +21,6 @@ pub enum OutputKind {
 }
 
 impl VolumeGlyph {
-    /// The icon for the output in use (`None` for none), muted or at
-    /// `volume` (1 is 100%). Only speakers show the level.
     pub fn pick(output: Option<OutputKind>, muted: bool, volume: f32) -> Self {
         match output {
             None => Self::None,
@@ -47,13 +34,11 @@ impl VolumeGlyph {
         }
     }
 
-    /// Its icon at the panel icon size.
     pub fn icon(self) -> Icon {
         match self {
             Self::Headphones => Icon::new(Glyph::HEADPHONES_BAND).filled(Glyph::HEADPHONES_CUPS),
             Self::Bluetooth => Icon::new(Glyph::BLUETOOTH),
             Self::Display => Icon::new(Glyph::MONITOR),
-            // The speaker's body, solid, with what is drawn beside it.
             Self::Off => Icon::new(Glyph::SPEAKER_BODY).filled(Glyph::SPEAKER_BODY),
             Self::Low => Icon::new(Glyph::WAVE).filled(Glyph::SPEAKER_BODY),
             Self::High => Icon::new(Glyph::WAVES).filled(Glyph::SPEAKER_BODY),

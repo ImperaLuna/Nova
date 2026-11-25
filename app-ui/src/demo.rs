@@ -1,18 +1,3 @@
-//! `--demo`: test pills and panels on the stage, to see it work with no
-//! feature ported, to screenshot beside today's shell, and to count frames
-//! (`--demo-toggles`, `--frames`). They are no feature's, so they come in
-//! as slots of their own ([`slots`]) instead of from a manifest:
-//!
-//! - in the middle, a pill that grows into the `demo` panel on a click;
-//! - on the left, a pill that counts seconds, which shows a view redrawing
-//!   by itself while the stage asks for no frame;
-//! - on the right, a pill that grows into `demo-right`, kept to the right
-//!   edge. Opening one panel closes the other;
-//! - at the right end, a pill that grows into the `demo-edge` drawer
-//!   against the screen's right edge, and on the left one that opens
-//!   `demo-whole` over the whole screen: the two placements off the top
-//!   strip, drawn in the window beside it.
-
 use gpui::{
     App, AppContext, Context, DisplayId, Div, InteractiveElement, IntoElement, ParentElement, Pixels, Render,
     SharedString, Styled, Window, div, prelude::FluentBuilder, px, size,
@@ -31,27 +16,21 @@ const LEFT_PILL: &str = "demo.left";
 const RIGHT_PILL: &str = "demo.right";
 const EDGE_PILL: &str = "demo.edge";
 const WHOLE_PILL: &str = "demo.whole";
-/// The panels' names, as [`Stage::toggle`] takes them.
 pub const CENTER_PANEL: &str = "demo";
 const RIGHT_PANEL: &str = "demo-right";
 const EDGE_PANEL: &str = "demo-edge";
 const WHOLE_PANEL: &str = "demo-whole";
 
-// The demo's own sizes and timings.
 const CENTER_PANEL_WIDTH: Pixels = px(620.0);
 const CENTER_PANEL_HEIGHT: Pixels = px(440.0);
 const RIGHT_PANEL_HEIGHT: Pixels = px(260.0);
-/// The drawer as wide as today's quick settings (`quickSettingsWidth`).
 const EDGE_PANEL_WIDTH: Pixels = px(368.0);
 const FOOTER_HEIGHT: Pixels = px(40.0);
 const FOOTER_TINT: f32 = 0.9;
 const TICK: Duration = Duration::from_secs(1);
-/// Before the first toggle, for the first frame and the GPU to settle; and
-/// between two toggles, longer than a morph.
 const TOGGLES_START: Duration = Duration::from_secs(2);
 const TOGGLE_EVERY: Duration = Duration::from_millis(700);
 
-/// Registers the demo's views and returns the slots that show them.
 pub fn slots(cx: &mut App) -> Vec<Slot> {
     nova_stage::pill(CENTER_PILL, cx, |_, cx| {
         let panel = cx.new(|_| DemoPanel { title: "Demo panel", rows: &CENTER_ROWS, at_edge: false });
@@ -72,7 +51,6 @@ pub fn slots(cx: &mut App) -> Vec<Slot> {
     });
     nova_stage::pill(EDGE_PILL, cx, |screen, cx| {
         let drawer = cx.new(|_| DemoPanel { title: "Edge drawer", rows: &CENTER_ROWS, at_edge: true });
-        // As tall as the screen, whatever height is given here.
         let drawer = Panel::new(EDGE_PANEL, size(EDGE_PANEL_WIDTH, screen.size.height), drawer);
         Pill::new(cx.new(|_| Label { glyph: Glyph::BLUETOOTH, text: "Edge".into() }))
             .panel(drawer.placement(Placement::RightEdge))
@@ -82,7 +60,6 @@ pub fn slots(cx: &mut App) -> Vec<Slot> {
         Pill::new(cx.new(|_| Label { glyph: Glyph::HEADPHONES, text: "Whole".into() }))
             .panel(Panel::new(WHOLE_PANEL, screen.size, over).placement(Placement::WholeScreen))
     });
-    // The drawer's pill last, at the row's right end, where it opens.
     [
         (HOST_BAR_CENTER, CENTER_PILL, 0),
         (HOST_BAR_LEFT, LEFT_PILL, 0),
@@ -94,14 +71,10 @@ pub fn slots(cx: &mut App) -> Vec<Slot> {
     .into()
 }
 
-/// Opens and closes the panel called `panel` `times` times, one screen
-/// after the other, then quits: with `--frames`, each motion's line says
-/// how many of its frames came late.
 pub fn toggle_by_itself(panel: String, times: u32, cx: &mut App) {
     cx.spawn(async move |cx| {
         cx.background_executor().timer(TOGGLES_START).await;
         for round in 0..times {
-            // Open and close on one screen, then the next.
             let turn = (round / 2) as usize;
             cx.update(|cx| {
                 let screens = Stage::screens(cx).map(|screens| screens.read(cx).list().to_vec()).unwrap_or_default();
@@ -116,7 +89,6 @@ pub fn toggle_by_itself(panel: String, times: u32, cx: &mut App) {
     .detach();
 }
 
-/// A pill's content: an icon and a word.
 struct Label {
     glyph: Glyph,
     text: SharedString,
@@ -128,7 +100,6 @@ impl Render for Label {
     }
 }
 
-/// A pill's content that counts the seconds since it was built.
 struct Seconds {
     passed: u64,
 }
@@ -136,7 +107,6 @@ struct Seconds {
 impl Seconds {
     fn start(cx: &mut Context<Self>) -> Self {
         cx.spawn(async move |seconds, cx| {
-            // Until its pill is gone.
             let mut shown = true;
             while shown {
                 cx.background_executor().timer(TICK).await;
@@ -173,13 +143,9 @@ const CENTER_ROWS: [(Glyph, &str, &str); 4] = [
 ];
 const RIGHT_ROWS: [(Glyph, &str, &str); 2] = [(Glyph::WIFI, "Wi-Fi", "Home"), (Glyph::BELL, "Notifications", "3")];
 
-/// A panel's content: a title, rows, and a footer that reaches the bottom
-/// corners.
 struct DemoPanel {
     title: &'static str,
     rows: &'static [(Glyph, &'static str, &'static str)],
-    /// In a drawer against the right edge: only its left corners are on
-    /// screen.
     at_edge: bool,
 }
 
@@ -232,8 +198,6 @@ impl Render for DemoPanel {
     }
 }
 
-/// A panel over the whole screen: it draws all there is, here a dimmed
-/// screen with a card in the middle, and a click anywhere closes it.
 struct OverScreen {
     screen: DisplayId,
 }

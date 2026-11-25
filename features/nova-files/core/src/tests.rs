@@ -1,6 +1,3 @@
-//! The client, and the launcher's Files mode, against the stand-in for Nova
-//! Files (`stand_in`).
-
 use super::stand_in::{StandIn, client, nova_files};
 use super::{NovaFiles, STAGES_WAIT};
 use nova_base::lock;
@@ -12,7 +9,6 @@ use std::time::{Duration, Instant};
 const TIMEOUT: Duration = Duration::from_secs(5);
 const ROOT: &str = "/h";
 
-/// A private bus with the stand-in serving on it as Nova Files.
 struct Fixture {
     _dir: TempDir,
     bus: TestBus,
@@ -56,9 +52,49 @@ fn past_the_wait_the_stages_so_far_answer_and_the_next_search_cancels_it() {
     assert_eq!(client.search("slow", 30, STAGES_WAIT).unwrap(), paths(&["/h/slow.txt"]));
     assert!(started.elapsed() < TIMEOUT, "answered after the wait, not the call timeout");
     client.search("kit", 30, TIMEOUT).unwrap();
-    // The cancel is sent without a reply; the search after it comes later.
     client.search("nothing", 30, TIMEOUT).unwrap();
     assert_eq!(lock(&fixture.stand_in.asked).cancelled, [1]);
+}
+
+#[test]
+fn a_first_stage_later_than_the_stage_wait_is_still_the_answer() {
+    let fixture = Fixture::new("late");
+    let client = &fixture.client();
+    std::thread::scope(|scope| {
+        let (answer, answered) = std::sync::mpsc::channel();
+        scope.spawn(move || answer.send(client.search("late", 30, STAGES_WAIT)).unwrap());
+        assert!(answered.recv_timeout(STAGES_WAIT * 3).is_err(), "no answer before the first stage");
+        fixture.stand_in.release_late.send(()).unwrap();
+        assert_eq!(answered.recv_timeout(TIMEOUT).unwrap().unwrap(), paths(&["/h/late.txt"]));
+    });
+}
+
+#[test]
+fn a_newer_search_ends_the_wait_for_a_first_stage() {
+    let fixture = Fixture::new("superseded");
+    let client = &fixture.client();
+    std::thread::scope(|scope| {
+        let (answer, answered) = std::sync::mpsc::channel();
+        scope.spawn(move || answer.send(client.search("late", 30, STAGES_WAIT)).unwrap());
+        let late = lock(&fixture.stand_in.late_asked).recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(late, 1);
+        assert_eq!(client.search("kit", 30, TIMEOUT).unwrap().len(), 2);
+        let superseded = answered.recv_timeout(TIMEOUT).expect("the first search's wait ended");
+        assert_eq!(superseded.unwrap(), Vec::<PathBuf>::new());
+    });
+    client.search("nothing", 30, TIMEOUT).unwrap();
+    assert_eq!(lock(&fixture.stand_in.asked).cancelled, [1]);
+}
+
+#[test]
+fn a_search_with_no_stage_in_time_says_so() {
+    let dir = TempDir::new("nova-files-no-stage");
+    let bus = TestBus::start(&dir.join("bus"));
+    let _stand_in = StandIn::serve(&bus.address, ROOT);
+    let mut client = client(&bus.address);
+    client.first_stage_wait = STAGES_WAIT;
+    let error = client.search("late", 30, STAGES_WAIT).unwrap_err();
+    assert!(error.contains("didn't answer"), "{error}");
 }
 
 #[test]
@@ -84,7 +120,6 @@ fn a_feature_that_cannot_connect_says_so() {
     assert_eq!(unreachable.search("kit", 30).unwrap_err(), "Nova Files isn't reachable: no bus");
 }
 
-/// Runs `id` as the launcher does, Shift+Enter when `other_way`.
 fn run(files: &NovaFiles, id: &str, other_way: bool) -> Result<(), String> {
     files.run_item(id, other_way)
 }
@@ -93,8 +128,6 @@ fn run(files: &NovaFiles, id: &str, other_way: bool) -> Result<(), String> {
 fn the_launchers_files_mode_finds_opens_and_shows_files_through_nova_files() {
     let dir = TempDir::new("nova-files-launcher");
     let home = dir.join("home");
-    // What the stand-in finds for `kit`, under a dot folder in Home: a
-    // folder named like a file, and a file.
     let root = home.join(".notes");
     std::fs::create_dir_all(root.join("kitchen.txt")).unwrap();
     std::fs::write(root.join("kitcen notes.md"), b"x").unwrap();
@@ -115,7 +148,6 @@ fn the_launchers_files_mode_finds_opens_and_shows_files_through_nova_files() {
     assert_eq!(file.completion, "~/.notes/kitchen.txt/");
     assert!(!found[1].file.as_ref().unwrap().dir);
 
-    // Gone since it was found: left out.
     std::fs::remove_file(root.join("kitcen notes.md")).unwrap();
     assert_eq!(files.items("kit").unwrap().len(), 1);
 
@@ -129,9 +161,6 @@ fn the_launchers_files_mode_finds_opens_and_shows_files_through_nova_files() {
     assert!(asked.folders_elsewhere.is_empty() && asked.items_elsewhere.is_empty());
 }
 
-/// In the launcher mode Nova Files has no windows to show: folders open,
-/// and Shift+Enter shows items, in the user's file manager; files still
-/// open in their default app through Nova Files.
 #[test]
 fn in_the_launcher_mode_folders_open_in_the_users_file_manager() {
     let dir = TempDir::new("nova-files-launcher-mode");
@@ -166,8 +195,6 @@ fn a_search_nova_files_cannot_run_answers_with_why() {
     assert!(found[0].id.is_empty() && found[0].file.is_none(), "nothing to run");
 }
 
-/// A typed path is completed by Nova Files from its folder, not searched
-/// for, and each item's completion keeps the spelling that was typed.
 #[test]
 fn a_typed_path_completes_through_nova_files_in_its_own_spelling() {
     let dir = TempDir::new("nova-files-typed");

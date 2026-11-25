@@ -1,16 +1,9 @@
-//! What `ui/quick_settings/network.js` worked out, with no GPUI drawing in
-//! it: from a network event (`None` before the first), which link is in
-//! use, what the tile shows, each row's line and role, which networks are
-//! listed, a password's length, and how traffic reads.
-
 use nova_look::Glyph;
 use nova_network_api::{
     AttemptOutcome, LinkKind, LinkState, Network, NetworkTraffic, WIFI_PASSWORD_MAX_BYTES, WPA_PASSWORD_MIN_BYTES,
     WifiBand, WifiNetwork, WifiSecurity, WiredLink,
 };
 
-/// The network a connect is going to now: the last attempt while it runs,
-/// else the network the card is joining on its own.
 pub fn connecting(network: Option<&Network>) -> Option<&str> {
     let wifi = network?.wifi.as_ref()?;
     if let Some(attempt) = wifi.attempt.as_ref().filter(|attempt| attempt.outcome == AttemptOutcome::Connecting) {
@@ -22,8 +15,6 @@ pub fn connecting(network: Option<&Network>) -> Option<&str> {
     }
 }
 
-/// The Ethernet port the Wired row shows: the connected one, else one with
-/// a cable in, else none (no cable: the row and Prefer are hidden).
 pub fn wired_link(network: Option<&Network>) -> Option<&WiredLink> {
     let wired = network.map_or(&[][..], |network| network.wired.as_slice());
     wired
@@ -36,7 +27,6 @@ fn wired_up(network: Option<&Network>) -> bool {
     wired_link(network).is_some_and(|link| link.state == LinkState::Connected)
 }
 
-/// Wi-Fi's switch is on and nothing blocks it: the list shows.
 pub fn wifi_on(network: Option<&Network>) -> bool {
     network.and_then(|network| network.wifi.as_ref()).is_some_and(|wifi| wifi.enabled && !wifi.blocked)
 }
@@ -46,20 +36,14 @@ fn wifi_up(network: Option<&Network>) -> bool {
         && network.and_then(|network| network.wifi.as_ref()).is_some_and(|wifi| wifi.state == LinkState::Connected)
 }
 
-/// Prefer shows while a cable is connected on a machine with Wi-Fi, so the
-/// pick is there before Wi-Fi connects too.
 pub fn prefer_shown(network: Option<&Network>) -> bool {
     wired_up(network) && network.is_some_and(|network| network.wifi.is_some())
 }
 
-/// What a connected link's row says at its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
-    /// Traffic goes over it.
     Use,
-    /// Connected too, but the other one carries traffic.
     Backup,
-    /// Wi-Fi alone on a machine with no cable in.
     Connected,
 }
 
@@ -73,9 +57,6 @@ impl Role {
     }
 }
 
-/// With both connected, the one traffic goes over is in use and the other
-/// the backup; alone, the Wired row is in use, and Wi-Fi is connected (or
-/// in use beside a Wired row).
 pub fn role(network: Option<&Network>, kind: LinkKind) -> Role {
     if wired_up(network) && wifi_up(network) {
         return match network.and_then(|network| network.primary) == Some(kind) {
@@ -89,7 +70,6 @@ pub fn role(network: Option<&Network>, kind: LinkKind) -> Role {
     Role::Connected
 }
 
-/// An icon of the network's: its line and, for Wi-Fi's, the solid dot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LinkIcon {
     pub glyph: Glyph,
@@ -103,8 +83,6 @@ impl LinkIcon {
     }
 }
 
-/// The tile's icon: Wi-Fi while it connects, else the link in use, else
-/// Wi-Fi or the port struck out.
 pub fn tile_icon(network: Option<&Network>) -> LinkIcon {
     if connecting(network).is_some() {
         return LinkIcon::of(Glyph::WIFI);
@@ -119,12 +97,10 @@ pub fn tile_icon(network: Option<&Network>) -> LinkIcon {
     LinkIcon::of(glyph)
 }
 
-/// The tile is lit while a link is up or coming up.
 pub fn tile_on(network: Option<&Network>) -> bool {
     network.is_some_and(|network| network.primary.is_some()) || connecting(network).is_some()
 }
 
-/// The traffic card's icon: the link in use, or what's there struck out.
 pub fn card_icon(network: Option<&Network>) -> LinkIcon {
     let has_wifi = network.is_some_and(|network| network.wifi.is_some());
     let glyph = match network.and_then(|network| network.primary) {
@@ -136,7 +112,6 @@ pub fn card_icon(network: Option<&Network>) -> LinkIcon {
     LinkIcon::of(glyph)
 }
 
-/// The traffic card's title: the link in use, or "Not connected".
 pub fn link_name(network: Option<&Network>) -> String {
     match network.and_then(|network| network.primary) {
         Some(LinkKind::Wired) => "Wired".into(),
@@ -150,7 +125,6 @@ pub fn link_name(network: Option<&Network>) -> String {
     }
 }
 
-/// The in-use link's speed, or 0 when it has none to give.
 pub fn link_mbps(network: Option<&Network>) -> u32 {
     match network.and_then(|network| network.primary) {
         Some(LinkKind::Wired) => wired_link(network).and_then(|link| link.speed_mbps).unwrap_or(0),
@@ -163,7 +137,6 @@ pub fn link_mbps(network: Option<&Network>) -> u32 {
 
 const MBPS_PER_GBPS: u32 = 1000;
 
-/// "1 Gb/s", "2.5 Gb/s", "866 Mb/s".
 pub fn link_speed(mbps: u32) -> String {
     if mbps < MBPS_PER_GBPS {
         return format!("{mbps} Mb/s");
@@ -172,7 +145,6 @@ pub fn link_speed(mbps: u32) -> String {
     format!("{} Gb/s", gbps.strip_suffix(".0").unwrap_or(&gbps))
 }
 
-/// The Wired row's line: its port, and its speed when it has one.
 pub fn wired_line(link: &WiredLink) -> String {
     match link.speed_mbps.filter(|mbps| *mbps > 0) {
         Some(mbps) => format!("{} · {}", link.interface, link_speed(mbps)),
@@ -180,9 +152,6 @@ pub fn wired_line(link: &WiredLink) -> String {
     }
 }
 
-/// The security a network row names: only the kinds that change what a
-/// click does (no password, or Nova can't join it). The lock shows the
-/// rest.
 fn security_label(security: WifiSecurity) -> Option<&'static str> {
     match security {
         WifiSecurity::Open => Some("Open"),
@@ -200,26 +169,20 @@ fn band_label(band: WifiBand) -> &'static str {
     }
 }
 
-/// Nova connects to it: not WEP, and not 802.1X (set up in the system's
-/// network settings).
 pub fn joinable(net: &WifiNetwork) -> bool {
     !matches!(net.security, WifiSecurity::Wep | WifiSecurity::Enterprise)
 }
 
-/// Clicking it asks for a password first: secured and not saved.
 pub fn needs_password(net: &WifiNetwork) -> bool {
     joinable(net) && !net.saved && net.security != WifiSecurity::Open
 }
 
-/// The last connect to `ssid` failed for another reason than its password.
 pub fn failed(network: Option<&Network>, ssid: &str) -> bool {
     network
         .and_then(|network| network.wifi.as_ref()?.attempt.as_ref())
         .is_some_and(|attempt| attempt.ssid == ssid && attempt.outcome == AttemptOutcome::Failed)
 }
 
-/// A network row's second line: "Saved · 2.4 GHz", or how a connect to it
-/// is going.
 pub fn network_line(network: Option<&Network>, net: &WifiNetwork) -> String {
     if connecting(network) == Some(net.ssid.as_str()) {
         return "Connecting…".into();
@@ -232,12 +195,9 @@ pub fn network_line(network: Option<&Network>, net: &WifiNetwork) -> String {
     parts.into_iter().flatten().collect::<Vec<_>>().join(" · ")
 }
 
-/// Signal strengths (0 to 100) from which Wi-Fi's icon lights two and
-/// three of its arcs.
 const TWO_ARCS_FROM: u8 = 34;
 const THREE_ARCS_FROM: u8 = 67;
 
-/// How many of Wi-Fi's three arcs a signal of `strength` lights.
 pub fn arcs(strength: u8) -> usize {
     match strength {
         THREE_ARCS_FROM.. => 3,
@@ -246,7 +206,6 @@ pub fn arcs(strength: u8) -> usize {
     }
 }
 
-/// The network it's on, listed above the others.
 pub fn current(network: Option<&Network>) -> Option<&WifiNetwork> {
     if !wifi_up(network) {
         return None;
@@ -254,7 +213,6 @@ pub fn current(network: Option<&Network>) -> Option<&WifiNetwork> {
     network?.wifi.as_ref()?.networks.iter().find(|net| net.connected)
 }
 
-/// The rest of the list, in novad's order.
 pub fn others(network: Option<&Network>) -> Vec<&WifiNetwork> {
     if !wifi_on(network) {
         return Vec::new();
@@ -264,27 +222,22 @@ pub fn others(network: Option<&Network>) -> Vec<&WifiNetwork> {
     networks.iter().filter(|net| !(net.connected && Some(net.ssid.as_str()) == on)).collect()
 }
 
-/// Connect can be pressed: novad takes a password this long (UTF-8 bytes).
 pub fn password_fits(text: &str) -> bool {
     (WPA_PASSWORD_MIN_BYTES..=WIFI_PASSWORD_MAX_BYTES).contains(&text.len())
 }
 
-/// Bytes per second as "3.5 MB/s", "114 KB/s".
 pub fn speed(bytes_per_second: u64) -> String {
     format!("{}/s", nova_look::bytes::bytes(bytes_per_second))
 }
 
-/// The newest second of a history, or 0.
 pub fn now(values: &[u64]) -> u64 {
     values.last().copied().unwrap_or(0)
 }
 
-/// The fullest second in either history, so both lines share one scale.
 pub fn peak(traffic: &NetworkTraffic) -> u64 {
     traffic.down.iter().chain(&traffic.up).copied().max().unwrap_or(0)
 }
 
-/// A traffic history as shares of `peak` (0 to 100), for the graph.
 pub fn scaled(values: &[u64], peak: u64) -> Vec<f32> {
     values
         .iter()
@@ -295,7 +248,6 @@ pub fn scaled(values: &[u64], peak: u64) -> Vec<f32> {
         .collect()
 }
 
-/// "today ↓ 1.2 GB ↑ 80 MB".
 pub fn today(traffic: &NetworkTraffic) -> String {
     format!("today ↓ {} ↑ {}", nova_look::bytes::bytes(traffic.today_down), nova_look::bytes::bytes(traffic.today_up))
 }

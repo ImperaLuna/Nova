@@ -1,10 +1,6 @@
-//! Config and feature files applied live, and the folders they live in.
-
 use super::usage::{CLAUDE_ENDPOINT_ON, claude_sign_in, fake_endpoint, provider};
 use super::*;
 
-/// Saves `text` to `path` the way many editors do: a new file renamed over
-/// the old one.
 fn save_by_rename(path: &Path, text: &str) {
     let partial = path.with_extension("toml.new");
     std::fs::write(&partial, text).unwrap();
@@ -45,7 +41,6 @@ fn a_broken_config_keeps_the_last_good_one_and_says_why() {
     loop {
         let message = client.next();
         assert_ne!(message["event"], "theme", "a broken file changed the theme");
-        // TOML's error spans several lines, each its own entry.
         let entries = message["data"]["entries"].as_array().cloned().unwrap_or_default();
         let error = entries
             .iter()
@@ -95,10 +90,7 @@ fn turning_a_feature_off_and_on_stops_and_starts_it() {
     let reply = client.request(2, "show_ai_usage", Some(json!({"provider": "codex"})));
     assert_eq!(reply["error"], "the ai-usage feature isn't ready (see `nova status`)");
 
-    // No features.toml means each feature's default, which is on.
     std::fs::remove_file(novad.features_file()).unwrap();
-    // The restarted feature's worker publishes on its own thread, so either
-    // event can come first.
     let (mut features, mut usage) = (None, None);
     while features.is_none() || usage.is_none() {
         let message = client.next();
@@ -152,8 +144,6 @@ fn edits_through_a_symlinked_config_are_seen() {
     assert_eq!(client.next_event("theme")["mode"], "light");
 }
 
-/// NixOS's /etc layout: the config links to a path through a link (like
-/// `/etc/static`) that a rebuild swaps for one to the next generation.
 #[test]
 fn a_swapped_link_on_the_way_is_followed() {
     let novad = TestDaemon::open("reload-swapped-link", None, |dir| {
@@ -172,10 +162,7 @@ fn a_swapped_link_on_the_way_is_followed() {
     let mut client = novad.connect();
     client.request(1, "subscribe", Some(json!({"topics": ["theme"]})));
     assert_eq!(client.next_event("theme")["mode"], "dark");
-    // After the read novad makes once its watches are in has settled, so
-    // only a watch on the swapped link can see the change.
     nova_test_support::settle(nova_settings::SETTLE * 3);
-    // Swapped in one step, the way NixOS's activation does it.
     std::os::unix::fs::symlink(novad.dir.join("store/gen2"), novad.dir.join("etc/static.new")).unwrap();
     std::fs::rename(novad.dir.join("etc/static.new"), novad.dir.join("etc/static")).unwrap();
     assert_eq!(client.next_event("theme")["mode"], "light");
@@ -193,7 +180,6 @@ fn a_replaced_config_folder_is_followed() {
     std::fs::write(novad.features_file(), WATCHERS_OFF).unwrap();
     std::fs::write(novad.config_file(), "[theme]\nmode = \"light\"\n").unwrap();
     assert_eq!(client.next_event("theme")["mode"], "light");
-    // Edits in the new folder keep applying.
     std::fs::write(novad.config_file(), "[theme]\nmode = \"dark\"\n").unwrap();
     assert_eq!(client.next_event("theme")["mode"], "dark");
 }

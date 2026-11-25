@@ -1,22 +1,3 @@
-//! Hyprland, through the two sockets in its instance folder
-//! (`$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE`): `.socket2.sock`
-//! streams events as `name>>data` lines, and `.socket.sock` answers one
-//! request per connection (`j/<query>` answers in JSON).
-//!
-//! Hyprland's events don't say everything (a new workspace's monitor, for
-//! one), so a workspace or monitor event makes novad ask for the monitors
-//! and workspaces again; opening, moving, focusing or fullscreening a window
-//! asks for the windows (a focus event also comes when a window changes its class), and
-//! a layout switch asks for the keyboards (the main keyboard changes when
-//! one is unplugged). Titles, focus and urgency come from the events alone.
-//! Events that arrive together are answered with one round of questions.
-//!
-//! Actions go out as dispatchers, in one of two languages: Hyprland with a
-//! Lua config (all of 0.57, and 0.56 set up with `hyprland.lua`) runs
-//! `dispatch <x>` as the Lua `return hl.dispatch(<x>)`, so it takes
-//! `hl.dsp.exit()` where older setups take `exit`. novad asks once which
-//! one this Hyprland speaks ([`Dialect`]).
-
 use super::Backend;
 use nova_desktop_info::{
     Capability, Desktop, FocusedWindow, HYPRLAND_LOCK_RESTORE, Output, Workspace as NovaWorkspace, WorkspaceId,
@@ -43,49 +24,31 @@ const CAPABILITIES: &[Capability] = &[
 ];
 const EVENTS_SOCKET: &str = ".socket2.sock";
 const REQUEST_SOCKET: &str = ".socket.sock";
-/// Between an event's name and its data.
 const EVENT_SEPARATOR: &str = ">>";
-/// Special (scratchpad) workspaces' names start with this; dispatchers
-/// take the rest.
 const SPECIAL_PREFIX: &str = "special:";
-/// JSON window addresses have it; event addresses don't.
 const ADDRESS_PREFIX: &str = "0x";
-/// The bit of a window's `fullscreen` mode that means fullscreen; the
-/// other (1) is maximized, which keeps the bar's space.
 const FULLSCREEN_MODE: u8 = 2;
-/// FNV-1a (64 bits), which turns an address into an id.
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
-/// Bits of a negative id the UI keeps whole: its workspace clicks come back
-/// through a QML `int`, 32 bits with a sign.
 const UI_ID_BITS: u32 = 31;
-/// How long Hyprland may take to answer a request.
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The questions novad asks.
 const MONITORS: &str = "j/monitors";
 const WORKSPACES: &str = "j/workspaces";
 const CLIENTS: &str = "j/clients";
 const ACTIVE_WINDOW: &str = "j/activewindow";
 const DEVICES: &str = "j/devices";
-/// Asks for an option's value; the option's name follows a space.
 const GET_OPTION: &str = "j/getoption";
 
-/// A Lua dispatcher that does nothing: only a Hyprland that speaks Lua
-/// answers it with `ok` (others say "Invalid dispatcher").
 pub const LUA_PROBE: &str = "dispatch hl.dsp.no_op()";
-/// Hyprland's answer to a dispatcher that ran.
 const DISPATCHED: &str = "ok";
 
-/// The instance folder of the Hyprland that set `instance`.
 pub fn socket_dir(runtime_dir: &Path, instance: &std::ffi::OsStr) -> PathBuf {
     runtime_dir.join("hypr").join(instance)
 }
 
 pub struct Hyprland {
     dir: PathBuf,
-    /// Which dispatchers it takes, once asked. A Hyprland keeps its config
-    /// language until it quits, and a new one comes with a new instance.
     dialect: Mutex<Option<Dialect>>,
 }
 
@@ -94,14 +57,13 @@ impl Hyprland {
         Self { dir, dialect: Mutex::new(None) }
     }
 
-    /// Sends one request on its own connection and returns the answer.
     fn request(&self, request: &str) -> Result<String, String> {
         let path = self.dir.join(REQUEST_SOCKET);
         let mut stream =
             UnixStream::connect(&path).map_err(|e| format!("can't reach Hyprland at {}: {e}", path.display()))?;
         stream.set_read_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
         stream.write_all(request.as_bytes()).map_err(|e| format!("can't send to Hyprland: {e}"))?;
-        // Hyprland reads the request until the client stops writing.
+        // Hyprland reads a request until the client stops writing: https://wiki.hypr.land/IPC/
         let _ = stream.shutdown(Shutdown::Write);
         let mut answer = String::new();
         stream.read_to_string(&mut answer).map_err(|e| format!("Hyprland didn't answer {request}: {e}"))?;
@@ -110,8 +72,6 @@ impl Hyprland {
 }
 
 impl Hyprland {
-    /// A window whose class (or first class) is one of `app_ids` (lower
-    /// case), one on `here` first.
     fn app_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<Client>, String> {
         let mut matching: Vec<Client> = self
             .clients()?
@@ -124,13 +84,11 @@ impl Hyprland {
         Ok(matching.into_iter().next())
     }
 
-    /// Every window, as Hyprland answers now.
     fn clients(&self) -> Result<Vec<Client>, String> {
         let answer = self.request(CLIENTS)?;
         serde_json::from_str(&answer).map_err(|e| format!("Hyprland sent odd windows ({e})"))
     }
 
-    /// The dispatcher language this Hyprland takes, asked the first time.
     fn dialect(&self) -> Result<Dialect, String> {
         let mut known = self.dialect.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(dialect) = *known {
@@ -141,7 +99,6 @@ impl Hyprland {
         Ok(dialect)
     }
 
-    /// Runs `action` as one of Hyprland's dispatchers.
     fn dispatch(&self, action: &Action) -> Result<(), String> {
         let dispatcher = action.dispatcher(self.dialect()?);
         match self.request(&format!("dispatch {dispatcher}"))?.trim() {
@@ -151,22 +108,15 @@ impl Hyprland {
     }
 }
 
-/// The language of Hyprland's dispatchers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Dialect {
-    /// `exit`, `workspace 3`: Hyprland before Lua configs, or one still on
-    /// `hyprland.conf`.
     Hyprlang,
-    /// `hl.dsp.exit()`, `hl.dsp.focus({ workspace = "3" })`.
     Lua,
 }
 
-/// What novad asks Hyprland to do. Workspaces, monitors and windows are
-/// named by the same selectors (`name:web`, `address:0x…`) in both dialects.
 #[derive(Debug)]
 enum Action {
     FocusWorkspace(String),
-    /// Shows or hides the special workspace of this name (without `special:`).
     ToggleSpecial(String),
     FocusMonitor(String),
     FocusWindow(String),
@@ -194,9 +144,6 @@ impl Action {
     }
 }
 
-/// `text` as a quoted Lua string. Workspace names are the user's, so quotes,
-/// backslashes and control characters are escaped (`\ddd` takes three digits,
-/// so a digit after it stays a digit).
 fn lua_string(text: &str) -> String {
     let mut quoted = String::with_capacity(text.len() + 2);
     quoted.push('"');
@@ -214,8 +161,6 @@ fn lua_string(text: &str) -> String {
     quoted
 }
 
-/// How dispatchers name `workspace`: a bare number is an id; named
-/// workspaces (negative ids) go by name.
 fn workspace_target(workspace: &NovaWorkspace) -> String {
     if workspace.id > 0 { workspace.id.to_string() } else { format!("name:{}", workspace.name) }
 }
@@ -233,7 +178,6 @@ impl Backend for Hyprland {
         let path = self.dir.join(EVENTS_SOCKET);
         let stream =
             UnixStream::connect(&path).map_err(|e| format!("can't reach Hyprland at {}: {e}", path.display()))?;
-        // Connected first, so nothing that changes while novad asks is missed.
         let mut ask = |request: &str| self.request(request);
         let mut state = State::load(&mut ask)?;
         report(state.desktop());
@@ -260,14 +204,11 @@ impl Backend for Hyprland {
     }
 
     fn focus_output(&self, output: &Output) -> Result<(), String> {
-        // Not by workspace: the one under a special workspace shown there
-        // isn't active, and showing the special one again hides it.
         self.dispatch(&Action::FocusMonitor(output.name.clone()))
     }
 
     fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
         let Some(client) = self.app_window(app_ids, here)? else { return Ok(false) };
-        // Hyprland shows the window's workspace and monitor for it.
         self.dispatch(&Action::FocusWindow(format!("address:{}", client.address)))?;
         Ok(true)
     }
@@ -285,9 +226,6 @@ impl Backend for Hyprland {
     }
 }
 
-/// The lock restore switch, from Hyprland's answer to `j/getoption`: an
-/// `int` on a hyprlang config (0.56 and older), a `bool` on a Lua one (all
-/// of 0.57). Hyprland answers plain text for an option it doesn't have.
 pub(super) fn lock_restore_in(answer: &str) -> Result<bool, String> {
     #[derive(Deserialize)]
     struct Switch {
@@ -308,21 +246,16 @@ struct Monitor {
     focused: bool,
     #[serde(rename = "activeWorkspace")]
     active_workspace: WorkspaceRef,
-    /// The special workspace showing over it; id 0 when none.
     #[serde(rename = "specialWorkspace", default)]
     special_workspace: SpecialWorkspaceRef,
 }
 
-/// A workspace as monitors and windows point at it.
 #[derive(Debug, Default, Deserialize)]
 #[serde(from = "RawWorkspaceRef")]
 struct WorkspaceRef {
-    /// 0 when it points at none (a monitor without a special workspace).
     id: WorkspaceId,
 }
 
-/// A monitor's special workspace: none shows when its address and name are
-/// empty (older releases also write `id` 0).
 type SpecialWorkspaceRef = WorkspaceRef;
 
 #[derive(Debug, Deserialize)]
@@ -344,10 +277,7 @@ impl From<RawWorkspaceRef> for WorkspaceRef {
 #[serde(from = "RawWorkspace")]
 struct Workspace {
     id: WorkspaceId,
-    /// What dispatchers and events call it: `special:magic` for a special
-    /// workspace, the number for a numbered one.
     address: String,
-    /// What it shows as.
     name: String,
     monitor: String,
 }
@@ -367,10 +297,6 @@ impl From<RawWorkspace> for Workspace {
     }
 }
 
-/// The id novad gives a workspace Hyprland gives none: 0.57 numbers only
-/// numbered workspaces and calls special and named ones by address (older
-/// releases gave those negative ids). A stable negative number from the
-/// address, small enough for the UI to send back; 0 for no workspace.
 fn address_id(address: &str) -> WorkspaceId {
     if address.is_empty() {
         return 0;
@@ -383,18 +309,15 @@ fn address_id(address: &str) -> WorkspaceId {
 struct Client {
     address: String,
     class: String,
-    /// Its class when it opened; some apps change theirs later.
     #[serde(rename = "initialClass", default)]
     initial_class: String,
     title: String,
     workspace: WorkspaceRef,
-    /// 0 none, 1 maximized, 2 fullscreen, 3 both.
     fullscreen: u8,
 }
 
 #[derive(Debug, Deserialize)]
 struct ActiveWindow {
-    /// Missing when no window has focus (Hyprland answers `{}`).
     address: Option<String>,
 }
 
@@ -417,8 +340,6 @@ struct Window {
     fullscreen: bool,
 }
 
-/// Hyprland's state as novad knows it. Window addresses are kept without
-/// `0x`, as events write them.
 #[derive(Debug)]
 pub(super) struct State {
     monitors: Vec<Monitor>,
@@ -426,13 +347,10 @@ pub(super) struct State {
     windows: HashMap<String, Window>,
     active_window: Option<String>,
     urgent: HashSet<String>,
-    /// The layout of Hyprland's main keyboard.
     layout: Option<String>,
-    /// What to ask again once the events that arrived together are applied.
     stale_workspaces: bool,
     stale_windows: bool,
     stale_layout: bool,
-    /// Each output's `layout`, by name: how often windows on it moved.
     moved: HashMap<String, u64>,
 }
 
@@ -455,7 +373,6 @@ impl State {
         Ok(state)
     }
 
-    /// Applies one event line.
     pub(super) fn apply(&mut self, line: &str) {
         let Some((event, data)) = line.split_once(EVENT_SEPARATOR) else { return };
         match event {
@@ -463,21 +380,17 @@ impl State {
             | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" | "activespecialv2" => {
                 self.stale_workspaces = true;
             }
-            // Its windows still point at the old id.
             "changeworkspaceid" => {
                 self.stale_workspaces = true;
                 self.stale_windows = true;
             }
             "openwindow" => {
                 self.stale_windows = true;
-                // ADDRESS,WORKSPACENAME,CLASS,TITLE
                 let workspace = data.split(',').nth(1).and_then(|name| self.workspace_named(name));
                 self.moved_on(workspace);
             }
             "movewindowv2" => {
                 self.stale_windows = true;
-                // ADDRESS,WORKSPACE,NAME: where it was, and where it went.
-                // WORKSPACE is the id before 0.57, its address since.
                 let mut fields = data.split(',');
                 let from = fields.next().and_then(|address| Some(self.windows.get(address)?.workspace));
                 self.moved_on(from);
@@ -505,7 +418,6 @@ impl State {
                 }
             }
             "activewindowv2" => {
-                // Empty (or `,` in some releases) when nothing has focus.
                 let address = data.trim_matches(',');
                 self.urgent.remove(address);
                 self.active_window = (!address.is_empty()).then(|| address.to_owned());
@@ -516,7 +428,6 @@ impl State {
                     self.urgent.insert(data.to_owned());
                 }
             }
-            // One per keyboard; which is the main one is in the devices.
             "activelayout" => self.stale_layout = true,
             _ => {}
         }
@@ -526,8 +437,6 @@ impl State {
         self.workspaces.iter().find(|workspace| workspace.address == name).map(|workspace| workspace.id)
     }
 
-    /// Windows moved on the monitor showing `workspace`, or the focused one
-    /// when it isn't known (Hyprland reports no resizes).
     fn moved_on(&mut self, workspace: Option<WorkspaceId>) {
         let on = workspace.and_then(|id| self.workspaces.iter().find(|workspace| workspace.id == id));
         let monitor = match on {
@@ -539,7 +448,6 @@ impl State {
         }
     }
 
-    /// Asks Hyprland for whatever the events left unclear.
     pub(super) fn catch_up(&mut self, ask: &mut impl FnMut(&str) -> Result<String, String>) -> Result<(), String> {
         if std::mem::take(&mut self.stale_workspaces) {
             self.monitors = query(ask, MONITORS)?;
@@ -576,9 +484,6 @@ impl State {
         let occupied: HashSet<WorkspaceId> = self.windows.values().map(|window| window.workspace).collect();
         let fullscreen: HashSet<WorkspaceId> =
             self.windows.values().filter(|window| window.fullscreen).map(|window| window.workspace).collect();
-        // Special workspaces on every output, by name, as they show on
-        // whichever has focus; then each output's own: numbered ones in
-        // order, then named ones (negative ids).
         let mut special: Vec<(&Workspace, &str)> = self
             .workspaces
             .iter()
@@ -609,8 +514,6 @@ impl State {
                     layout: self.moved.get(&monitor.name).copied().unwrap_or_default(),
                     workspaces: listed
                         .map(|(workspace, name, special)| {
-                            // A special workspace showing covers the one
-                            // under it, which Hyprland still calls active.
                             let active = if special {
                                 workspace.id == monitor.special_workspace.id
                             } else {

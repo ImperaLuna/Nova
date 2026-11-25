@@ -1,7 +1,3 @@
-//! A round button inside a pill: the right pill's quick settings and power
-//! buttons, and the same buttons where quick settings draws them over the
-//! pill. `ui/bar/PillButton.qml` in today's shell.
-
 use crate::tokens::{DURATION_FAST, ICON_SIZE, PILL_BUTTON_SIZE};
 use crate::{Glyph, Hovered, Icon, Theme, fade_color, keyed};
 use gpui::prelude::FluentBuilder as _;
@@ -13,10 +9,6 @@ use std::rc::Rc;
 
 type Clicked = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
-/// A round button with a line icon, in the ink by default (the power
-/// button's is the accent): washed while the pointer is on it, a quiet fill
-/// while `picked` (its panel is open). What sits on its corner,
-/// like a badge, comes in with [`PillButton::child`].
 #[derive(IntoElement)]
 pub struct PillButton {
     id: ElementId,
@@ -32,7 +24,6 @@ impl PillButton {
         Self { id: id.into(), glyph, ink: None, picked: false, on_click: None, extra: None }
     }
 
-    /// The icon's color, in place of the theme's ink.
     pub fn ink(mut self, ink: Hsla) -> Self {
         self.ink = Some(ink);
         self
@@ -48,7 +39,6 @@ impl PillButton {
         self
     }
 
-    /// Drawn over the button, placed by itself (`absolute`).
     pub fn child(mut self, extra: impl IntoElement) -> Self {
         self.extra = Some(extra.into_any_element());
         self

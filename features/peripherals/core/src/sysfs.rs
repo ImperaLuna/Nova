@@ -1,43 +1,22 @@
-//! How a UPower device is connected, from where the kernel put it in
-//! `/sys`. UPower's `NativePath` names a power supply
-//! (`/sys/class/power_supply/<name>`, like `hidpp_battery_0`) or, for a
-//! battery BlueZ reads, a BlueZ object (`/org/bluez/hci0/dev_..`). The
-//! power supply's `device` is a HID device (`0003:046D:407F.0004`: bus,
-//! vendor, product), and the folders above it say the rest:
-//! - a HID device inside another (a Logitech receiver's) is paired with
-//!   that receiver: a 2.4 GHz dongle;
-//! - HID bus 0005, or a Bluetooth adapter (`hci0`) on the way: Bluetooth;
-//! - otherwise on USB: by its cable.
-//!
-//! The USB ids found on the way let another source's report of the same
-//! device be matched: the HID device's own, and the USB device's above it,
-//! unless that's a receiver other devices share.
-
 use super::UsbId;
 use nova_peripherals_api::PeripheralLink;
 use std::path::Path;
 
-/// BlueZ's objects, as UPower names a battery BlueZ reads.
 const BLUEZ_PREFIX: &str = "/org/bluez/";
-/// HID's bus numbers (`BUS_USB`, `BUS_BLUETOOTH` in linux/input.h).
 const HID_BUS_USB: u16 = 0x0003;
 const HID_BUS_BLUETOOTH: u16 = 0x0005;
-/// How far up from a power supply's device a USB device is looked for.
 const MAX_DEPTH: usize = 16;
 
-/// Where a device is, as far as `/sys` tells.
 #[derive(Debug, Default, PartialEq)]
 pub struct Location {
     pub link: Option<PeripheralLink>,
     pub usb_ids: Vec<UsbId>,
 }
 
-/// Where the device with UPower's `native_path` is, under `sys_root`.
 pub fn locate(sys_root: &Path, native_path: &str) -> Location {
     if native_path.starts_with(BLUEZ_PREFIX) {
         return Location { link: Some(PeripheralLink::Bluetooth), usb_ids: Vec::new() };
     }
-    // A name in one folder: nothing from outside may lead elsewhere.
     if native_path.is_empty() || native_path.contains('/') || native_path == "." || native_path == ".." {
         return Location::default();
     }
@@ -69,7 +48,6 @@ pub fn locate(sys_root: &Path, native_path: &str) -> Location {
     Location { link, usb_ids }
 }
 
-/// The bus and ids in a HID device's folder name, `BBBB:VVVV:PPPP.NNNN`.
 fn hid_id(name: &str) -> Option<(u16, UsbId)> {
     let (ids, _instance) = name.split_once('.')?;
     let mut parts = ids.split(':');
@@ -78,12 +56,10 @@ fn hid_id(name: &str) -> Option<(u16, UsbId)> {
     parts.next().is_none().then_some((bus, UsbId { vendor, product }))
 }
 
-/// A Bluetooth adapter's folder, `hci0`.
 fn is_adapter(name: &str) -> bool {
     name.strip_prefix("hci").is_some_and(|number| !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// The ids of the USB device whose folder is `folder`, if it is one.
 fn usb_id(folder: &Path) -> Option<UsbId> {
     let read = |file: &str| {
         let text = std::fs::read_to_string(folder.join(file)).ok()?;

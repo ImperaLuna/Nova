@@ -1,14 +1,3 @@
-//! The panel the pill grows into, on one screen: the shown tool's name and
-//! plan, its headline percent, a meter for each limit with how long is
-//! left and when it resets, and at the bottom the other tools, a click on
-//! one showing it in the bar. A click on the header closes it, as the pill
-//! it grew from would.
-//!
-//! Opening asks novad for fresh numbers (it decides whether to fetch), and
-//! the meters fill once the panel has grown. While it is open the "left"
-//! and "resets" texts count down. It grows when a tool needs more room and
-//! never shrinks back, so switching tools doesn't make it jump.
-
 use crate::layout::{caption_line, panel_height};
 use crate::logo::logo;
 use crate::tokens::{COUNTDOWN, HERO_UNIT_SCALE};
@@ -33,27 +22,19 @@ use nova_stage::{Screen, Stage};
 use nova_ui_client::{Daemon, Live};
 use std::time::Instant;
 
-/// The panel's name: the feature's id, which `nova toggle` uses.
 pub const NAME: &str = "ai-usage";
 
-/// What hovering another tool's row shows.
 const ROW_GROUP: &str = "ai-usage-row";
 
 pub struct UsagePanel {
     screen: Screen,
     usage: Entity<Live<AiUsage>>,
     zone: TimeZone,
-    /// The time the texts count from: set as it opens and on each
-    /// countdown.
     now: Timestamp,
     was_open: bool,
-    /// When it last opened, for the meters' fill; `None` once it has faded
-    /// out after closing.
     opened: Option<Instant>,
     countdown: Option<Task<()>>,
-    /// The tallest it has been, and the size last handed to the stage.
     tallest: Pixels,
-    /// How many lines the hint wrapped to when last drawn.
     message_lines: usize,
     asked: Size<Pixels>,
     _followed: Subscription,
@@ -76,13 +57,11 @@ impl UsagePanel {
             asked: size(PANEL_WIDTH, px(0.0)),
             _followed: followed,
         };
-        // Before the first frame, a hint counts as one line.
         let height = panel.height(cx);
         panel.asked.height = height;
         panel
     }
 
-    /// The size it asks the stage for.
     pub fn size(&self) -> Size<Pixels> {
         self.asked
     }
@@ -95,7 +74,6 @@ impl UsagePanel {
         summarize(provider, self.now, &self.zone)
     }
 
-    /// The height for what it shows now, taller only.
     fn height(&mut self, cx: &App) -> Pixels {
         let usage = self.data(cx);
         let summary = self.summary_of(usage.and_then(shown));
@@ -104,15 +82,12 @@ impl UsagePanel {
         self.tallest
     }
 
-    /// New numbers: the stage learns the height now, so a closed panel
-    /// opens straight to it (its content isn't drawn until then).
     fn usage_changed(&mut self, cx: &mut Context<Self>) {
         let height = self.height(cx);
         self.ask_for(height, cx);
         cx.notify();
     }
 
-    /// Called from `render` with whether the stage has the panel open.
     fn follow_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         if open == self.was_open {
             return;
@@ -121,7 +96,6 @@ impl UsagePanel {
         eprintln!("INFO nova-ui: ai usage panel {}", if open { "opened" } else { "closed" });
         if !open {
             self.countdown = None;
-            // Once it has faded out, the meters start empty again.
             cx.spawn(async move |panel, cx| {
                 cx.background_executor().timer(DURATION_PANEL + DURATION_FADE).await;
                 let _ = panel.update(cx, Self::faded);
@@ -130,7 +104,6 @@ impl UsagePanel {
             return;
         }
         self.now = Timestamp::now();
-        // Opened again before it faded out: the meters stay as they are.
         if self.opened.is_none() {
             self.opened = Some(Instant::now());
         }
@@ -144,8 +117,6 @@ impl UsagePanel {
         cx.defer_in(window, |_, _, cx| Daemon::send(Command::RefreshAiUsage, cx));
     }
 
-    /// The panel has faded out after closing: unless it opened again, the
-    /// meters start empty next time.
     fn faded(&mut self, cx: &mut Context<Self>) {
         if !self.was_open {
             self.opened = None;
@@ -158,15 +129,12 @@ impl UsagePanel {
         cx.notify();
     }
 
-    /// How full the meters are drawn (0..1): they fill once the panel has
-    /// grown most of the way.
     fn fill(&self, now: Instant) -> f32 {
         let Some(opened) = self.opened else { return 0.0 };
         let waited = now.saturating_duration_since(opened).as_secs_f32() - DURATION_PANEL.as_secs_f32() * REVEAL_FILL;
         ease((waited / DURATION_FILL.as_secs_f32()).clamp(0.0, 1.0))
     }
 
-    /// How many lines `message` wraps to across the panel.
     fn lines(message: &str, window: &Window) -> usize {
         if message.is_empty() {
             return 1;
@@ -189,8 +157,6 @@ impl UsagePanel {
         shaped.map_or(1, |lines| lines.iter().map(|line| line.wrap_boundaries().len() + 1).sum())
     }
 
-    /// Follows the height into the stage, after this update: the stage
-    /// reads this view to lay the panel out.
     fn ask_for(&mut self, height: Pixels, cx: &mut Context<Self>) {
         if height == self.asked.height {
             return;
@@ -201,12 +167,10 @@ impl UsagePanel {
     }
 }
 
-/// The width inside the panel's padding.
 fn content_width() -> Pixels {
     PANEL_WIDTH - PANEL_PAD * 2.0
 }
 
-/// A limit's percent in the theme's primary color from 80%.
 fn percent_color(row: Option<&Row>, theme: &Theme) -> Hsla {
     match row {
         Some(row) if row.warn => theme.primary,
@@ -215,12 +179,10 @@ fn percent_color(row: Option<&Row>, theme: &Theme) -> Hsla {
     }
 }
 
-/// Small dim text: the limits' names, times and the hint, shown as written.
 fn caption(text: impl Into<SharedString>, theme: &Theme) -> Div {
     div().text_size(FONT_SIZE_SMALL).text_color(theme.fg_dim()).child(text.into())
 }
 
-/// A meter: the empty track, filled to `row`'s percent of `fill`.
 fn meter(row: &Row, height: Pixels, fill: f32, theme: &Theme) -> Div {
     let color = if row.warn { theme.primary } else { theme.meter() };
     let share = f32::from(row.percent) / 100.0 * fill;
@@ -239,7 +201,6 @@ impl Render for UsagePanel {
         let fill = self.fill(now);
         let usage = self.data(cx).cloned();
         let summary = self.summary_of(usage.as_ref().and_then(shown));
-        // Frames only while a meter fills.
         if self.opened.is_some() && fill < 1.0 && summary.main.is_some() {
             window.request_animation_frame();
         }
@@ -274,8 +235,6 @@ impl Render for UsagePanel {
 }
 
 impl UsagePanel {
-    /// The pill's place, grown into the header: the logo where the pill had
-    /// it, the tool's name, its plan in a chip at the right.
     fn header(&self, summary: &Summary, theme: &Theme, cx: &mut Context<Self>) -> Div {
         let ink = if summary.state == UsageState::Unavailable { theme.fg.opacity(DIM_OPACITY) } else { theme.fg };
         let plan = (!summary.plan.is_empty()).then(|| {
@@ -309,8 +268,6 @@ impl UsagePanel {
             .children(plan)
     }
 
-    /// Another tool: its logo, name and percent. A click shows it in the
-    /// bar.
     fn other(&self, info: &Summary, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let provider: Option<AiProvider> = info.provider;
         let ink = if info.state == UsageState::Unavailable { theme.fg.opacity(DIM_OPACITY) } else { theme.fg };
@@ -347,10 +304,6 @@ impl UsagePanel {
     }
 }
 
-/// Where text's baseline sits in its line, as a share of its size: GPUI
-/// centers the face's ascent and descent in the line box and the running
-/// text's line height is a share of the size too, so it is the same share
-/// at every size.
 fn baseline_share(window: &Window) -> f32 {
     let text = window.text_system();
     let mut face = font(FONT_MONO);
@@ -360,9 +313,6 @@ fn baseline_share(window: &Window) -> f32 {
     (LINE_HEIGHT - (ascent + descent) / FONT_SIZE_HERO) / 2.0 + ascent / FONT_SIZE_HERO
 }
 
-/// The headline: the pill's number, big, with a smaller `%` on its
-/// baseline, the number's line centered in the headline's height as
-/// today's shell centers it.
 fn hero(summary: &Summary, baseline: f32, theme: &Theme) -> Div {
     let color = percent_color(summary.main.as_ref(), theme);
     let top = (LINE_HEIGHT_HERO - FONT_SIZE_HERO * LINE_HEIGHT) / 2.0;
@@ -385,8 +335,6 @@ fn hero(summary: &Summary, baseline: f32, theme: &Theme) -> Div {
         .children(unit)
 }
 
-/// The limits: the bar's one with its meter (and the hint when there are
-/// no numbers), then the second, smaller.
 fn details(summary: &Summary, fill: f32, theme: &Theme) -> Div {
     let mut primary = div().flex().flex_col().gap(GAP);
     if let Some(main) = &summary.main {
@@ -394,7 +342,6 @@ fn details(summary: &Summary, fill: f32, theme: &Theme) -> Div {
         primary = primary
             .child(div().h(caption_line()).flex().justify_between().child(caption(main.name, theme)).children(left))
             .child(meter(main, METER_HEIGHT, fill, theme));
-        // A lone window says when it resets under its meter.
         if summary.second.is_none() && !main.reset.is_empty() {
             primary = primary.child(caption(main.reset.clone(), theme));
         }

@@ -1,28 +1,15 @@
-//! Apps the compositor starts at login (niri's `spawn-at-startup`,
-//! Hyprland's `exec-once`), for `nova doctor`: started that way, a tray app
-//! can come up before Nova's tray and miss it for good (Electron looks once),
-//! so the doctor points such apps at `~/.config/autostart` (IMP-107). Only
-//! the main config file is read, not the files it includes.
-
 use nova_tray_api::TrayItem;
 use std::path::Path;
 
-/// The folder the doctor sends login apps to.
 pub const AUTOSTART_DIR: &str = "~/.config/autostart";
-/// Words before the program that only set up how it runs.
 const PREFIXES: [&str; 4] = ["env", "uwsm", "app", "--"];
 
-/// A command the compositor runs at login.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StartupCommand {
-    /// Where it's listed, like `niri's spawn-at-startup`.
     pub source: &'static str,
-    /// Its program's file name, like `Discord`.
     pub program: String,
 }
 
-/// The login commands in niri's and Hyprland's config under `config_home`
-/// (`NIRI_CONFIG` replaces niri's), whichever exist.
 pub fn read(config_home: &Path) -> Vec<StartupCommand> {
     let niri = std::env::var_os("NIRI_CONFIG").map(Into::into).unwrap_or_else(|| config_home.join("niri/config.kdl"));
     let mut commands = Vec::new();
@@ -35,7 +22,6 @@ pub fn read(config_home: &Path) -> Vec<StartupCommand> {
     commands
 }
 
-/// `spawn-at-startup "prog" "arg"…` and `spawn-sh-at-startup "prog arg…"`.
 fn niri_commands(text: &str) -> Vec<StartupCommand> {
     const SOURCE: &str = "niri's spawn-at-startup";
     text.lines()
@@ -50,7 +36,6 @@ fn niri_commands(text: &str) -> Vec<StartupCommand> {
         .collect()
 }
 
-/// `exec-once = prog arg…`.
 fn hyprland_commands(text: &str) -> Vec<StartupCommand> {
     const SOURCE: &str = "Hyprland's exec-once";
     text.lines()
@@ -62,8 +47,6 @@ fn hyprland_commands(text: &str) -> Vec<StartupCommand> {
         .collect()
 }
 
-/// The quoted strings at the start of a KDL node's arguments, until a
-/// comment or anything else.
 fn kdl_strings(text: &str) -> Vec<String> {
     let mut strings = Vec::new();
     let mut chars = text.trim_start().chars().peekable();
@@ -82,8 +65,6 @@ fn kdl_strings(text: &str) -> Vec<String> {
     strings
 }
 
-/// A command line's words, split at spaces outside quotes. Good enough to
-/// find the program; nothing runs it.
 fn shell_words(line: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut word = String::new();
@@ -106,8 +87,6 @@ fn shell_words(line: &str) -> Vec<String> {
     words
 }
 
-/// The program a command runs: its first word past `env`, its variables and
-/// options, and launcher wrappers, as a file name.
 fn program(words: &[String]) -> Option<String> {
     let word = words
         .iter()
@@ -115,9 +94,6 @@ fn program(words: &[String]) -> Option<String> {
     Some(word.rsplit('/').next().unwrap_or(word).to_string())
 }
 
-/// The tray apps among `commands`, as `(name, source)`: a command whose
-/// program is an item's app (its desktop id, the id's last part, or its
-/// name) or the start of the item's own id, ignoring case.
 pub fn tray_apps<'a>(commands: &'a [StartupCommand], tray: &'a [TrayItem]) -> Vec<(&'a str, &'a str)> {
     let mut found = Vec::new();
     for item in tray {

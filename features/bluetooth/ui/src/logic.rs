@@ -1,8 +1,3 @@
-//! What `ui/quick_settings/bluetooth.js` worked out, with no GPUI drawing
-//! in it: a device's icon and section, what a click does on it, what its
-//! row says while novad works on it, and what a pairing question asks,
-//! shows and takes.
-
 use nova_bluetooth_api::{BluetoothDevice, BluetoothKind, BluetoothStatus, PairingAsk};
 use nova_look::Glyph;
 
@@ -19,14 +14,10 @@ pub fn icon(kind: BluetoothKind) -> Glyph {
     }
 }
 
-/// The page's lists, in the order novad sends devices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
-    /// In use, or on the way there or back.
     Connected,
-    /// Known ones.
     Mine,
-    /// The rest, and the ones being paired.
     Nearby,
 }
 
@@ -42,8 +33,6 @@ pub fn in_section(devices: &[BluetoothDevice], key: Section) -> Vec<&BluetoothDe
     devices.iter().filter(|device| section(device) == key).collect()
 }
 
-/// What a row says on its right while novad works on it; `waiting` while
-/// a pairing question about it waits for an answer.
 pub fn busy_text(status: BluetoothStatus, waiting: bool) -> Option<&'static str> {
     match status {
         BluetoothStatus::Pairing if waiting => Some("Waiting for you"),
@@ -54,10 +43,8 @@ pub fn busy_text(status: BluetoothStatus, waiting: bool) -> Option<&'static str>
     }
 }
 
-/// What a click on a row does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Click {
-    /// Connects, pairing a new one first.
     Connect,
     Disconnect,
 }
@@ -70,7 +57,6 @@ pub fn click(status: BluetoothStatus) -> Option<Click> {
     }
 }
 
-/// What a click would do, said on hover.
 pub fn hover_text(status: BluetoothStatus) -> Option<&'static str> {
     match status {
         BluetoothStatus::Nearby => Some("Pair"),
@@ -80,12 +66,9 @@ pub fn hover_text(status: BluetoothStatus) -> Option<&'static str> {
     }
 }
 
-/// What a right click on a row opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Menu {
-    /// Disconnect and Forget.
     Actions,
-    /// Asks to forget a known one.
     Forget,
 }
 
@@ -97,8 +80,6 @@ pub fn menu(status: BluetoothStatus) -> Option<Menu> {
     }
 }
 
-/// The question a pairing prompt asks about `name`, and whether the device
-/// started it.
 pub fn question(ask: &PairingAsk, name: &str, incoming: bool) -> String {
     match ask {
         PairingAsk::Confirm { .. } if incoming => format!("{name} wants to pair. Does it show this code?"),
@@ -112,7 +93,6 @@ pub fn question(ask: &PairingAsk, name: &str, incoming: bool) -> String {
     }
 }
 
-/// The code a prompt shows; none when it asks for one.
 pub fn code(ask: &PairingAsk) -> Option<&str> {
     match ask {
         PairingAsk::Confirm { code } | PairingAsk::ShowPasskey { code, .. } => Some(code),
@@ -121,7 +101,6 @@ pub fn code(ask: &PairingAsk) -> Option<&str> {
     }
 }
 
-/// How many of the code's characters are typed on the device already.
 pub fn typed_on_device(ask: &PairingAsk) -> usize {
     match ask {
         PairingAsk::ShowPasskey { typed, .. } => usize::from(*typed),
@@ -129,16 +108,12 @@ pub fn typed_on_device(ask: &PairingAsk) -> usize {
     }
 }
 
-/// Whether the user types an answer.
 pub fn typed(ask: &PairingAsk) -> bool {
     matches!(ask, PairingAsk::EnterPin | PairingAsk::EnterPasskey)
 }
 
-/// A passkey's most digits (BlueZ's limit).
 const PASSKEY_MAX_DIGITS: usize = 6;
 
-/// The prompt's buttons: turn down, and yes (none for a code to type on
-/// the device, which waits for nothing here but Cancel).
 pub fn buttons(ask: &PairingAsk, incoming: bool) -> (&'static str, Option<&'static str>) {
     match ask {
         PairingAsk::ShowPin { .. } | PairingAsk::ShowPasskey { .. } => ("Cancel", None),
@@ -149,8 +124,13 @@ pub fn buttons(ask: &PairingAsk, incoming: bool) -> (&'static str, Option<&'stat
     }
 }
 
-/// Whether `text` answers a typed ask: a PIN is 1 to 16 printable ASCII
-/// characters, a passkey up to 6 digits (BlueZ's limits, as novad checks).
+pub fn code_max(ask: &PairingAsk) -> usize {
+    match ask {
+        PairingAsk::EnterPasskey => PASSKEY_MAX_DIGITS,
+        _ => nova_bluetooth_api::BLUETOOTH_PIN_MAX_BYTES,
+    }
+}
+
 pub fn valid_code(ask: &PairingAsk, text: &str) -> bool {
     match ask {
         PairingAsk::EnterPin => {
@@ -158,14 +138,12 @@ pub fn valid_code(ask: &PairingAsk, text: &str) -> bool {
                 && text.bytes().all(|byte| byte.is_ascii_graphic())
         }
         PairingAsk::EnterPasskey => {
-            let text = text.trim();
             (1..=PASSKEY_MAX_DIGITS).contains(&text.len()) && text.bytes().all(|byte| byte.is_ascii_digit())
         }
         _ => false,
     }
 }
 
-/// The name a prompt calls the device by: its row's, else its address.
 pub fn device_name<'a>(devices: &'a [BluetoothDevice], address: &'a str) -> &'a str {
     devices.iter().find(|device| device.address == address).map_or(address, |device| &device.name)
 }
@@ -236,7 +214,9 @@ mod tests {
         assert!(!valid_code(&PairingAsk::EnterPin, ""));
         assert!(!valid_code(&PairingAsk::EnterPin, "a b"));
         assert!(!valid_code(&PairingAsk::EnterPin, &"1".repeat(17)));
-        assert!(valid_code(&PairingAsk::EnterPasskey, " 123456 "));
+        assert_eq!(code_max(&PairingAsk::EnterPin), 16);
+        assert_eq!(code_max(&PairingAsk::EnterPasskey), 6);
+        assert!(!valid_code(&PairingAsk::EnterPasskey, " 12345"), "a pasted space cut a digit off");
         assert!(!valid_code(&PairingAsk::EnterPasskey, "1234567"));
         assert!(!valid_code(&PairingAsk::EnterPasskey, "12a"));
         assert!(!valid_code(&PairingAsk::Authorize, "1"));

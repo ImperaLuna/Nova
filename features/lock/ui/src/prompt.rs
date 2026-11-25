@@ -1,44 +1,27 @@
-//! What the lock screen's prompt works out without drawing: which key does
-//! what, the characters typed so far, how many dots fit, where a shake has
-//! the field, and what a failed check says. `Authenticator.qml` and
-//! `LockPrompt.qml` in today's shell.
-
 use crate::tokens::{DOT_GAP, DOT_SIZE, FIELD_WIDTH, SHAKE, SHAKE_SWINGS};
 use gpui::Pixels;
 use nova_look::tokens::{ICON_SIZE, PAD};
 use std::f32::consts::PI;
 use std::time::{Duration, Instant};
 
-/// The field's placeholder, and what it says under the field after a check
-/// that didn't unlock.
 pub const PLACEHOLDER: &str = "Password";
 const WRONG: &str = "Wrong password";
 const TOO_MANY_TRIES: &str = "Too many tries";
 const UNCHECKED: &str = "Couldn't check the password";
 
-/// The first character that is no control character, and the one above
-/// the printable ASCII ones that is.
 const FIRST_PRINTABLE: char = ' ';
 const DELETE: char = '\u{7f}';
 
-/// What a key does to the prompt.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Key<'a> {
-    /// Checks what was typed.
     Submit,
-    /// Empties the field.
     Clear,
-    /// Takes the last character back.
     Erase,
-    /// Adds what the key types.
     Type(&'a str),
-    /// Nothing: a modifier, an arrow, a shortcut.
     Ignored,
 }
 
 impl<'a> Key<'a> {
-    /// `name` is GPUI's name for the key, `typed` the text it types, if
-    /// any, and `shortcut` whether Control, Alt or Super is held with it.
     pub fn of(name: &str, typed: Option<&'a str>, shortcut: bool) -> Self {
         match (name, typed) {
             ("enter", _) => Self::Submit,
@@ -54,16 +37,10 @@ fn is_printable(text: &str) -> bool {
     !text.is_empty() && text.chars().all(|character| character >= FIRST_PRINTABLE && character != DELETE)
 }
 
-/// The password typed so far, or one on its way to the check. No `Debug`
-/// and no `Display`, so it can't reach a log, and its bytes are overwritten
-/// when it is emptied or dropped, those of characters taken back too.
-/// (Copies the allocator left behind as the text grew are beyond reach
-/// from here.)
 #[derive(Default)]
 pub struct Secret(String);
 
 impl Secret {
-    /// How many characters, for the dots.
     pub fn len(&self) -> usize {
         self.0.chars().count()
     }
@@ -84,13 +61,10 @@ impl Secret {
         drop(self.take());
     }
 
-    /// Hands the password on, leaving this empty.
     pub fn take(&mut self) -> Secret {
         Secret(std::mem::take(&mut self.0))
     }
 
-    /// The bytes with C's closing NUL, for the check. Made at their full
-    /// size, so handing them to C moves no copy; wipe them after.
     pub fn to_c_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(self.0.len() + 1);
         bytes.extend_from_slice(self.0.as_bytes());
@@ -105,29 +79,20 @@ impl Drop for Secret {
     }
 }
 
-/// Overwrites a password's bytes before their memory is given back.
 pub fn wipe(mut bytes: Vec<u8>) {
-    // All it holds, the room behind its length too: bytes taken back stay
-    // there.
     bytes.clear();
     bytes.resize(bytes.capacity(), 0);
-    // Kept from being optimized away as a write nobody reads.
     std::hint::black_box(&bytes);
 }
 
-/// What the check of a password found.
 pub enum Verdict {
     Right,
     Wrong,
-    /// PAM counts tries and has had enough.
     TooManyTries,
-    /// The check itself failed; the text is for the log.
     Unchecked(String),
 }
 
 impl Verdict {
-    /// What the prompt says under the field, and the log beside it; `None`
-    /// for the right password.
     pub fn refusal(&self) -> Option<(&'static str, &str)> {
         match self {
             Self::Right => None,
@@ -138,16 +103,12 @@ impl Verdict {
     }
 }
 
-/// How many of `typed` dots the field shows: as many as fit before the
-/// spinner's room.
 pub fn dots(typed: usize) -> usize {
     let room = FIELD_WIDTH - PAD * 3.0 - ICON_SIZE;
     let fits = (room / (DOT_SIZE + DOT_GAP)).floor().max(0.0);
     typed.min(fits as usize)
 }
 
-/// How far along something that started at `since` and takes `lasting` is
-/// at `now`, from 0 to 1, at an even pace (a QML animation's default).
 pub fn progress(since: Instant, lasting: Duration, now: Instant) -> f32 {
     if lasting.is_zero() {
         return 1.0;
@@ -155,8 +116,6 @@ pub fn progress(since: Instant, lasting: Duration, now: Instant) -> f32 {
     (now.saturating_duration_since(since).as_secs_f32() / lasting.as_secs_f32()).min(1.0)
 }
 
-/// Where a shake has the field at `progress` (0 to 1): back and forth,
-/// each swing smaller, ending where it started.
 pub fn shake(progress: f32) -> Pixels {
     SHAKE * ((progress * PI * SHAKE_SWINGS).sin() * (1.0 - progress))
 }
@@ -174,7 +133,6 @@ mod tests {
         assert_eq!(Key::of("a", Some("a"), false), Key::Type("a"));
         assert_eq!(Key::of("space", Some(" "), false), Key::Type(" "));
         assert_eq!(Key::of("e", Some("é"), false), Key::Type("é"));
-        // A shortcut, a modifier alone, and keys that type a control character.
         assert_eq!(Key::of("a", None, false), Key::Ignored);
         assert_eq!(Key::of("l", Some("l"), true), Key::Ignored, "Super+L types nothing");
         assert_eq!(Key::of("enter", None, true), Key::Submit);
@@ -202,7 +160,6 @@ mod tests {
     fn the_field_shows_only_the_dots_that_fit() {
         assert_eq!(dots(0), 0);
         assert_eq!(dots(5), 5);
-        // (280 - 3 * 12 - 16) / (8 + 6) = 16.3
         assert_eq!(dots(40), 16);
     }
 
@@ -212,7 +169,6 @@ mod tests {
         assert!(shake(1.0).abs() < px(0.001));
         assert!(shake(0.125) > px(6.0), "{:?}", shake(0.125));
         assert!(shake(0.375) < px(-4.0), "{:?}", shake(0.375));
-        // Each swing is smaller than the one before.
         assert!(shake(0.625).abs() < shake(0.125).abs());
     }
 

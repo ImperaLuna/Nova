@@ -1,14 +1,7 @@
-//! Where things are on the stage: a panel's open box from its pill, the box
-//! between the two while it grows, how tall the stage must be, the same for
-//! a drawer against the right edge and its window, where a tab against the
-//! right edge is, and whether a point is on something drawn. Plain numbers, in screen coordinates, tested alone.
-
 use gpui::{Bounds, Pixels, Point, Size, point, px, size};
 use nova_look::Shape;
 use nova_look::tokens::{BAR_GAP, BAR_HEIGHT, BAR_MARGIN, SHADOW_ROOM};
 
-/// Which way a panel keeps to its pill: pills of the left row grow panels
-/// that keep their left edge, and so on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Align {
     Left,
@@ -16,12 +9,6 @@ pub enum Align {
     Right,
 }
 
-/// Where a panel of `size` is once open: `top` down the screen, and across
-/// it lined up with the pill it grows out of (`from`, with the way its row
-/// keeps), or at `left` where a feature placed it, or centered. A panel of
-/// the center row is centered on the screen, not on its pill: the central
-/// pill sits off the middle when it keeps its time there (the launcher
-/// opens in the middle, as today). It never leaves the bar's margins.
 pub fn open_box(
     from: Option<(Bounds<Pixels>, Align)>,
     left: Option<Pixels>,
@@ -47,7 +34,6 @@ fn lerp_px(from: Pixels, to: Pixels, progress: f32) -> Pixels {
     px(lerp(f32::from(from), f32::from(to), progress))
 }
 
-/// The box `progress` of the way (0..1) from `from` to `to`.
 pub fn between(from: Bounds<Pixels>, to: Bounds<Pixels>, progress: f32) -> Bounds<Pixels> {
     Bounds {
         origin: point(lerp_px(from.origin.x, to.origin.x, progress), lerp_px(from.origin.y, to.origin.y, progress)),
@@ -58,26 +44,19 @@ pub fn between(from: Bounds<Pixels>, to: Bounds<Pixels>, progress: f32) -> Bound
     }
 }
 
-/// The radius `progress` of the way from a pill's to a panel's.
 pub fn radius_between(panel_radius: Pixels, progress: f32) -> Pixels {
     lerp_px(BAR_HEIGHT / 2.0, panel_radius, progress.clamp(0.0, 1.0))
 }
 
-/// Whether two boxes share any pixels.
 pub fn overlaps(one: Bounds<Pixels>, other: Bounds<Pixels>) -> bool {
     one.left() < other.right() && other.left() < one.right() && one.top() < other.bottom() && other.top() < one.bottom()
 }
 
-/// How tall the stage's window is: down to the lowest any of the panels
-/// drawn on it reaches once open (`reaches`), and at least the bar's row,
-/// plus the room a shadow needs. In whole pixels, since that is what a surface has.
 pub fn stage_height(reaches: impl IntoIterator<Item = Pixels>) -> Pixels {
     let lowest = reaches.into_iter().fold(BAR_GAP + BAR_HEIGHT, Pixels::max);
     (lowest + SHADOW_ROOM).ceil()
 }
 
-/// Whether `at` is on one of `shapes`, corners left out: a click there is
-/// not one outside the panels.
 pub fn covered(shapes: &[Shape], at: Point<Pixels>) -> bool {
     shapes.iter().any(|shape| {
         let bounds = shape.bounds;
@@ -85,7 +64,6 @@ pub fn covered(shapes: &[Shape], at: Point<Pixels>) -> bool {
             return false;
         }
         let radius = shape.radius.min(bounds.size.width / 2.0).min(bounds.size.height / 2.0);
-        // How far into a corner's square the point is, on each axis.
         let across = (radius - (at.x - bounds.left()).min(bounds.right() - at.x)).max(px(0.0));
         let down = (radius - (at.y - bounds.top()).min(bounds.bottom() - at.y)).max(px(0.0));
         let (across, down, radius) = (f32::from(across), f32::from(down), f32::from(radius));
@@ -93,65 +71,40 @@ pub fn covered(shapes: &[Shape], at: Point<Pixels>) -> bool {
     })
 }
 
-/// Where a drawer against the right edge is once open: `width` wide, top
-/// to bottom. Its content fills this.
 pub fn edge_box(width: Pixels, screen: Size<Pixels>) -> Bounds<Pixels> {
     Bounds { origin: point(screen.width - width, px(0.0)), size: size(width, screen.height) }
 }
 
-/// The glass of a drawer that is open at `open`: its right corners
-/// `radius` past the screen's edge, so only the left ones are round.
 pub fn past_edge(open: Bounds<Pixels>, radius: Pixels) -> Bounds<Pixels> {
     Bounds { origin: open.origin, size: size(open.size.width + radius, open.size.height) }
 }
 
-/// What a drawer grows out of when its pill isn't on screen: the right end
-/// of the bar's row, nothing wide. `QuickSettings.qml`'s `pill` in today's
-/// shell.
 pub fn edge_origin(screen_width: Pixels) -> Bounds<Pixels> {
     Bounds { origin: point(screen_width - BAR_MARGIN, BAR_GAP), size: size(px(0.0), BAR_HEIGHT) }
 }
 
-/// Where a tab against the right edge is once open: `size` big, halfway
-/// down the screen. Its content fills this.
 pub fn tab_box(size: Size<Pixels>, screen: Size<Pixels>) -> Bounds<Pixels> {
     Bounds { origin: point(screen.width - size.width, (screen.height - size.height) / 2.0), size }
 }
 
-/// What a tab against the right edge grows out of: a nub `nub` tall at
-/// the edge, halfway down, nothing wide on screen (the `radius` its glass
-/// reaches past the edge is all there is of it).
 pub fn tab_nub(nub: Pixels, radius: Pixels, screen: Size<Pixels>) -> Bounds<Pixels> {
     Bounds { origin: point(screen.width, (screen.height - nub) / 2.0), size: size(radius, nub) }
 }
 
-/// The size of the window a drawer `width` wide is drawn in: the drawer and
-/// the room its shadow needs beside it, within the screen. In whole pixels.
 pub fn edge_window(width: Pixels, screen: Size<Pixels>) -> Size<Pixels> {
     size((width + SHADOW_ROOM).ceil().min(screen.width), screen.height)
 }
 
-/// The size of the window for a drawer `width` wide while it grows out
-/// of, or back into, a pill whose left edge is at `pill_left`: wide enough
-/// for the pill too, when that is further from the edge than the drawer
-/// reaches.
 pub fn edge_window_from(width: Pixels, pill_left: Pixels, screen: Size<Pixels>) -> Size<Pixels> {
     edge_window(width.max(screen.width - pill_left), screen)
 }
 
-/// The part of a screen below a stage of `stage_height` and left of the
-/// panels' window, which sits against the right edge and is `beside` wide
-/// (nothing while none of its panels is out): where the click catcher
-/// takes clicks, those two taking their own.
 pub fn below_stage(stage_height: Pixels, beside: Pixels, screen: Size<Pixels>) -> Bounds<Pixels> {
     let height = (screen.height - stage_height).max(px(0.0));
     let width = (screen.width - beside).max(px(0.0));
     Bounds { origin: point(px(0.0), stage_height), size: size(width, height) }
 }
 
-/// The part of a stage `stage_height` tall left of the panels' window:
-/// where the stage takes every click while a panel a click outside closes
-/// is open, that window taking those on itself.
 pub fn left_of_panels(stage_height: Pixels, beside: Pixels, screen_width: Pixels) -> Bounds<Pixels> {
     let width = (screen_width - beside).max(px(0.0));
     Bounds { origin: point(px(0.0), px(0.0)), size: size(width, stage_height) }

@@ -1,27 +1,3 @@
-//! Wired and Wi-Fi in quick settings (feature `network`), from
-//! NetworkManager on the system bus: what each link is doing, the Wi-Fi
-//! networks in reach, connecting to one, Wi-Fi's switch, which link to
-//! prefer while both are connected, and the traffic (`traffic`).
-//!
-//! Event-driven: one thread follows every signal NetworkManager sends
-//! (properties of its objects changing, devices and access points coming
-//! and going, connections changing state) and `NameOwnerChanged` for it
-//! starting or stopping. Signals only mark the state stale; another thread
-//! reads everything again once they pause (`manager::read`, a scan sends
-//! dozens at once) and publishes one [`Event::Network`] when it differs from
-//! the last. NetworkManager's own state is never cached past a read.
-//!
-//! A `connect_wifi` is followed by its active connection's `StateChanged`
-//! signals: activated is connected; deactivated for missing secrets or a
-//! failed login is a wrong password (and the profile novad made for a new
-//! network is removed again), anything else a failure.
-//!
-//! The preferred link (`prefer_network`) is the user's pick, saved in the
-//! state folder. While both links are connected and the other one carries
-//! traffic, novad sets their route metrics on the devices (`Reapply`), not
-//! in the saved profiles, which may be the system's (NixOS declares them):
-//! the picked one's goes just under the other's.
-
 mod actions;
 #[cfg(test)]
 mod fake_nm;
@@ -54,35 +30,21 @@ use zbus::{Connection, MatchRule, MessageStream};
 pub const FEATURE_ID: &str = "network";
 const LOG_SOURCE: &str = "network";
 const DBUS_NAME: &str = "org.freedesktop.DBus";
-/// How long novad waits for the bus or NetworkManager to answer a call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
-/// Signals that come together are read once they pause this long...
 const SETTLE: Duration = Duration::from_millis(250);
-/// ...or this long after the first, if they never pause.
 const MAX_DELAY: Duration = Duration::from_secs(1);
-/// A scan that hasn't finished by then isn't shown as running any more.
 const SCAN_TIMEOUT: Duration = Duration::from_secs(30);
-/// The most networks listed: more than any list needs.
 const MAX_NETWORKS: usize = 64;
-/// Connection names are cut to this many characters.
 const MAX_NAME_CHARS: usize = 100;
-/// How many connections' last `StateChanged` are kept.
 const MAX_TRANSITIONS: usize = 32;
-/// NetworkManager's default route metrics, for a profile that sets none.
-/// How many times a failed preference is tried again before it waits for
-/// the links or the pick to change.
 const PREFERENCE_TRIES: u32 = 3;
 const DEFAULT_METRIC_WIRED: i64 = 100;
 const DEFAULT_METRIC_WIFI: i64 = 600;
 
-/// Where the network is read from: the machine's, or stand-ins in tests.
 #[derive(Clone)]
 pub struct Sources {
-    /// The bus NetworkManager is on.
     pub bus: Bus,
-    /// `/sys`, for the links' traffic counters.
     pub sys_root: PathBuf,
-    /// Where the preferred link and today's traffic are kept.
     pub state_dir: PathBuf,
 }
 
@@ -98,34 +60,23 @@ pub struct Network {
 
 struct Shared {
     state: Mutex<State>,
-    /// Wakes the reader when the state went stale, or it should stop.
     wake: Condvar,
-    /// The follower's connection, once it has one.
     connection: Mutex<Option<Connection>>,
     stop: Stop,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     traffic: traffic::Traffic,
-    /// The saved preferred link.
     prefer_file: PathBuf,
 }
 
 struct State {
-    /// What NetworkManager had at the last read, `None` while it isn't
-    /// running (or wasn't read yet).
     reading: Option<Reading>,
-    /// When the first and the last signal not yet read came.
     stale: Option<(Instant, Instant)>,
-    /// The latest `StateChanged` (state, reason) of active connections, for
-    /// an attempt whose first ones come before `connect` has its path.
     transitions: VecDeque<(OwnedObjectPath, u32, u32)>,
     attempt: Option<Attempt>,
     scan: Option<Scan>,
     prefer: Option<LinkKind>,
-    /// The connections (wired, Wi-Fi) the preference was last set on, and
-    /// for which pick: it's set once per pair.
     preferred_on: Option<(OwnedObjectPath, OwnedObjectPath, LinkKind)>,
-    /// The pair and pick last tried, and how many times setting it failed.
     last_preference: Option<(OwnedObjectPath, OwnedObjectPath, LinkKind)>,
     preference_tries: u32,
     sent: NetworkEvent,
@@ -135,21 +86,15 @@ struct State {
 struct Attempt {
     ssid: String,
     active: OwnedObjectPath,
-    /// The profile novad made, until it's removed.
     created: Option<OwnedObjectPath>,
-    /// Its active connection's latest (state, reason), kept here so newer
-    /// transitions of other connections can't push it out.
     last: Option<(u32, u32)>,
 }
 
 struct Scan {
-    /// The card's `LastScan` when the scan was asked for: it's done once
-    /// that moves.
     last_scan: i64,
     asked: Instant,
 }
 
-/// The saved pick, in `network.json`.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Saved {
@@ -157,8 +102,6 @@ struct Saved {
 }
 
 impl Network {
-    /// Starts following NetworkManager and counting traffic. Returns at
-    /// once: the state is published as it's read.
     pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let prefer_file = sources.state_dir.join("network.json");
         let prefer = load_prefer(&prefer_file, &logger);
@@ -190,7 +133,6 @@ impl Network {
             traffic,
             prefer_file,
         });
-        // Clients that heard an earlier run start from nothing again.
         shared.hub.publish(&Event::Network(sent));
         let follower = Arc::clone(&shared);
         let bus = sources.bus;
@@ -211,8 +153,6 @@ impl Network {
         self.shared.traffic.stop();
     }
 
-    /// Sends a new subscriber, client `id`, the state last published, under
-    /// the lock that publishing takes, so a newer event can't arrive before it.
     pub fn send_state(&self, id: ClientId) {
         let state = lock(&self.shared.state);
         self.shared.hub.send_to(id, &Event::Network(state.sent.clone()));
@@ -234,7 +174,6 @@ impl Network {
         let mut state = lock(&self.shared.state);
         state.scan = Some(Scan { last_scan, asked: Instant::now() });
         self.shared.publish(&mut state);
-        // Woken at the timeout, in case the scan never ends.
         self.shared.wake.notify_all();
         Ok(())
     }
@@ -245,7 +184,6 @@ impl Network {
         let started = zbus::block_on(actions::connect(&connection, &reading, ssid, password))?;
         self.shared.logger.info(LOG_SOURCE, &format!("connecting to {ssid}"));
         let mut state = lock(&self.shared.state);
-        // Its first state changes may have come before the reply.
         let last = state
             .transitions
             .iter()
@@ -280,14 +218,12 @@ impl Network {
         state.prefer = Some(kind);
         state.preferred_on = None;
         self.shared.publish(&mut state);
-        // Read again, which sets the route metrics.
         self.shared.mark_stale(&mut state);
         Ok(())
     }
 }
 
 impl Shared {
-    /// The connection and the last reading, for a command.
     fn now(&self) -> Result<(Connection, Reading), String> {
         let not_running = || "NetworkManager isn't running".to_string();
         let connection = lock(&self.connection).clone().ok_or_else(not_running)?;
@@ -301,10 +237,8 @@ impl Shared {
         self.wake.notify_all();
     }
 
-    /// Follows NetworkManager's signals until stopped or the bus goes.
     async fn follow(&self, bus: &Bus) -> zbus::Result<()> {
         let connection = bus.builder().method_timeout(CALL_TIMEOUT).build().await?;
-        // Followed before the first read, so nothing in between is missed.
         let owner_rule = MatchRule::builder()
             .msg_type(zbus::message::Type::Signal)
             .sender(DBUS_NAME)
@@ -335,8 +269,6 @@ impl Shared {
         }
     }
 
-    /// Takes a signal from NetworkManager: a connection's new state is
-    /// kept, and everything is read again once signals settle.
     fn heard(&self, message: &zbus::Message) {
         let header = message.header();
         let mut state = lock(&self.state);
@@ -349,7 +281,6 @@ impl Shared {
                 state.transitions.pop_front();
             }
             state.transitions.push_back((path.to_owned().into(), active_state, reason));
-            // The outcome shows at once, without waiting for a read.
             if let Some(attempt) = state.attempt.as_mut().filter(|attempt| attempt.active.as_str() == path.as_str()) {
                 attempt.last = Some((active_state, reason));
                 self.publish(&mut state);
@@ -358,7 +289,6 @@ impl Shared {
         self.mark_stale(&mut state);
     }
 
-    /// Reads NetworkManager again once signals settle, until stopped.
     fn read_when_settled(&self) {
         let mut state = lock(&self.state);
         loop {
@@ -385,12 +315,9 @@ impl Shared {
             }
             state.stale = None;
             let Some(connection) = lock(&self.connection).clone() else { continue };
-            // Read unlocked: commands and signals go on meanwhile.
             drop(state);
             let reading = zbus::block_on(manager::read(&connection));
             state = lock(&self.state);
-            // Stopped meanwhile: a new instance may be running, and this one
-            // mustn't publish over it or call NetworkManager for it.
             if state.stopped {
                 return;
             }
@@ -400,8 +327,6 @@ impl Shared {
                     if state.reading.is_some() {
                         self.logger.info(LOG_SOURCE, &format!("NetworkManager stopped answering: {e}"));
                     }
-                    // Its active connections went with it: an attempt's
-                    // last state change won't come.
                     state.attempt = None;
                     None
                 }
@@ -414,7 +339,6 @@ impl Shared {
                 self.traffic.set_links(links(reading));
             }
             self.publish(&mut state);
-            // What follows from it, unlocked: calls to NetworkManager.
             let forget = self.wrong_password_profile(&mut state);
             let preference = self.preference_due(&mut state);
             drop(state);
@@ -431,8 +355,6 @@ impl Shared {
                 Some(())
             });
             state = lock(&self.state);
-            // A failed apply (often a profile that changed under it) is tried
-            // again after a fresh read, a few times.
             if failed.is_some() && state.preference_tries < PREFERENCE_TRIES {
                 state.preference_tries += 1;
                 state.preferred_on = None;
@@ -442,16 +364,12 @@ impl Shared {
         }
     }
 
-    /// The profile novad made for the attempt, once its password turned
-    /// out wrong: it's removed, so the network isn't kept as saved.
     fn wrong_password_profile(&self, state: &mut State) -> Option<OwnedObjectPath> {
         let outcome = outcome(state)?;
         let attempt = state.attempt.as_mut()?;
         (outcome == AttemptOutcome::WrongPassword).then(|| attempt.created.take()).flatten()
     }
 
-    /// The reading and pick to set route metrics for, when both links are
-    /// connected with connections the preference wasn't set on yet.
     fn preference_due(&self, state: &mut State) -> Option<(Reading, LinkKind)> {
         let pick = state.prefer?;
         let reading = state.reading.as_ref()?;
@@ -468,7 +386,6 @@ impl Shared {
         Some((reading.clone(), pick))
     }
 
-    /// Publishes the event when it changed.
     fn publish(&self, state: &mut State) {
         let event = event(state);
         if event != state.sent {
@@ -478,7 +395,6 @@ impl Shared {
     }
 }
 
-/// The event for the state now.
 fn event(state: &State) -> NetworkEvent {
     let Some(reading) = &state.reading else {
         return NetworkEvent { running: false, primary: None, prefer: None, wired: vec![], wifi: None };
@@ -511,7 +427,6 @@ fn event(state: &State) -> NetworkEvent {
     NetworkEvent { running: true, primary: reading.primary, prefer: state.prefer.or(carrying), wired, wifi }
 }
 
-/// How the attempt went, by its connection's last `StateChanged`.
 fn outcome(state: &State) -> Option<AttemptOutcome> {
     let attempt = state.attempt.as_ref()?;
     let Some((active_state, reason)) = attempt.last else {
@@ -525,9 +440,6 @@ fn outcome(state: &State) -> Option<AttemptOutcome> {
     })
 }
 
-/// The networks in reach: each name once, from its strongest access point
-/// (the connected one, while it's connected), connected first, then the
-/// strongest.
 fn networks(reading: &Reading) -> Vec<WifiNetwork> {
     let Some(wifi) = &reading.wifi else { return Vec::new() };
     let mut networks: Vec<(Vec<u8>, WifiNetwork)> = Vec::new();
@@ -561,15 +473,12 @@ fn networks(reading: &Reading) -> Vec<WifiNetwork> {
     networks
 }
 
-/// The first connected wired link and the Wi-Fi card, while both are
-/// connected.
 fn connected_pair(reading: &Reading) -> Option<(&manager::WiredDevice, &manager::WifiDevice)> {
     let wired = reading.wired.iter().find(|device| device.state == LinkState::Connected && device.active.is_some())?;
     let wifi = reading.wifi.as_ref().filter(|wifi| wifi.state == LinkState::Connected && wifi.active.is_some())?;
     Some((wired, wifi))
 }
 
-/// The links whose traffic is counted.
 fn links(reading: &Reading) -> Vec<String> {
     reading
         .wired
@@ -579,11 +488,6 @@ fn links(reading: &Reading) -> Vec<String> {
         .collect()
 }
 
-/// Sets both links' route metrics so the picked one carries traffic, IPv4
-/// and IPv6 each on its own: each keeps its profile's metric when that
-/// already does it, else the picked one's goes just under the other's.
-/// Stops short once `stopped` says the service stopped meanwhile: a new
-/// instance may be setting them.
 async fn apply_preference(
     connection: &Connection,
     reading: &Reading,
@@ -613,9 +517,6 @@ async fn apply_preference(
     Ok(())
 }
 
-/// The route metrics (picked, other) that make the picked link carry
-/// traffic, from their profiles' effective metrics and what the profiles
-/// set (`None`: NetworkManager's default).
 fn targets(picked: i64, other: i64, picked_saved: Option<i64>, other_saved: Option<i64>) -> (Option<i64>, Option<i64>) {
     if picked < other {
         (picked_saved, other_saved)
@@ -626,8 +527,6 @@ fn targets(picked: i64, other: i64, picked_saved: Option<i64>, other_saved: Opti
     }
 }
 
-/// One link's metrics, per [`manager::FAMILIES`]: its profile's and what's
-/// applied now.
 struct Link {
     device: OwnedObjectPath,
     applied: manager::Settings,
@@ -670,7 +569,6 @@ impl Link {
     }
 }
 
-/// A connection's name from NetworkManager: trimmed, cut to [`MAX_NAME_CHARS`].
 fn name(text: &str) -> String {
     text.trim().chars().filter(|c| !c.is_control()).take(MAX_NAME_CHARS).collect()
 }

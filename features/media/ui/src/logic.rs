@@ -1,9 +1,3 @@
-//! What the pill and the panel work out from novad's `media` event, with
-//! no drawing in it: `ui/media/media.js` in today's shell. novad picks the
-//! player to show and checks what it sends; this only finds it, moves its
-//! position on while it plays, turns numbers into text, and times the
-//! title's scroll and the equalizer's steps.
-
 use nova_media_api::{Media, MediaPlayer, PlaybackStatus};
 use std::time::Duration;
 
@@ -11,12 +5,10 @@ const MICROS_PER_MS: f64 = 1000.0;
 const SECONDS_PER_MINUTE: u64 = 60;
 const SECONDS_PER_HOUR: u64 = 3600;
 
-/// The player the bar shows.
 pub fn shown(media: &Media) -> Option<&MediaPlayer> {
     find(media, media.shown.as_deref()?)
 }
 
-/// The player `id`.
 pub fn find<'a>(media: &'a Media, id: &str) -> Option<&'a MediaPlayer> {
     media.players.iter().find(|player| player.id == id)
 }
@@ -25,9 +17,6 @@ pub fn playing(player: Option<&MediaPlayer>) -> bool {
     player.is_some_and(|player| player.status == PlaybackStatus::Playing)
 }
 
-/// Where `player` is in its track at `now_ms` (ms since 1970), in
-/// microseconds: where novad last read it, moved on at its rate while it
-/// plays, kept within the track.
 pub fn position(player: &MediaPlayer, now_ms: i64) -> i64 {
     let mut at = player.position_us as f64;
     if playing(Some(player)) {
@@ -39,8 +28,6 @@ pub fn position(player: &MediaPlayer, now_ms: i64) -> i64 {
     at.max(0.0) as i64
 }
 
-/// How far through its track `player` is at `now_ms`, 0..1; 0 when its
-/// length is unknown.
 pub fn progress(player: &MediaPlayer, now_ms: i64) -> f32 {
     if player.length_us <= 0 {
         return 0.0;
@@ -48,7 +35,6 @@ pub fn progress(player: &MediaPlayer, now_ms: i64) -> f32 {
     (position(player, now_ms) as f64 / player.length_us as f64) as f32
 }
 
-/// A position or length in microseconds as "3:58", or "1:02:03".
 pub fn time(micros: i64) -> String {
     let total = u64::try_from(micros / 1_000_000).unwrap_or(0);
     let (hours, minutes, seconds) =
@@ -56,72 +42,50 @@ pub fn time(micros: i64) -> String {
     if hours > 0 { format!("{hours}:{minutes:02}:{seconds:02}") } else { format!("{minutes}:{seconds:02}") }
 }
 
-/// How far before the track's end a seek lands at most, in microseconds: a
-/// looping player takes a seek to the very end as a restart at 0:00.
 const SEEK_END_ROOM_US: i64 = 1_000_000;
 
-/// The position at `fraction` (0..1, kept within) of the way through the
-/// track, in microseconds, for `media_seek`; never closer to the end than
-/// [`SEEK_END_ROOM_US`].
 pub fn seek_target(player: &MediaPlayer, fraction: f32) -> i64 {
     let at = (f64::from(fraction.clamp(0.0, 1.0)) * player.length_us as f64).round() as i64;
     at.min(player.length_us - SEEK_END_ROOM_US).max(0)
 }
 
-/// Whether the progress line takes clicks: the player seeks and the
-/// track's length is known.
 pub fn seekable(player: &MediaPlayer) -> bool {
     player.can_seek && player.length_us > 0
 }
 
-/// What the player's app is called: its installed app's name, else what
-/// the player calls itself.
 pub fn app_name(player: &MediaPlayer) -> &str {
     player.app.as_ref().map_or(&player.identity, |app| &app.name)
 }
 
-/// The app's icon file, when novad found one.
 pub fn app_icon(player: &MediaPlayer) -> Option<&str> {
     player.app.as_ref()?.icon.as_deref().filter(|icon| icon.starts_with('/'))
 }
 
-/// Whether the pill shows the artist: browsers put the channel or site
-/// there, so their videos show only the title.
 pub fn pill_artist(player: &MediaPlayer) -> bool {
     !player.browser && !player.artist.is_empty()
 }
 
-/// The players the panel lists as chips to switch between: every one not
-/// stopped, once there are two or more.
 pub fn chips(media: &Media) -> Vec<&MediaPlayer> {
     let players: Vec<_> = media.players.iter().filter(|player| player.status != PlaybackStatus::Stopped).collect();
     if players.len() >= 2 { players } else { Vec::new() }
 }
 
-/// Whether the pill is wanted out for `player`: one that plays or is
-/// paused, unless it has lingered paused.
 pub fn out(player: Option<&MediaPlayer>, lingered: bool) -> bool {
     player.is_some_and(|player| player.status != PlaybackStatus::Stopped) && !lingered
 }
 
-/// The equalizer's bars' heights, each between `low` and `high` (whole
-/// pixels), from `random` (0..1 each call).
 pub fn equalizer(count: usize, low: f32, high: f32, mut random: impl FnMut() -> f32) -> Vec<f32> {
     (0..count).map(|_| low + (random() * (high - low)).round()).collect()
 }
 
-/// A small random source for the equalizer's steps: they only need to
-/// look lively, not be unpredictable.
 #[derive(Debug, Clone)]
 pub struct Jitter(u64);
 
 impl Jitter {
     pub fn new(seed: u64) -> Self {
-        // Xorshift never leaves 0.
         Self(seed | 1)
     }
 
-    /// The next number, 0..1.
     pub fn next(&mut self) -> f32 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -130,15 +94,10 @@ impl Jitter {
     }
 }
 
-/// How long one scroll through a title `over` px too long takes, at
-/// `speed` px a second.
 pub fn marquee_duration(over: f32, speed: f32) -> Duration {
     Duration::from_secs_f32(over.max(0.0) / speed)
 }
 
-/// How far a title `over` px too long has scrolled `elapsed` into one
-/// scroll through: a rest at its start, the way through, a rest at its
-/// end. `None` once the scroll is done, and it is back at its start.
 pub fn marquee_offset(elapsed: Duration, over: f32, speed: f32, rest: Duration) -> Option<f32> {
     let way = marquee_duration(over, speed);
     if elapsed < rest {
@@ -151,8 +110,6 @@ pub fn marquee_offset(elapsed: Duration, over: f32, speed: f32, rest: Duration) 
     (moving < way + rest).then_some(over)
 }
 
-/// How long a scroll through stands still from `elapsed` on, resting at
-/// either end: no frames are needed until then. `None` while it moves.
 pub fn marquee_rest_left(elapsed: Duration, over: f32, speed: f32, rest: Duration) -> Option<Duration> {
     let way = marquee_duration(over, speed);
     if elapsed < rest {
@@ -162,10 +119,6 @@ pub fn marquee_rest_left(elapsed: Duration, over: f32, speed: f32, rest: Duratio
     (elapsed >= resting_from).then(|| (resting_from + rest).saturating_sub(elapsed))
 }
 
-/// How much of a scrolled title shows at `x` in its box (0..`room`), when
-/// its text is `over` px longer than the box and scrolled by `offset`: it
-/// fades out over `fade` at an end where more text lies beyond, and not
-/// where its own start or end is in view. `fade.frag` in today's shell.
 pub fn fade_at(x: f32, room: f32, over: f32, offset: f32, fade: f32) -> f32 {
     if over <= 0.0 {
         return 1.0;
@@ -224,7 +177,6 @@ mod tests {
         assert_eq!(position(&playing, 1_002_000), 86_000_000);
         playing.rate = 2.0;
         assert_eq!(position(&playing, 1_002_000), 88_000_000);
-        // Never before where novad read it, nor past the end.
         assert_eq!(position(&playing, 999_000), 84_000_000);
         assert_eq!(position(&playing, 9_000_000), 238_000_000);
         let paused = player("a", PlaybackStatus::Paused);
@@ -310,7 +262,6 @@ mod tests {
     #[test]
     fn a_marquee_rests_scrolls_through_and_rests_again() {
         let rest = Duration::from_millis(800);
-        // 60 px over at 30 px/s: two seconds on the way.
         assert_eq!(marquee_duration(60.0, 30.0), Duration::from_secs(2));
         assert_eq!(marquee_offset(Duration::ZERO, 60.0, 30.0, rest), Some(0.0));
         assert_eq!(marquee_offset(Duration::from_millis(1800), 60.0, 30.0, rest), Some(30.0));
@@ -331,14 +282,11 @@ mod tests {
 
     #[test]
     fn a_long_title_fades_only_where_more_of_it_lies_beyond() {
-        // At its start: no fade at the left, a fade at the right end.
         assert_eq!(fade_at(0.0, 150.0, 60.0, 0.0, 18.0), 1.0);
         assert_eq!(fade_at(150.0, 150.0, 60.0, 0.0, 18.0), 0.0);
         assert!((fade_at(141.0, 150.0, 60.0, 0.0, 18.0) - 0.5).abs() < 1e-6);
-        // Scrolled to its end: the other way round.
         assert_eq!(fade_at(0.0, 150.0, 60.0, 60.0, 18.0), 0.0);
         assert_eq!(fade_at(150.0, 150.0, 60.0, 60.0, 18.0), 1.0);
-        // A title that fits never fades.
         assert_eq!(fade_at(150.0, 150.0, 0.0, 0.0, 18.0), 1.0);
     }
 }

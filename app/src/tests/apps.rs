@@ -1,18 +1,13 @@
-//! The launcher: listing, searching, launching and focusing apps.
-
 use super::*;
 
-/// Writes an app's desktop entry where the test daemon finds apps.
 fn install_app(novad: &TestDaemon, file: &str, entry: &str) {
     let path = novad.dir.join("launcher/share/applications").join(file);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    // Written beside it and moved in, as package managers do.
     let partial = path.with_extension("partial");
     std::fs::write(&partial, format!("[Desktop Entry]\nType=Application\n{entry}")).unwrap();
     std::fs::rename(partial, path).unwrap();
 }
 
-/// Puts icon `name` where the test daemon finds icons, and returns its file.
 fn install_icon(novad: &TestDaemon, name: &str) -> String {
     let path = novad.dir.join("launcher/share/pixmaps").join(format!("{name}.png"));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -21,7 +16,6 @@ fn install_icon(novad: &TestDaemon, name: &str) -> String {
 }
 
 impl Client {
-    /// Subscribes to the launcher and returns its data once it lists `apps` apps.
     fn subscribe_launcher(&mut self, apps: usize) -> Value {
         self.request(1, "subscribe", Some(json!({"topics": ["launcher"]})));
         let first = self.next_event("launcher");
@@ -31,7 +25,6 @@ impl Client {
         }
     }
 
-    /// The next launcher event that `done` accepts.
     fn launcher_until(&mut self, done: impl Fn(&Value) -> bool) -> Value {
         loop {
             let event = self.next_event("launcher");
@@ -59,16 +52,12 @@ fn the_launcher_lists_apps_and_follows_installs() {
         json!([{"id": "foot.desktop", "name": "Foot", "description": "Terminal", "icon": foot_icon}])
     );
 
-    // A new app, in a folder made after novad started, shows up.
     install_app(&novad, "org.kde/dolphin.desktop", "Name=Dolphin\nExec=dolphin %u\n");
     let event = client.launcher_until(|event| event["apps"].as_array().unwrap().len() == 2);
     assert_eq!(ids(&event["apps"]), ["org.kde-dolphin.desktop", "foot.desktop"], "sorted by name");
-    // And one that's removed goes.
     std::fs::remove_file(novad.dir.join("launcher/share/applications/foot.desktop")).unwrap();
     client.launcher_until(|event| ids(&event["apps"]) == ["org.kde-dolphin.desktop"]);
 
-    // A whole new applications folder renamed in place of the old one is
-    // read, and so are apps installed into it afterwards.
     let applications = novad.dir.join("launcher/share/applications");
     let replacement = novad.dir.join("launcher/share/applications.new");
     std::fs::create_dir_all(&replacement).unwrap();
@@ -78,7 +67,6 @@ fn the_launcher_lists_apps_and_follows_installs() {
     client.launcher_until(|event| ids(&event["apps"]) == ["a.desktop"]);
     install_app(&novad, "b.desktop", "Name=B\nExec=b\n");
     client.launcher_until(|event| ids(&event["apps"]) == ["a.desktop", "b.desktop"]);
-    // Moved away with nothing in its place, its apps go.
     std::fs::rename(&applications, novad.dir.join("launcher/share/gone")).unwrap();
     client.launcher_until(|event| event["apps"].as_array().unwrap().is_empty());
 }
@@ -90,7 +78,6 @@ fn an_icon_installed_after_its_app_shows() {
     let mut client = novad.connect();
     let first = client.subscribe_launcher(1);
     assert_eq!(first["apps"][0].get("icon"), None);
-    // Like Steam, which writes a game's icon after its shortcut.
     let icon = install_icon(&novad, "steam_icon_42");
     client.launcher_until(|event| event["apps"][0]["icon"] == icon);
 }
@@ -118,7 +105,6 @@ fn launcher_searches_rank_apps_and_refuse_long_queries() {
     client.subscribe_launcher(3);
 
     let found = client.request(2, "launcher_search", Some(json!({"query": " FI "})));
-    // Fooview has f and i in order, which counts least.
     assert_eq!(ids(&found["result"]), ["files.desktop", "firefox.desktop", "fooview.desktop"]);
     assert_eq!(found["result"][0]["name"], json!([{"text": "Fi", "matched": true}, {"text": "les"}]));
     let by_keyword = client.request(3, "launcher_search", Some(json!({"query": "folder"})));
@@ -144,24 +130,19 @@ fn app_streams_get_their_apps_icons_by_program_and_name() {
         client.request(id, "app_icon", Some(json!({"icon_name": icon_name, "program": program, "name": name})))
     };
 
-    // Found loosely: Zen plays as `.zen-wrapped`, its entry is "Zen Browser".
     assert_eq!(icon(&mut client, 2, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], zen);
-    // By the icon name the stream gives; Electron says nothing.
     assert_eq!(
         icon(&mut client, 3, ["com.anthropic.Claude", "/usr/lib/electron/electron", "Claude"])["result"],
         claude
     );
     assert_eq!(icon(&mut client, 4, ["", "/usr/bin/firefox", "Firefox"])["result"], firefox);
-    // A browser's web app (`zen-<id>.desktop`) isn't the browser.
     install_app(&novad, "zen-abc123-Default.desktop", "Name=YouTube\nExec=zen-beta --app=abc123\nIcon=youtube\n");
     client.launcher_until(|event| event["apps"].as_array().unwrap().len() == 4);
     assert_eq!(icon(&mut client, 5, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], zen);
-    // No app: the icon theme's for the icon name it gives, else its program.
     assert_eq!(icon(&mut client, 6, ["", "/usr/bin/mpv", "mpv"])["result"], mpv);
     assert_eq!(icon(&mut client, 7, ["audio-x-generic", "/usr/bin/mpv", "mpv"])["result"], audio);
     assert_eq!(icon(&mut client, 8, ["not-installed", "/usr/bin/mpv", "mpv"])["result"], mpv);
     assert_eq!(icon(&mut client, 9, ["", "", "Some Game"])["result"], json!(null));
-    // A path isn't an icon name.
     assert_eq!(icon(&mut client, 10, [&mpv, "", ""])["result"], json!(null));
     let long = icon(&mut client, 11, ["", &"a".repeat(513), ""]);
     assert!(long["error"].as_str().unwrap().contains("at most 512"));
@@ -171,11 +152,8 @@ fn app_streams_get_their_apps_icons_by_program_and_name() {
 fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     let novad = TestDaemon::with_launcher("launcher-launch");
     let marker = novad.dir.join("launched");
-    // %U is dropped; the semicolon would only end a command in a shell, and
-    // lands in Path= as a file.
     let entry = format!("Name=Toucher\nExec=touch \"{}\" %U ;\nPath={}\n", marker.display(), novad.dir.display());
     install_app(&novad, "touch.desktop", &entry);
-    // cp copies what the kernel says about it: its session.
     let stat = novad.dir.join("stat");
     install_app(&novad, "other.desktop", &format!("Name=Other\nExec=cp /proc/self/stat \"{}\"\n", stat.display()));
     let mut client = novad.connect();
@@ -189,23 +167,21 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     assert_eq!(event["recent"], json!(["touch.desktop"]));
     let ran = nova_test_support::holds_within(Duration::from_secs(5), || marker.exists());
     assert!(ran, "the app didn't run");
-    assert!(novad.dir.join(";").exists(), "`;` reached touch as a file name, not a shell");
+    let semicolon = novad.dir.join(";");
+    let as_file_name = nova_test_support::holds_within(Duration::from_secs(5), || semicolon.exists());
+    assert!(as_file_name, "`;` reached touch as a file name, not a shell");
 
-    // No Path= and a HOME that may not exist (Nix's builds): it starts in `/`.
     assert_eq!(
         client.request(3, "launcher_run", Some(json!({"provider": "apps", "id": "other.desktop"})))["result"],
         Value::Null
     );
     let event = client.launcher_until(|event| event["recent"].as_array().unwrap().len() == 2);
     assert_eq!(event["recent"], json!(["other.desktop", "touch.desktop"]), "the latest first");
-    // A pinned app shows among the pins only, and is recent again unpinned.
     client.request(5, "pin_app", Some(json!({"id": "touch.desktop", "pinned": true})));
     let event = client.launcher_until(|event| event["recent"].as_array().unwrap().len() == 1);
     assert_eq!(event["recent"], json!(["other.desktop"]));
     client.request(6, "pin_app", Some(json!({"id": "touch.desktop", "pinned": false})));
     client.launcher_until(|event| event["recent"] == json!(["other.desktop", "touch.desktop"]));
-    // Another session, away from novad's terminal (an app touching it would
-    // be stopped as a background job): stat's 6th field, after the name.
     let copied = nova_test_support::found_within(Duration::from_secs(5), || {
         std::fs::read_to_string(&stat).ok().filter(|text| text.ends_with('\n'))
     });
@@ -221,8 +197,6 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
 #[test]
 fn a_launched_app_outlives_the_request_that_started_it() {
     let novad = TestDaemon::with_launcher("launcher-outlives");
-    // Like bubblewrap's --die-with-parent (Claude Desktop): killed when its
-    // parent thread ends, here the one that answered the request.
     let pid_file = novad.dir.join("pid");
     let script = write_program(&novad.dir, "app.sh", &format!("echo $$ > \"{}\"\nexec sleep 30", pid_file.display()));
     install_app(
@@ -253,10 +227,6 @@ fn a_launched_app_outlives_the_request_that_started_it() {
     assert_ne!(field("PPid:"), std::process::id().to_string(), "the app is novad's child");
 }
 
-/// Launches the app the recording's window belongs to (`nova-second`, on a
-/// workspace the focused output doesn't show: niri's `web`, Hyprland's
-/// hidden special workspace) from the focused output, and returns the actions taken
-/// and whether the app ran anyway, then the same asking for a new window.
 fn focus_the_recorded_window(
     name: &str,
     fake: fn(&Path) -> (FakeCompositor, Box<dyn nova_compositor::Backend>),
@@ -337,7 +307,6 @@ fn pins_keep_their_order_and_survive_a_restart() {
     let unknown = client.request(6, "pin_app", Some(json!({"id": "../../etc/passwd", "pinned": true})));
     assert!(unknown["error"].as_str().unwrap().contains("no app"));
 
-    // A pinned app that's uninstalled isn't sent, but comes back with it.
     std::fs::remove_file(novad.dir.join("launcher/share/applications/c.desktop")).unwrap();
     client.launcher_until(|event| ids(&event["pinned"]) == ["b.desktop"]);
     install_app(&novad, "c.desktop", "Name=c\nExec=true\n");
@@ -351,7 +320,6 @@ fn pins_keep_their_order_and_survive_a_restart() {
 #[test]
 fn an_app_is_found_by_its_own_id_before_a_shortcut_running_it() {
     let novad = TestDaemon::with_launcher("find-app");
-    // Steam's game shortcuts run `steam`, and sort before it.
     install_app(&novad, "Abiotic Factor.desktop", "Name=Abiotic Factor\nExec=steam steam://rungameid/427410\n");
     install_app(&novad, "steam.desktop", "Name=Steam\nExec=steam %U\n");
     let apps = Arc::clone(&lock(&novad.daemon.settings).context.apps);
@@ -404,7 +372,6 @@ fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_sh
     install_app(&novad, "third.desktop", &entry);
     let (mut client, desktop) = follow_to_the_end(&novad);
     client.subscribe_launcher(1);
-    // Its icon's id names it; the recording has no window of it.
     let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let app = bus.connect();
     let item = nova_tray::test_items::Item {
@@ -426,7 +393,6 @@ fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_sh
     );
     assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the tray icon is asked to show its window");
     assert!(compositor.actions().is_empty(), "no window showed to focus");
-    // Like Claude Desktop, whose icon ignores Activate: started again, it shows.
     assert!(ran(&marker), "no window showed, so the app is started");
 
     std::fs::remove_file(&marker).unwrap();
@@ -436,7 +402,6 @@ fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_sh
     assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "a new window skips the tray");
 }
 
-/// Whether the app that touches `marker` ran, waiting up to 5 s for it.
 fn ran(marker: &std::path::Path) -> bool {
     nova_test_support::holds_within(Duration::from_secs(5), || marker.exists())
 }
@@ -459,7 +424,6 @@ fn a_tray_click_focuses_the_open_window_of_its_app() {
         },
     );
     let (bus, compositor) = (bus.unwrap(), compositor.unwrap());
-    // The recording's window on workspace `web` is this app's.
     let marker = novad.dir.join("ran");
     let entry = format!("Name=Second\nExec=touch \"{}\"\nStartupWMClass=Nova-Second\n", marker.display());
     install_app(&novad, "second.desktop", &entry);
@@ -515,7 +479,6 @@ fn a_tray_click_starts_its_app_when_no_window_shows() {
     install_app(&novad, "third.desktop", &entry);
     let (mut client, _desktop) = follow_to_the_end(&novad);
     client.subscribe_launcher(1);
-    // Its icon's id names it; the recording has no window of it.
     let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let app = bus.connect();
     let item = nova_tray::test_items::Item {
@@ -536,7 +499,6 @@ fn a_tray_click_starts_its_app_when_no_window_shows() {
     assert_eq!(click["result"], Value::Null, "{click}");
     assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the app hears the click");
     assert!(compositor.actions().is_empty(), "no window showed to focus");
-    // Like Claude Desktop, whose icon ignores Activate: started again, it shows.
     assert!(ran(&marker), "no window showed, so the app is started");
 }
 
@@ -563,7 +525,6 @@ fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_
     install_app(&novad, "third.desktop", &entry);
     let (mut client, desktop) = follow_to_the_end(&novad);
     client.subscribe_launcher(1);
-    // Like Spotify's: libayatana's icons have only a menu, no Activate.
     let app = bus.connect();
     let item = nova_tray::test_items::MenuOnlyItem { id: "nova-third".into(), title: "Third".into() };
     nova_tray::test_items::serve_item(
@@ -575,8 +536,6 @@ fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_
     );
     client.request(4, "subscribe", Some(json!({"topics": ["tray"]})));
     while client.next_event("tray")["items"][0]["app"]["id"] != "third.desktop" {}
-    // Started again, the running app shows its window, which the compositor
-    // doesn't focus.
     let shows = {
         let (marker, compositor) = (marker.clone(), Arc::clone(&compositor));
         std::thread::spawn(move || {
@@ -591,7 +550,6 @@ fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_
     shows.join().unwrap();
     assert!(marker.exists(), "its icon can't show its window, so the app is started again");
     let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
-    // The launcher heard back once the app was started; focusing follows.
     nova_test_support::holds_within(nova_launcher::STARTED_WINDOW_WAIT, || !compositor.actions().is_empty());
     assert_eq!(compositor.actions(), [focused.to_string()], "the window it shows takes focus");
 }
@@ -614,7 +572,6 @@ fn a_window_shown_from_a_tray_menu_takes_focus() {
         },
     );
     let (bus, compositor) = (bus.unwrap(), Arc::new(compositor.unwrap()));
-    // The recording's window on workspace `web` is Second's; Third has none.
     install_app(&novad, "second.desktop", "Name=Second\nExec=true\nStartupWMClass=Nova-Second\n");
     install_app(&novad, "third.desktop", "Name=Third\nExec=true\nStartupWMClass=Nova-Third\n");
     let (mut client, _desktop) = follow_to_the_end(&novad);
@@ -637,8 +594,6 @@ fn a_window_shown_from_a_tray_menu_takes_focus() {
         }
     };
 
-    // "Show Third": novad answers once it has looked, the UI runs the entry,
-    // and the window that shows takes focus.
     let picked = client.request(3, "tray_menu_picked", Some(json!({"address": third})));
     assert_eq!(picked["result"], Value::Null, "{picked}");
     compositor.open_window(9, "nova-third");
@@ -648,15 +603,12 @@ fn a_window_shown_from_a_tray_menu_takes_focus() {
     });
     assert_eq!(compositor.actions(), [focused.to_string()]);
 
-    // Any entry of an app with a window open, like pausing a song, leaves it be.
     let picked = client.request(4, "tray_menu_picked", Some(json!({"address": second})));
     assert_eq!(picked["result"], Value::Null, "{picked}");
     nova_test_support::settle(Duration::from_millis(500));
     assert_eq!(compositor.actions(), [focused.to_string()], "no other window took focus");
 }
 
-/// Sends a notification from `app` (on `connection`) whose desktop entry is
-/// `entry`, with a default action and a button `reply`; returns its id.
 fn notify(connection: &zbus::Connection, app: &str, entry: &str) -> u32 {
     let hints = std::collections::HashMap::from([("desktop-entry", zbus::Variant::from(entry))]);
     let sent = (app, 0u32, "", "Mara", "hi", vec!["default", "Open", "reply", "Reply"], hints, -1i32);
@@ -690,7 +642,6 @@ fn a_notification_click_focuses_the_window_its_app_shows_or_opens_an_app_that_ha
         },
     );
     let (bus, compositor) = (bus.unwrap(), Arc::new(compositor.unwrap()));
-    // The recording has no window of either app.
     let (third, fourth) = (novad.dir.join("third-ran"), novad.dir.join("fourth-ran"));
     for (file, name, marker) in [("third.desktop", "Third", &third), ("fourth.desktop", "Fourth", &fourth)] {
         let entry = format!("Name={name}\nExec=touch \"{}\"\nStartupWMClass=Nova-{name}\n", marker.display());
@@ -701,8 +652,6 @@ fn a_notification_click_focuses_the_window_its_app_shows_or_opens_an_app_that_ha
     let output = focused_output(&desktop);
     let app = bus.connect();
     let (button, clicked) = (notify(&app, "Third", "third"), notify(&app, "Third", "third"));
-    // Like Ferdium: shows its window when told of the click, which niri
-    // doesn't focus.
     let rule =
         zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).member("ActionInvoked").build().unwrap();
     let mut invoked = zbus::block_on(zbus::MessageStream::for_match_rule(rule, &app, None)).unwrap();
@@ -732,7 +681,6 @@ fn a_notification_click_focuses_the_window_its_app_shows_or_opens_an_app_that_ha
     assert_eq!(compositor.actions(), [focused.to_string()], "the window it shows takes focus; a button moves none");
     assert!(!ran(&third), "the app took the click, so it isn't started");
 
-    // Like notify-send: its sender is gone by the time it's clicked.
     let gone = bus.connect();
     let dead = notify(&gone, "Fourth", "fourth");
     drop(gone);
@@ -749,14 +697,9 @@ fn a_notification_click_focuses_the_window_its_app_shows_or_opens_an_app_that_ha
     assert!(ran(&fourth), "an app that can't hear of the click is opened instead");
 }
 
-/// The app index serves whatever names apps, not only the launcher: with
-/// the launcher off, an app stream still gets its app's icon while the
-/// tray, notifications, media or Nova Files run, and the apps are forgotten
-/// once none of them does.
 #[test]
 fn apps_are_named_with_the_launcher_off() {
     let novad = TestDaemon::start("apps-without-launcher", None);
-    // The icon's name isn't the program's, so only the app's entry finds it.
     let claude = install_icon(&novad, "claude-logo");
     install_app(&novad, "claude.desktop", "Name=Claude\nExec=claude-desktop\nIcon=claude-logo\n");
     let mut client = novad.connect();

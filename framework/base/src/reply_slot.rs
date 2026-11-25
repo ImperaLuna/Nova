@@ -1,20 +1,10 @@
-//! Where a D-Bus call that waits for the user gets its answer: the call
-//! awaits [`Slot::wait`], and whoever ends the question (the user's answer
-//! over the socket, a cancel, the service stopping) calls
-//! [`Slot::resolve`]. Only the first resolve counts. A thread can wait for
-//! the reply too, with a deadline ([`Slot::wait_for`]), to end a question
-//! nobody answers. Used by the Bluetooth pairing agent, Nova Files' file
-//! picker portal, and recording (a recorder's exit).
-
 use std::future::poll_fn;
 use std::sync::{Condvar, Mutex, PoisonError};
 use std::task::{Poll, Waker};
 use std::time::Duration;
 
-/// A reply of type `T`, once it's in.
 pub struct Slot<T> {
     reply: Mutex<Option<T>>,
-    /// Wakes the threads in [`Slot::wait_for`].
     resolved: Condvar,
     waker: Mutex<Option<Waker>>,
 }
@@ -26,7 +16,6 @@ impl<T> Default for Slot<T> {
 }
 
 impl<T: Clone> Slot<T> {
-    /// Ends the question with `reply`, unless it has ended already.
     pub fn resolve(&self, reply: T) {
         let mut slot = crate::lock(&self.reply);
         if slot.is_none() {
@@ -39,8 +28,6 @@ impl<T: Clone> Slot<T> {
         }
     }
 
-    /// The reply, blocking this thread until it's in or `timeout` passes
-    /// (`None`).
     pub fn wait_for(&self, timeout: Duration) -> Option<T> {
         let reply = crate::lock(&self.reply);
         let (reply, _) = self
@@ -50,10 +37,8 @@ impl<T: Clone> Slot<T> {
         reply.clone()
     }
 
-    /// The reply, once one is in.
     pub async fn wait(&self) -> T {
         poll_fn(|cx| {
-            // Stored before the check, so a reply in between still wakes us.
             *crate::lock(&self.waker) = Some(cx.waker().clone());
             match crate::lock(&self.reply).clone() {
                 Some(reply) => Poll::Ready(reply),

@@ -1,9 +1,5 @@
-//! The rules every request line is read by, and the events that must be
-//! one thing on the wire.
-
 use super::*;
 
-/// One request line, read as one of novad's own commands.
 fn decode_request(line: &str) -> Result<Request<Command>, String> {
     nova_carrier::decode_request(line)
 }
@@ -21,7 +17,6 @@ fn colors_are_six_digit_hex() {
 fn subscribe_parses_with_topics() {
     let req = decode_request(r#"{"v":2,"id":1,"cmd":"subscribe","args":{"topics":["features","logs"]}}"#).unwrap();
     assert_eq!(req.command, Command::Subscribe { topics: vec!["features".into(), "logs".into()] });
-    // novad refuses a topic it doesn't have (its `requests` tests).
 }
 
 #[test]
@@ -42,16 +37,12 @@ fn panel_names_parse_and_match_the_wire() {
     }
 }
 
-/// The framework's log feed and novad's `logs` event and topic are one
-/// thing on the wire.
 #[test]
 fn the_log_feed_is_the_logs_event() {
     let logs = Logs { backlog: true, entries: vec![log_entry()] };
     assert_eq!(encode(logs.event()).unwrap(), encode(Event::Logs(logs)).unwrap());
 }
 
-/// The adapters' compositor event, published without a copy, and
-/// `nova_desktop_info::Event` are one thing on the wire.
 #[test]
 fn the_desktop_is_the_compositor_event() {
     let desktop = desktop();

@@ -1,25 +1,3 @@
-//! A one-line text field: what is typed, a cursor, a selection, and the
-//! keys every field shares. The launcher's search is the first.
-//!
-//! [`TextField`] is a view. Whoever owns it draws the box around it (its
-//! fill, its icon, its padding) and puts the field inside as a child; the
-//! field draws the text in the text style it inherits, a dim placeholder
-//! while it is empty, the selection, and a steady caret in the accent while it
-//! has the focus (a blinking one would redraw an open field twice a
-//! second). It takes the keys that edit (the arrows, Home and End,
-//! Backspace and Delete, with Ctrl by words and Shift selecting, Ctrl+A,
-//! C, X and V) and lets every other key through to its parents, so the
-//! owner handles Enter, Tab or the arrows up and down with a plain
-//! `on_key_down` around it. Typed text and an input method's composing
-//! text arrive through GPUI's input handler.
-//!
-//! A password's field is [`TextField::set_masked`]: it shows a dot for each
-//! character, and copies and cuts nothing.
-//!
-//! The owner subscribes to [`FieldEvent::Changed`] and reads
-//! [`TextField::text`]. [`Editing`] is the text and the cursor without
-//! GPUI, tested alone.
-
 use crate::Theme;
 use crate::tokens::{CARET_WIDTH, COMPOSING_UNDERLINE, WEIGHT_BODY};
 use gpui::{
@@ -31,22 +9,18 @@ use gpui::{
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 
-/// What a [`TextField`] tells its owner.
+const ELLIPSIS: &str = "…";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldEvent {
-    /// Its text is another one now, typed or set.
     Changed,
 }
 
-/// The text of a one-line field, and where its cursor and selection are.
-/// Offsets are bytes, always between two characters.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Editing {
     text: String,
-    /// The selection runs from `anchor` to `cursor`, either way round.
     cursor: usize,
     anchor: usize,
-    /// The most characters it holds; 0 for no limit.
     max_chars: usize,
 }
 
@@ -59,7 +33,6 @@ impl Editing {
         self.cursor.min(self.anchor)..self.cursor.max(self.anchor)
     }
 
-    /// Replaces all of it, the cursor at the end.
     pub fn set(&mut self, text: &str) {
         self.text.clear();
         self.cursor = 0;
@@ -67,9 +40,6 @@ impl Editing {
         self.replace(0..0, text);
     }
 
-    /// Puts `new` in place of `range` and the cursor after it. What a line
-    /// can't hold is left out: control characters, and whatever is past the
-    /// limit.
     pub fn replace(&mut self, range: Range<usize>, new: &str) {
         let range = self.boundary(range.start)..self.boundary(range.end.max(range.start));
         let kept = self.text.chars().count() - self.text[range.clone()].chars().count();
@@ -80,8 +50,6 @@ impl Editing {
         self.anchor = self.cursor;
     }
 
-    /// Moves the cursor to `to`, keeping the selection's other end when
-    /// `selecting`.
     pub fn move_to(&mut self, to: usize, selecting: bool) {
         self.cursor = self.boundary(to);
         if !selecting {
@@ -94,8 +62,6 @@ impl Editing {
         self.cursor = self.boundary(range.end);
     }
 
-    /// An editing key: `key` as GPUI names it, with Shift (`selecting`) and
-    /// Ctrl (`by_word`). Returns whether it was one.
     pub fn press(&mut self, key: &str, selecting: bool, by_word: bool) -> bool {
         let selection = self.selection();
         let collapses = !selecting && !selection.is_empty();
@@ -115,7 +81,6 @@ impl Editing {
         true
     }
 
-    /// `offset`, moved back onto the nearest character boundary.
     fn boundary(&self, offset: usize) -> usize {
         let mut offset = offset.min(self.text.len());
         while !self.text.is_char_boundary(offset) {
@@ -124,13 +89,11 @@ impl Editing {
         offset
     }
 
-    /// One character, or one word, before the cursor.
     fn before(&self, by_word: bool) -> usize {
         let mut characters = self.text[..self.cursor].char_indices().rev().peekable();
         if !by_word {
             return self.text[..self.cursor].grapheme_indices(true).next_back().map_or(0, |(at, _)| at);
         }
-        // Over the gap, then over the word before it.
         while characters.next_if(|(_, character)| character.is_whitespace()).is_some() {}
         let mut start = characters.peek().map_or(0, |(at, character)| at + character.len_utf8());
         while let Some((at, _)) = characters.next_if(|(_, character)| !character.is_whitespace()) {
@@ -139,7 +102,6 @@ impl Editing {
         start
     }
 
-    /// One character, or one word, after the cursor.
     fn after(&self, by_word: bool) -> usize {
         let rest = &self.text[self.cursor..];
         let mut characters = rest.char_indices().peekable();
@@ -171,25 +133,17 @@ impl Editing {
     }
 }
 
-/// What a masked field shows for each character.
 const MASK: char = '•';
 
-/// A one-line text field (see the module).
 pub struct TextField {
     focus: FocusHandle,
     editing: Editing,
     placeholder: SharedString,
-    /// Shown dim after the text while the cursor is at its end: what a key
-    /// of the owner's would complete it to.
     ghost: SharedString,
-    /// What an input method is composing.
     marked: Option<Range<usize>>,
-    /// Shown as a dot per character (a password).
     masked: bool,
-    /// How far the text is scrolled left, so the cursor stays in view.
     scroll: Pixels,
     selecting: bool,
-    /// The text as last drawn, and where: a click lands by them.
     drawn: Option<(ShapedLine, Bounds<Pixels>)>,
 }
 
@@ -210,14 +164,15 @@ impl TextField {
         }
     }
 
-    /// The most characters it takes.
     pub fn max_chars(mut self, max_chars: usize) -> Self {
         self.editing.max_chars = max_chars;
         self
     }
 
-    /// What gets the keyboard: hand it to the stage (`Panel::takes_typing`)
-    /// or focus it yourself.
+    pub fn set_max_chars(&mut self, max_chars: usize) {
+        self.editing.max_chars = max_chars;
+    }
+
     pub fn focus_handle(&self) -> FocusHandle {
         self.focus.clone()
     }
@@ -226,23 +181,19 @@ impl TextField {
         self.editing.text()
     }
 
-    /// Whether the cursor is at the end with nothing selected.
     pub fn at_end(&self) -> bool {
         self.editing.selection() == (self.text().len()..self.text().len())
     }
 
-    /// Replaces the text, the cursor at its end.
     pub fn set_text(&mut self, text: &str, cx: &mut Context<Self>) {
         self.change(cx, |field| field.editing.set(text));
     }
 
-    /// The dim text an empty field shows.
     pub fn set_placeholder(&mut self, placeholder: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.placeholder = placeholder.into();
         cx.notify();
     }
 
-    /// Shows a dot for each character, or the text again.
     pub fn set_masked(&mut self, masked: bool, cx: &mut Context<Self>) {
         if masked != self.masked {
             self.masked = masked;
@@ -250,8 +201,6 @@ impl TextField {
         }
     }
 
-    /// Where `offset` in the text is in the line drawn: past as many dots
-    /// as characters before it while masked.
     fn shown_at(&self, offset: usize) -> usize {
         match self.masked {
             true => self.text()[..offset].chars().count() * MASK.len_utf8(),
@@ -259,7 +208,6 @@ impl TextField {
         }
     }
 
-    /// The offset in the text at `shown` in the line drawn.
     fn text_at(&self, shown: usize) -> usize {
         if !self.masked {
             return shown;
@@ -268,7 +216,6 @@ impl TextField {
         self.text().char_indices().nth(characters).map_or(self.text().len(), |(offset, _)| offset)
     }
 
-    /// The dim text after what's typed (see the field of that name).
     pub fn set_ghost(&mut self, ghost: impl Into<SharedString>, cx: &mut Context<Self>) {
         let ghost = ghost.into();
         if ghost != self.ghost {
@@ -277,7 +224,6 @@ impl TextField {
         }
     }
 
-    /// Runs an edit, redraws, and tells the owner when the text changed.
     fn change(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut Self)) {
         let before = self.editing.text.clone();
         edit(self);
@@ -323,7 +269,6 @@ impl TextField {
         }
     }
 
-    /// The offset in the text nearest to `position` in the window.
     fn offset_at(&self, position: Point<Pixels>) -> usize {
         let Some((line, bounds)) = &self.drawn else { return self.text().len() };
         let across = position.x - bounds.left() + self.scroll;
@@ -350,9 +295,7 @@ impl TextField {
         self.selecting = false;
     }
 
-    /// The line to draw: the text with its selection and what's being
-    /// composed marked, then the ghost; or the placeholder.
-    fn shape(&self, window: &mut Window, cx: &App) -> ShapedLine {
+    fn shape(&self, width: Pixels, window: &mut Window, cx: &App) -> ShapedLine {
         let theme = Theme::of(cx);
         let style = window.text_style();
         let run = |len: usize, color: Hsla, background: Option<Hsla>, composing: bool| TextRun {
@@ -369,7 +312,6 @@ impl TextField {
         };
         let text = self.text();
         let (shown, runs): (SharedString, Vec<TextRun>) = if text.is_empty() {
-            // In the body's weight, whatever weight what's typed has.
             let mut placeholder = run(self.placeholder.len(), theme.fg_dim(), None, false);
             placeholder.font.weight = WEIGHT_BODY;
             (self.placeholder.clone(), vec![placeholder])
@@ -385,7 +327,6 @@ impl TextField {
                 }
                 false => text,
             };
-            // Where the look changes: around the selection and the composing text.
             let mut cuts = vec![0, selected.start, selected.end, marked.start, marked.end, text.len()];
             cuts.sort_unstable();
             cuts.dedup();
@@ -399,7 +340,15 @@ impl TextField {
                 })
                 .collect();
             let ghost = if self.at_end() { self.ghost.as_ref() } else { "" };
-            runs.push(run(ghost.len(), theme.fg_dim(), None, false));
+            let font_size = style.font_size.to_pixels(window.rem_size());
+            let ghost_run = |len: usize| run(len, theme.fg_dim(), None, false);
+            let ghost = fit_ghost(text, ghost, width, |line: &str| {
+                let mut measured = runs.clone();
+                measured.push(ghost_run(line.len() - text.len()));
+                measured.retain(|run| run.len > 0);
+                window.text_system().shape_line(line.to_owned().into(), font_size, &measured, None).width
+            });
+            runs.push(ghost_run(ghost.len()));
             (format!("{text}{ghost}").into(), runs)
         };
         let runs: Vec<TextRun> = runs.into_iter().filter(|run| run.len > 0).collect();
@@ -407,18 +356,14 @@ impl TextField {
         window.text_system().shape_line(shown, font_size, &runs, None)
     }
 
-    /// Draws the line in `bounds`, scrolled so the cursor is in view, with
-    /// the caret when the field has the focus.
     fn paint(&mut self, bounds: Bounds<Pixels>, line: ShapedLine, window: &mut Window, cx: &mut App) {
         let cursor = line.x_for_index(self.shown_at(self.editing.cursor));
         let furthest = (bounds.size.width - CARET_WIDTH).max(px(0.0));
-        // No further than the line overflows: a line that fits isn't scrolled.
         let overflow = (line.width - furthest).max(px(0.0));
         self.scroll = self.scroll.clamp((cursor - furthest).max(px(0.0)), cursor.min(overflow));
         let origin = point(bounds.left() - self.scroll, bounds.top());
         let line_height = window.line_height();
         window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
-            // A line that can't be drawn (a font went missing) leaves the field empty.
             let _ = line.paint_background(origin, line_height, TextAlign::Left, None, window, cx);
             let _ = line.paint(origin, line_height, TextAlign::Left, None, window, cx);
             if self.focus.is_focused(window) && self.editing.selection().is_empty() {
@@ -428,6 +373,17 @@ impl TextField {
         });
         self.drawn = Some((line, bounds));
     }
+}
+
+fn fit_ghost(text: &str, ghost: &str, width: Pixels, measure: impl Fn(&str) -> Pixels) -> String {
+    let fits = |line: &str| measure(line) <= width;
+    if ghost.is_empty() || fits(&format!("{text}{ghost}")) || !fits(text) {
+        return ghost.to_owned();
+    }
+    let ends: Vec<usize> = ghost.grapheme_indices(true).map(|(at, _)| at).collect();
+    let shortened = |count: usize| format!("{}{ELLIPSIS}", &ghost[..ends[count]]);
+    let kept = ends.partition_point(|&end| fits(&format!("{text}{}{ELLIPSIS}", &ghost[..end])));
+    if kept == 0 { String::new() } else { shortened(kept - 1) }
 }
 
 impl EntityInputHandler for TextField {
@@ -440,7 +396,6 @@ impl EntityInputHandler for TextField {
     ) -> Option<String> {
         let range = self.editing.range_from_utf16(&range);
         adjusted.replace(self.editing.utf16_at(range.start)..self.editing.utf16_at(range.end));
-        // An input method gets no masked text, only what the field shows.
         if self.masked {
             return Some(MASK.to_string().repeat(self.text()[range].chars().count()));
         }
@@ -496,13 +451,11 @@ impl EntityInputHandler for TextField {
             field.editing.replace(range, new_text);
             end = field.editing.cursor;
             if let Some(selected) = new_selected {
-                // Counted from the start of the new text.
                 let composing = Editing { text: field.editing.text[start..end].to_owned(), ..Editing::default() };
                 let selected = composing.range_from_utf16(&selected);
                 field.editing.select(start + selected.start..start + selected.end);
             }
         });
-        // `change` ends a composition; this one goes on while there is text.
         self.marked = (end > start).then_some(start..end);
     }
 
@@ -533,8 +486,6 @@ impl EntityInputHandler for TextField {
 }
 
 impl TextField {
-    /// The range an input method means: the one it names, else what it is
-    /// composing, else the selection.
     fn replaced(&self, range: Option<Range<usize>>) -> Range<usize> {
         range
             .map(|range| self.editing.range_from_utf16(&range))
@@ -550,7 +501,7 @@ impl Render for TextField {
         let text = canvas(
             {
                 let field = field.clone();
-                move |_, window, cx| field.read(cx).shape(window, cx)
+                move |bounds: Bounds<Pixels>, window, cx| field.read(cx).shape(bounds.size.width, window, cx)
             },
             move |bounds, line, window, cx| {
                 window.handle_input(&focus, ElementInputHandler::new(bounds, field.clone()), cx);
@@ -575,6 +526,18 @@ impl Render for TextField {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_completion_too_long_for_the_field_ends_in_an_ellipsis() {
+        let measure = |line: &str| px(10.0 * line.chars().count() as f32);
+        let fit = |text: &str, ghost: &str, chars: f32| fit_ghost(text, ghost, px(10.0 * chars), measure);
+        assert_eq!(fit("~/do", "cuments/", 12.0), "cuments/");
+        assert_eq!(fit("~/do", "cuments/", 10.0), "cumen…");
+        assert_eq!(fit("~/do", "cuments/", 5.0), "…");
+        assert_eq!(fit("~/do", "cuments/", 4.0), "");
+        assert_eq!(fit("~/documents", "/", 4.0), "/", "a field already scrolled keeps it");
+        assert_eq!(fit("~/", "e\u{301}e\u{301}e\u{301}", 6.0), "e\u{301}…", "an accent stays on its letter");
+    }
 
     fn editing(text: &str) -> Editing {
         let mut editing = Editing::default();
@@ -606,7 +569,6 @@ mod tests {
 
     #[test]
     fn a_character_of_several_code_points_is_one_step() {
-        // A family emoji (joined people) and an e with a combining accent.
         let mut field = editing("a\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}e\u{301}");
         assert!(field.press("backspace", false, false));
         assert_eq!(field.text(), "a\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}");

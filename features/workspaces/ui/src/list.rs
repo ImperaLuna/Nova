@@ -1,7 +1,3 @@
-//! The `workspaces.list` view on one screen: the numbers of its output, as
-//! [`crate::numbers`] places them, the capsule behind the shown one, and a
-//! click on a number going there.
-
 use crate::numbers::{Fade, Ink, Number, Numbers, shown};
 use gpui::{
     AnyElement, App, Context, Entity, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels, Render,
@@ -22,7 +18,6 @@ pub struct WorkspaceList {
     screen: Screen,
     desktop: Entity<Live<Desktop>>,
     numbers: Numbers,
-    /// Going to a workspace works (capability `focus_workspace`).
     can_focus: bool,
 }
 
@@ -35,7 +30,6 @@ impl WorkspaceList {
         list
     }
 
-    /// Takes in what the compositor shows now.
     fn follow(&mut self, cx: &mut Context<Self>) {
         let desktop = self.desktop.read(cx).get();
         let workspaces = desktop.map(|desktop| shown(desktop, &self.screen.name)).unwrap_or_default();
@@ -62,8 +56,6 @@ fn faded<T: Copy + PartialEq>(fade: &Fade<T>, now: Instant, color: impl Fn(T) ->
     mix(color(from), color(to), progress)
 }
 
-/// What a number says: a tilde for the only special workspace, a special
-/// one's first letter, or its name.
 fn label(number: &Number, lone_special: bool, ink: Hsla, size: Pixels) -> AnyElement {
     let workspace = &number.workspace;
     if workspace.special && lone_special {
@@ -92,7 +84,6 @@ impl WorkspaceList {
     fn number(&self, number: &Number, now: Instant, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx);
         let ink = faded(&number.ink, now, |ink| color(ink, theme));
-        // A new number grows in from smaller, around its middle.
         let scale = number.scale.value(now);
         let size = WORKSPACE_SIZE * scale;
         let on_capsule = number.workspace.active && self.numbers.output_focused();
@@ -171,8 +162,6 @@ impl Render for WorkspaceList {
     }
 }
 
-/// The capsule's fill: the accent while the output has the focus, a quiet
-/// fill otherwise, fading between the two.
 fn faded_accent(numbers: &Numbers, now: Instant, theme: &Theme) -> Hsla {
     let (from, to, progress) = numbers.capsule_accent(now);
     let fill = |accent: bool| if accent { theme.primary } else { theme.selected_quiet() };

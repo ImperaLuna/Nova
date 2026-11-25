@@ -1,9 +1,6 @@
-//! Integration tests: the real `nova` binary against a real daemon (in this
-//! process, without the UI) over a real socket.
-
 #![expect(clippy::unwrap_used, reason = "test setup should fail loudly")]
 
-use nova_daemon_info::{Status, UiProgram, UiState};
+use nova_daemon_info::{Status, UiState};
 use nova_test_support::TempDir;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -11,16 +8,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 
-/// `nova daemon`'s arguments, parsed on their own.
 #[derive(clap::Parser)]
 struct DaemonArgs {
     #[command(flatten)]
     args: novad::Args,
 }
 
-/// novad in this process, stopped when dropped, then its folder removed.
 struct Novad {
-    // Before `dir`: fields drop in order.
     _running: novad::InProcess,
     dir: TempDir,
 }
@@ -30,13 +24,10 @@ impl Novad {
         Self::start_with(name, "")
     }
 
-    /// With `selection` as the user's features.toml.
     fn start_with(name: &str, selection: &str) -> Self {
         Self::start_in(TempDir::new(name), selection, &["--no-ui".into()])
     }
 
-    /// In `dir`, with `selection` as the user's features.toml and `ui` as
-    /// the arguments that say how the UI runs.
     fn start_in(dir: TempDir, selection: &str, ui: &[std::ffi::OsString]) -> Self {
         std::fs::write(dir.join("features.toml"), selection).unwrap();
         let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
@@ -67,7 +58,6 @@ impl Novad {
 
     fn nova(&self, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_nova"));
-        // Before the command, so it never ends up after a `--`.
         command.arg("--socket").arg(self.dir.join("novad.sock")).args(args);
         command
     }
@@ -94,18 +84,10 @@ fn status_json_is_novads_answer() {
     assert!(status.features.iter().any(|f| f.id == "bar"));
 }
 
-/// A novad that runs stand-ins as its UI: `quickshell` always, and
-/// `nova-ui` when `with_gpui_ui`, both waiting to be stopped.
-fn novad_with_stand_in_uis(name: &str, selection: &str, with_gpui_ui: bool) -> Novad {
+fn novad_with_a_stand_in_ui(name: &str, selection: &str) -> Novad {
     let dir = TempDir::new(name);
-    let version = "case \"$1\" in --version) echo 'Quickshell 0.3.2 (revision test)' ;; *) exec sleep 60 ;; esac";
-    let quickshell = nova_test_support::write_program(dir.path(), "quickshell", version);
-    let gpui_ui = dir.join("nova-ui");
-    if with_gpui_ui {
-        nova_test_support::write_program(dir.path(), "nova-ui", "exec sleep 60");
-    }
-    let ui = ["--quickshell".into(), quickshell.into(), "--gpui-ui".into(), gpui_ui.into()];
-    Novad::start_in(dir, selection, &ui)
+    let ui = nova_test_support::write_program(dir.path(), "nova-ui", "exec sleep 60");
+    Novad::start_in(dir, selection, &["--gpui-ui".into(), ui.into()])
 }
 
 fn status_once_the_ui_runs(novad: &Novad) -> Status {
@@ -116,32 +98,11 @@ fn status_once_the_ui_runs(novad: &Novad) -> Status {
 }
 
 #[test]
-fn features_toml_picks_the_gpui_program() {
-    let novad = novad_with_stand_in_uis("ui-gpui", "ui = \"gpui\"", true);
-    let status = status_once_the_ui_runs(&novad);
-    assert_eq!((status.ui.program, status.quickshell), (UiProgram::Gpui, None));
-    assert!(stdout(&novad.run(&["status"])).contains(", GPUI"));
-}
-
-/// A setting never leaves the session without a shell: Quickshell runs
-/// when `ui` is unset, names no program, or names one that isn't installed.
-#[test]
-fn quickshell_runs_unless_the_gpui_program_is_picked_and_there() {
-    let warned = |novad: &Novad, what: &str| {
-        let log = std::fs::read_to_string(nova_paths::log_file(&novad.dir.join("logs"))).unwrap();
-        assert!(log.lines().any(|line| line.contains("WARN") && line.contains(what)), "{what}: {log}");
-    };
-    let unset = novad_with_stand_in_uis("ui-unset", "", true);
-    assert_eq!(status_once_the_ui_runs(&unset).ui.program, UiProgram::Quickshell);
-
-    let unknown = novad_with_stand_in_uis("ui-unknown", "ui = \"qtquick\"", true);
-    assert_eq!(status_once_the_ui_runs(&unknown).ui.program, UiProgram::Quickshell);
-    warned(&unknown, "there is no \"qtquick\" UI");
-
-    let missing = novad_with_stand_in_uis("ui-missing", "ui = \"gpui\"", false);
-    let status = status_once_the_ui_runs(&missing);
-    assert_eq!((status.ui.program, status.quickshell.as_deref()), (UiProgram::Quickshell, Some("0.3.2")));
-    warned(&missing, "running Quickshell instead");
+fn an_old_ui_key_in_features_toml_is_named() {
+    let log = |novad: &Novad| std::fs::read_to_string(nova_paths::log_file(&novad.dir.join("logs"))).unwrap();
+    let novad = novad_with_a_stand_in_ui("ui-old", "ui = \"gpui\"");
+    status_once_the_ui_runs(&novad);
+    assert!(log(&novad).contains("unknown field `ui`"), "{}", log(&novad));
 }
 
 #[test]
@@ -164,7 +125,6 @@ fn version_is_one_line_when_novad_matches() {
 #[test]
 fn logs_print_history_from_the_file() {
     let novad = Novad::start("logs-file");
-    // No --log-dir: the running novad says where its log is.
     let text = stdout(&novad.run(&["logs", "--no-follow"]));
     assert!(text.contains("listening on"), "{text}");
     let ui_only = stdout(&novad.run(&["logs", "--no-follow", "--ui", "--log-dir", &novad.log_dir()]));
@@ -179,18 +139,12 @@ fn logs_follow_novad_live() {
     const BACKLOG: usize = 100;
     let mut child = novad.nova(&["logs", "-n", &BACKLOG.to_string()]).stdout(Stdio::piped()).spawn().unwrap();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    // Within the whole backlog: novad logs a line per feature before it listens.
     let found = lines.by_ref().take(BACKLOG).map_while(Result::ok).any(|line| line.contains("listening on"));
     child.kill().unwrap();
     child.wait().unwrap();
     assert!(found, "the backlog should include novad's start");
 }
 
-/// An enabled feature whose binary is missing fails, while the running novad
-/// passes. The feature is the test's own, needing a program no host has:
-/// the doctor also looks where packages install (the Nix profiles,
-/// /run/current-system), so a real feature's binaries may be found there
-/// whatever PATH says.
 #[test]
 fn doctor_fails_on_what_is_missing() {
     let novad = Novad::start("doctor");
@@ -207,7 +161,6 @@ fn doctor_fails_on_what_is_missing() {
     std::fs::write(config.join("nova/features.toml"), "enabled = [\"missing\"]\n").unwrap();
     let output = novad
         .nova(&["doctor"])
-        // A checkout's layout, where the themes are found.
         .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join(".."))
         .env("PATH", "")
         .env("XDG_CONFIG_HOME", &config)
@@ -257,7 +210,6 @@ fn toggle_reaches_the_ui_and_says_why_when_it_cant() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
 
-    // Stands in for the UI: subscribes to toggle events.
     let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
     ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
@@ -296,11 +248,6 @@ fn wallpaper_says_why_it_cant() {
 #[test]
 fn volume_reaches_the_ui_quietly() {
     let novad = Novad::start("volume");
-    let output = novad.run(&["volume", "up"]);
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
-
-    // Stands in for the UI: subscribes to volume events.
     let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
     ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
@@ -309,7 +256,9 @@ fn volume_reaches_the_ui_quietly() {
     assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
 
     for key in ["up", "down", "mute"] {
-        assert_eq!(stdout(&novad.run(&["volume", key])), "", "quiet for keybinds");
+        let output = novad.run(&["volume", key]);
+        assert!(String::from_utf8_lossy(&output.stderr).contains("no sound server"), "{output:?}");
+        assert!(output.stdout.is_empty(), "quiet for keybinds");
         let event = lines.next().unwrap().unwrap();
         assert_eq!(event, format!(r#"{{"v":2,"event":"volume","data":{{"key":"{key}"}}}}"#));
     }
@@ -323,7 +272,6 @@ fn lock_reaches_the_ui_quietly() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
 
-    // Stands in for the UI: subscribes to lock events, and gets the state.
     let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
     ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
@@ -332,7 +280,6 @@ fn lock_reaches_the_ui_quietly() {
     assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
     assert!(lines.next().unwrap().unwrap().contains(r#""locked":false"#));
 
-    // It answers once the UI says the screens are covered.
     std::thread::scope(|scope| {
         let locking = scope.spawn(|| novad.run(&["lock"]));
         let event = lines.next().unwrap().unwrap();
@@ -352,7 +299,6 @@ fn status_without_novad_fails_with_a_hint() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("Start it with `nova`"));
 }
 
-/// `nova daemon` as its own process, for tests that stop it.
 struct DaemonProcess {
     dir: TempDir,
     child: std::process::Child,
@@ -398,7 +344,6 @@ impl DaemonProcess {
         })
     }
 
-    /// Waits for the daemon to exit on its own and checks it cleaned up.
     fn assert_exits(mut self) {
         assert!(self.child.wait().unwrap().success());
         assert!(!self.socket().exists());
@@ -418,7 +363,7 @@ fn nova_daemon_is_named_nova_and_quits_over_the_socket() {
     let stream = daemon.connect();
     let mut writer = stream.try_clone().unwrap();
     let mut lines = BufReader::new(stream).lines();
-    lines.next().unwrap().unwrap(); // hello
+    lines.next().unwrap().unwrap();
     let comm = std::fs::read_to_string(format!("/proc/{}/comm", daemon.child.id())).unwrap();
     assert_eq!(comm.trim_end(), novad::PROCESS_NAME, "ps and btop show the daemon by this name");
     writeln!(writer, r#"{{"v":2,"id":1,"cmd":"quit"}}"#).unwrap();
@@ -426,8 +371,6 @@ fn nova_daemon_is_named_nova_and_quits_over_the_socket() {
     daemon.assert_exits();
 }
 
-/// Even while the installed `nova.service` runs (as on a desktop running
-/// Nova), `nova --socket <other> quit` stops the daemon on that socket.
 #[test]
 fn quit_stops_the_daemon_on_the_given_socket() {
     let daemon = DaemonProcess::start("quit");
@@ -448,7 +391,6 @@ fn a_second_daemon_is_refused_before_touching_the_log() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    // The running daemon's log is still nova.log, not rotated to nova.log.1.
     let text = stdout(&novad.run(&["logs", "--no-follow", "--log-dir", &novad.log_dir()]));
     assert!(text.contains("listening on"), "{text}");
 }
@@ -469,7 +411,6 @@ fn claude_statusline_reports_limits_and_passes_input_on() {
     let event = BufReader::new(stream)
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(&line.unwrap()).unwrap())
-        // The report isn't answered, so it may land just after subscribing.
         .find(|message| message["event"] == "ai_usage" && message["data"]["providers"][0]["state"] == "ready")
         .unwrap();
     let claude = &event["data"]["providers"][0];

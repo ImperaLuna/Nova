@@ -1,7 +1,6 @@
 //! `nova volume`'s messages on novad's socket. novad passes the key on to
-//! the UI, which shows the capsule. Quickshell's shell changes the volume
-//! itself (PipeWire through Quickshell); for the GPUI UI novad changes it,
-//! through the sound feature (`nova_sound::Sound::press`).
+//! the UI, which shows the capsule, and changes the volume through the
+//! sound feature (`nova_sound::Sound::press`).
 
 use nova_carrier::{Published, Topic};
 use serde::{Deserialize, Serialize};
@@ -23,8 +22,8 @@ pub enum Command {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum Event {
-    /// Show the volume capsule, and in Quickshell's shell change the
-    /// default output's volume as `nova volume` asks.
+    /// Show the volume capsule: `nova volume` was pressed, and novad
+    /// changes the volume itself.
     Volume { key: VolumeKey },
 }
 

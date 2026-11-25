@@ -1,50 +1,35 @@
-//! What the pill and the panel show for one provider of novad's `ai_usage`
-//! event, with no drawing: `ui/ai_usage/usage.js` in today's shell. novad
-//! does the work (sources, resets); this only turns its numbers into text.
-
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nova_ai_usage_api::{AiProvider, AiUsage, ProviderUsage, UsageState, UsageWindow};
 use nova_look::span::{DAY_MINUTES, minutes};
 
-/// From this percent a limit turns the theme's primary color. One rule, no
-/// further tiers.
 pub const WARN_PERCENT: u8 = 80;
 
 const MINUTE_MS: i64 = 60 * 1000;
 const DAY_MS: i64 = DAY_MINUTES * MINUTE_MS;
 
-/// One limit, as the panel writes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
     pub name: &'static str,
     pub percent: u8,
     pub warn: bool,
-    /// "2h 14m left", or "" once the window has reset.
     pub left: String,
-    /// "Resets in 2h 14m", "Resets Mon 04:00", or "".
     pub reset: String,
 }
 
-/// Everything the pill and the panel need for one provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Summary {
     pub provider: Option<AiProvider>,
     pub name: &'static str,
     pub plan: String,
     pub state: UsageState,
-    /// The session limit when there is one, else the only window.
     pub main: Option<Row>,
     pub second: Option<Row>,
-    /// The bar's number, without its `%`: "42", or "…" while loading and
-    /// "–" with no numbers.
     pub hero: String,
-    /// Why there are no numbers, under the headline.
     pub message: String,
 }
 
 impl Summary {
-    /// The hero's text with its unit: "42%", "…".
     pub fn hero_with_unit(&self) -> String {
         if self.main.is_some() { format!("{}%", self.hero) } else { self.hero.clone() }
     }
@@ -53,8 +38,6 @@ impl Summary {
         self.main.as_ref().is_some_and(|row| row.warn)
     }
 
-    /// Not ready: the pill shows a ring beside the logo (spinning while
-    /// loading, dashed when unavailable).
     pub fn has_indicator(&self) -> bool {
         self.state != UsageState::Ready
     }
@@ -78,27 +61,20 @@ fn window_name(window: UsageWindow) -> &'static str {
     }
 }
 
-/// A span of `ms` milliseconds, rounded up to whole minutes, so it never
-/// reads 0m before the reset.
 fn duration(ms: i64) -> String {
     minutes(((ms + MINUTE_MS - 1) / MINUTE_MS).max(1))
 }
 
-/// Milliseconds from `now` until `resets_at`, when that is a time still
-/// ahead.
 fn until(resets_at: Option<&str>, now: Timestamp) -> Option<(Timestamp, i64)> {
     let at: Timestamp = resets_at?.parse().ok()?;
     let ms = at.as_millisecond() - now.as_millisecond();
     (ms > 0).then_some((at, ms))
 }
 
-/// "2h 14m left", or "" once the window has reset.
 pub fn left_text(resets_at: Option<&str>, now: Timestamp) -> String {
     until(resets_at, now).map(|(_, ms)| format!("{} left", duration(ms))).unwrap_or_default()
 }
 
-/// "Resets in 2h 14m" within a day, else "Resets Mon 04:00" in `zone`'s
-/// time.
 pub fn reset_text(resets_at: Option<&str>, now: Timestamp, zone: &TimeZone) -> String {
     let Some((at, ms)) = until(resets_at, now) else { return String::new() };
     if ms < DAY_MS {
@@ -107,7 +83,6 @@ pub fn reset_text(resets_at: Option<&str>, now: Timestamp, zone: &TimeZone) -> S
     format!("Resets {}", at.to_zoned(zone.clone()).strftime("%a %H:%M"))
 }
 
-/// Everything the pill and the panel need for `provider` at `now`.
 pub fn summarize(provider: Option<&ProviderUsage>, now: Timestamp, zone: &TimeZone) -> Summary {
     let state = provider.map_or(UsageState::Loading, |provider| provider.state);
     let limits = provider.filter(|_| state == UsageState::Ready).map(|provider| provider.limits.as_slice());
@@ -141,12 +116,10 @@ pub fn summarize(provider: Option<&ProviderUsage>, now: Timestamp, zone: &TimeZo
     }
 }
 
-/// The provider entry the bar shows: the one novad names, else the first.
 pub fn shown(usage: &AiUsage) -> Option<&ProviderUsage> {
     usage.providers.iter().find(|provider| provider.provider == usage.shown).or(usage.providers.first())
 }
 
-/// The other providers, in novad's order: all but the one the bar shows.
 pub fn others(usage: &AiUsage) -> impl Iterator<Item = &ProviderUsage> {
     let bar = shown(usage).map(|provider| provider.provider);
     usage.providers.iter().filter(move |provider| Some(provider.provider) != bar)
@@ -165,7 +138,6 @@ mod tests {
         UsageLimit { window, percent, resets_at: Some(resets_at.to_owned()) }
     }
 
-    /// The event `ui/tests/tst_ai_usage.qml` reads, in the shape novad sends.
     fn event() -> AiUsage {
         AiUsage {
             shown: AiProvider::Codex,

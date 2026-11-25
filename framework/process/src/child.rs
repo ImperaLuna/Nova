@@ -1,11 +1,3 @@
-//! Small helpers for the short-lived programs novad runs and the ones that
-//! live as long as it does: waiting with a deadline, reading error output
-//! without blocking on it, waiting for an exit without reaping, and tying a
-//! child's life to novad's, and watching a long-running one until it exits
-//! ([`watch`]; restart waits are `backoff::Restarts`). Each caller still
-//! decides what a slow child means for it (killed, left to finish, or
-//! logged); the UI's supervision stays in `supervisor` and `recording`.
-
 use nova_base::lock;
 use std::collections::VecDeque;
 use std::io::Read;
@@ -15,15 +7,9 @@ use std::process::{Child, ChildStderr, Command, ExitStatus, Output, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-/// The most of a child's error output kept for its error message.
 const MAX_ERROR_BYTES: usize = 4096;
-/// How long error output is read for once the child has exited: a process
-/// it left behind may hold the pipe open.
 pub const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 
-/// `child`'s exit status if it exits within `timeout`, else `None` with the
-/// child still running (and unreaped). Waits on the child's pidfd, which
-/// becomes readable when it exits.
 pub fn wait_within(child: &mut Child, timeout: Duration) -> std::io::Result<Option<ExitStatus>> {
     if let Some(status) = child.try_wait()? {
         return Ok(Some(status));
@@ -33,7 +19,6 @@ pub fn wait_within(child: &mut Child, timeout: Duration) -> std::io::Result<Opti
     let mut poll = libc::pollfd { fd: exited.as_raw_fd(), events: libc::POLLIN, revents: 0 };
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
-        // Rounded up, so it never wakes just short of the deadline.
         let millis = libc::c_int::try_from(left.as_micros().div_ceil(1000)).unwrap_or(libc::c_int::MAX);
         // SAFETY: `poll` is one valid pollfd for the whole call.
         let ready = unsafe { libc::poll(&mut poll, 1, millis) };
@@ -50,7 +35,6 @@ pub fn wait_within(child: &mut Child, timeout: Duration) -> std::io::Result<Opti
     }
 }
 
-/// A pidfd for `child`, readable once it exits.
 fn pidfd(child: &Child) -> std::io::Result<OwnedFd> {
     let pid = libc::pid_t::try_from(child.id()).map_err(std::io::Error::other)?;
     // SAFETY: pidfd_open takes a pid and flags, and no pointers.
@@ -63,9 +47,6 @@ fn pidfd(child: &Child) -> std::io::Result<OwnedFd> {
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
-/// Runs `command` to the end and returns its exit status, its output and
-/// (the end of) its error output, like [`Command::output`] but killed and
-/// reaped when it hasn't exited within `timeout`.
 pub fn output_within(mut command: Command, timeout: Duration) -> std::io::Result<Output> {
     let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
     let mut stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout pipe"))?;
@@ -84,22 +65,17 @@ pub fn output_within(mut command: Command, timeout: Duration) -> std::io::Result
             return Err(waited.err().unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::TimedOut, message)));
         }
     };
-    // Something it left running may hold the pipe open: then its answer
-    // may be cut short, so there's none.
     let stdout = printed
         .recv_timeout(DRAIN_TIMEOUT)
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "its output stayed open after it exited"))?;
     Ok(Output { status, stdout, stderr: errors.text().into_bytes() })
 }
 
-/// Kills `child` and reaps it. It's still unreaped, so the pid is still its.
 pub fn kill_and_reap(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
 }
 
-/// Waits until child `pid` exits, leaving it unreaped (a zombie), so its pid
-/// can't be reused yet.
 pub fn wait_for_exit(pid: u32) -> std::io::Result<()> {
     loop {
         // SAFETY: siginfo_t is plain data, and waitid only writes into it.
@@ -115,20 +91,17 @@ pub fn wait_for_exit(pid: u32) -> std::io::Result<()> {
     }
 }
 
-/// Has `command`'s child get `signal` when novad goes away, however it goes,
-/// so it's never left running on its own. The kernel sends the signal when
-/// the thread that spawned the child ends, so spawn it from a thread that
-/// lives as long as the child should.
 pub fn die_with_novad(command: &mut Command, signal: libc::c_int) {
     let novad = std::process::id();
     // SAFETY: the closure runs between fork and exec and only calls prctl
     // and getppid, which take no pointers and are async-signal-safe.
     unsafe {
         command.pre_exec(move || {
+            // The death signal comes when the thread that forked the child ends, not the process:
+            // https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html
             if libc::prctl(libc::PR_SET_PDEATHSIG, signal) == -1 {
                 return Err(std::io::Error::last_os_error());
             }
-            // novad went away before that, so the signal never comes.
             if libc::getppid().cast_unsigned() != novad {
                 return Err(std::io::Error::other("novad went away"));
             }
@@ -137,16 +110,6 @@ pub fn die_with_novad(command: &mut Command, signal: libc::c_int) {
     }
 }
 
-/// Starts `command` as a long-running child (no input, output dropped,
-/// error output kept for [`Exited::reap`]) that gets SIGTERM when novad goes
-/// away ([`die_with_novad`], so call it from a thread that lives as long as
-/// the child should), and hands it to `exited` on a thread of its own once
-/// it exits, still unreaped. Returns its pid.
-///
-/// The owner keeps the pid under a lock, signals it ([`terminate`]) only
-/// under that lock, and forgets it under the lock in `exited` before
-/// reaping, so nothing ever signals a pid the kernel may have handed out
-/// again.
 pub fn watch(command: &mut Command, exited: impl FnOnce(Exited) + Send + 'static) -> std::io::Result<u32> {
     command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
     die_with_novad(command, libc::SIGTERM);
@@ -154,16 +117,12 @@ pub fn watch(command: &mut Command, exited: impl FnOnce(Exited) + Send + 'static
     let pid = child.id();
     let errors = drain(child.stderr.take());
     std::thread::spawn(move || {
-        // Only fails for a pid that isn't this process's child, which
-        // can't happen: it's unreaped until `reap`.
         let waited = wait_for_exit(pid);
         exited(Exited { child, errors, waited });
     });
     Ok(pid)
 }
 
-/// A [`watch`]ed child that exited (or couldn't be waited for), not yet
-/// reaped.
 pub struct Exited {
     child: Child,
     errors: ErrorOutput,
@@ -171,11 +130,8 @@ pub struct Exited {
 }
 
 impl Exited {
-    /// Reaps it, saying how it ended: its exit status and the end of its
-    /// error output. Call it once its pid is forgotten.
     pub fn reap(mut self) -> String {
         if let Err(e) = self.waited {
-            // It may still run: end it rather than wait forever.
             kill_and_reap(&mut self.child);
             return format!("couldn't wait for it without reaping it: {e}");
         }
@@ -188,16 +144,11 @@ impl Exited {
     }
 }
 
-/// Asks child `pid` to end. Only for a pid that's still unreaped (see
-/// [`watch`]).
 pub fn terminate(pid: u32) {
     // SAFETY: kill only sends a signal.
     unsafe { libc::kill(pid.cast_signed(), libc::SIGTERM) };
 }
 
-/// Reads a child's error output to the end on a thread of its own, so the
-/// child never blocks on a full pipe, keeping the last [`MAX_ERROR_BYTES`]
-/// for an error message.
 pub fn drain(stderr: Option<ChildStderr>) -> ErrorOutput {
     let kept = Arc::new(Mutex::new(VecDeque::new()));
     let (closed, done) = mpsc::channel();
@@ -221,24 +172,18 @@ pub fn drain(stderr: Option<ChildStderr>) -> ErrorOutput {
     ErrorOutput { kept, done }
 }
 
-/// The error output [`drain`] is reading.
 pub struct ErrorOutput {
     kept: Arc<Mutex<VecDeque<u8>>>,
-    /// Disconnects once the pipe closes.
     done: mpsc::Receiver<()>,
 }
 
 impl ErrorOutput {
-    /// What the child said, once the pipe closes or after
-    /// [`DRAIN_TIMEOUT`], whichever is first.
     pub fn text(self) -> String {
         let _ = self.done.recv_timeout(DRAIN_TIMEOUT);
         String::from_utf8_lossy(lock(&self.kept).make_contiguous()).into_owned()
     }
 }
 
-/// What `command` prints when it succeeds within `timeout`. One that takes
-/// longer, printing or exiting, is killed and reaped.
 pub fn stdout_within(command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
     let output = output_within(command, timeout)?;
     match output.status.success() {
@@ -247,7 +192,6 @@ pub fn stdout_within(command: Command, timeout: Duration) -> std::io::Result<Vec
     }
 }
 
-/// How `status` ended, for an error message.
 pub fn describe_exit(status: ExitStatus) -> String {
     use std::os::unix::process::ExitStatusExt;
     match (status.code(), status.signal()) {
@@ -260,6 +204,33 @@ pub fn describe_exit(status: ExitStatus) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_that_hangs_is_killed() {
+        let mut command = Command::new("sleep");
+        command.arg("30");
+        let started = Instant::now();
+        let error = stdout_within(command, Duration::from_millis(200)).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_command_that_closes_its_output_but_hangs_is_killed() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "exec >&-; sleep 30"]);
+        let started = Instant::now();
+        let error = stdout_within(command, Duration::from_millis(200)).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_quick_command_gives_its_output() {
+        let mut command = Command::new("echo");
+        command.arg("hello");
+        assert_eq!(stdout_within(command, Duration::from_secs(5)).unwrap(), b"hello\n");
+    }
 
     #[test]
     fn waiting_gives_up_at_the_deadline_and_leaves_the_child_running() {
@@ -285,14 +256,12 @@ mod tests {
         let mut child = Command::new("sh").args(["-c", "exit 3"]).spawn().unwrap();
         wait_for_exit(child.id()).unwrap();
         let stat = std::fs::read_to_string(format!("/proc/{}/stat", child.id())).unwrap();
-        // The state follows the command name in parentheses: Z is a zombie.
         assert_eq!(stat.rsplit_once(") ").unwrap().1.chars().next(), Some('Z'));
         assert_eq!(child.wait().unwrap().code(), Some(3));
     }
 
     #[test]
     fn error_output_keeps_the_end_and_stops_waiting_for_a_held_pipe() {
-        // Prints more than is kept, then leaves a process holding the pipe.
         let script = format!("head -c {} /dev/zero | tr '\\0' a; echo the end >&2; sleep 30 &", MAX_ERROR_BYTES * 2);
         let mut command = Command::new("sh");
         command.args(["-c", &format!("({script}) 1>&2")]).stdout(Stdio::null()).stderr(Stdio::piped());

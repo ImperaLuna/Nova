@@ -1,8 +1,3 @@
-//! What novad's services on the session bus share: which bus to connect
-//! to (the session's, or the system's for the few that read system
-//! services), how they claim their names, and a stop flag that ends a
-//! service's loop on the bus.
-
 use nova_base::lock;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,14 +5,10 @@ use std::task::{Context, Poll, Waker};
 use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::{Connection, connection};
 
-/// Which bus a service is on.
 #[derive(Clone)]
 pub enum Bus {
-    /// The session's, from `DBUS_SESSION_BUS_ADDRESS`.
     Session,
-    /// The system's, for system services like UPower.
     System,
-    /// A bus at this address, for tests.
     #[cfg(any(test, feature = "test-support"))]
     Address(String),
 }
@@ -33,20 +24,15 @@ impl Bus {
     }
 }
 
-/// Asks the bus for `name`, queued behind an owner it already has (mako,
-/// another shell's tray), which novad never replaces. Nothing replaces novad
-/// either: zbus's default flags would let any other process take the name
-/// (a second novad, a test's), and novad, not queued, would never get it
-/// back.
 pub async fn claim(connection: &Connection, name: &'static str) -> zbus::Result<RequestNameReply> {
+    // With no flags the bus queues the request and never hands the name to another program.
+    // https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-request-name
     connection.request_name_with_flags(name, RequestNameFlags::empty()).await
 }
 
-/// Ends services' loops: set once, and wakes every loop waiting on it.
 #[derive(Default)]
 pub struct Stop {
     stopped: AtomicBool,
-    /// Every task waiting for it: one stop can end several services.
     wakers: Mutex<Vec<Waker>>,
 }
 
@@ -62,9 +48,8 @@ impl Stop {
         self.stopped.load(Ordering::SeqCst)
     }
 
-    /// Ready once stopped; otherwise `cx` is woken by `stop`.
     pub fn poll(&self, cx: &Context<'_>) -> Poll<()> {
-        // Stored before the check, so a stop in between still wakes us.
+        // The waker is stored before the check, so a stop in between still wakes this task: https://linear.app/imperaluna/issue/IMP-75
         let mut wakers = lock(&self.wakers);
         if !wakers.iter().any(|waker| waker.will_wake(cx.waker())) {
             wakers.push(cx.waker().clone());
@@ -85,7 +70,6 @@ mod test_bus {
     use std::process::{Child, Command, Stdio};
     use zbus::{Connection, connection};
 
-    /// A private session bus, listening at the socket `path`.
     pub struct TestBus {
         bus: Child,
         pub address: String,
@@ -115,20 +99,14 @@ mod test_bus {
             Self { bus, address: address.trim().to_string() }
         }
 
-        /// A new connection, an app's, that answers calls to objects it serves
-        /// from the moment it serves them.
         pub fn connect(&self) -> Connection {
-            // `Connection::object_server` alone starts serving on a task that
-            // listens only once it first runs, and a call that comes before
-            // is never answered: an app that serves an item and registers it
-            // at once would miss the tray reading it (IMP-161). The builder
-            // returns once its object server listens.
+            // `Connection::object_server` answers no call until its task first runs; the builder returns once it listens.
+            // https://docs.rs/zbus/latest/zbus/connection/struct.Builder.html#method.serve_at
             let builder = connection::Builder::address(self.address.as_str()).serve_at(SERVING_PATH, Serving);
             zbus::block_on(builder.build()).unwrap()
         }
     }
 
-    /// Where a test connection serves its first object, so its object server starts with it.
     const SERVING_PATH: &str = "/org/nova/Test";
 
     struct Serving;

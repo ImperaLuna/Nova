@@ -81,10 +81,10 @@ in
         cfg.package
       ]
       # novad finds `nova-ui` on PATH.
-      ++ lib.optional (cfg.ui == "gpui") cfg.uiPackage
+      ++ [ cfg.uiPackage ]
       ++ features.packagesFor pkgs cfg.gpu on;
       etc = {
-        "xdg/nova/features.toml".text = features.selectionFile cfg.ui cfg.features;
+        "xdg/nova/features.toml".text = features.selectionFile cfg.features;
         # Nova's Hyprland rules, which a system module can't load into the
         # user's Hyprland config: `require("/etc/xdg/nova/hyprland.lua")`
         # in hyprland.lua (`nova doctor` says so while they're missing).

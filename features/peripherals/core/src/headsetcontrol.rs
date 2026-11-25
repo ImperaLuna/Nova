@@ -1,15 +1,3 @@
-//! Headsets the kernel can't read the battery of (SteelSeries', HyperX's,
-//! Corsair's on their USB dongles), from HeadsetControl: `headsetcontrol -o
-//! json` is run, never linked (it's GPL-3), every [`POLL`] and shortly
-//! after a USB device is plugged in or out (`hotplug`), with a timeout. It
-//! prints every headset it supports, with its dongle's USB ids and its
-//! battery. Without `headsetcontrol` on PATH (looked for at each run, so
-//! installing it later works) this source lists nothing.
-//!
-//! It exits 1 when no headset is plugged in, still printing its JSON, so
-//! the output is read whatever the exit status. Unknown fields are ignored:
-//! newer releases add some.
-
 use super::hotplug::{self, Waker};
 use super::{Found, LOG_SOURCE, Report, Running, Source, UsbId, name};
 use nova_carrier::log::LogLevel;
@@ -23,21 +11,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const BINARY: &str = "headsetcontrol";
-/// How often headsets are read: a headset turned on or off doesn't plug
-/// anything in, so only a look tells.
 pub const POLL: Duration = Duration::from_secs(60);
-/// How long after a USB device comes or goes headsets are read: a dongle
-/// needs a moment before its HID interface opens.
 pub const HOTPLUG_SETTLE: Duration = Duration::from_secs(2);
-/// How long `headsetcontrol` may take to answer.
 const RUN_TIMEOUT: Duration = Duration::from_secs(10);
-/// More than its answer for any desk of headsets.
 const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
-/// The id a headset's comes after, before its dongle's USB ids.
 const ID_PREFIX: &str = "headsetcontrol/";
-/// A device entry HeadsetControl could read.
 const STATUS_SUCCESS: &str = "success";
-/// The capability of reporting a battery.
 const CAP_BATTERY: &str = "CAP_BATTERY_STATUS";
 const BATTERY_AVAILABLE: &str = "BATTERY_AVAILABLE";
 const BATTERY_CHARGING: &str = "BATTERY_CHARGING";
@@ -83,8 +62,6 @@ impl Source for HeadsetControl {
 }
 
 impl HeadsetControl {
-    /// Reads headsets now, then every [`POLL`] and after USB devices
-    /// change, until stopped.
     fn read_until_stopped(&self, waker: &Waker, report: &Report) {
         let mut runs = Runs::default();
         let mut next_poll = Instant::now();
@@ -99,7 +76,6 @@ impl HeadsetControl {
     }
 }
 
-/// What the last runs said, so a lasting problem is logged once.
 #[derive(Default)]
 struct Runs {
     installed: Option<bool>,
@@ -107,8 +83,6 @@ struct Runs {
 }
 
 impl Runs {
-    /// The headsets HeadsetControl sees now; none when it isn't installed
-    /// or fails (logged when that changes).
     fn read(&mut self, path_var: &str, report: &Report) -> Vec<Found> {
         let binary = nova_paths::find_program(BINARY, path_var);
         if self.installed != Some(binary.is_some()) {
@@ -118,7 +92,6 @@ impl Runs {
         }
         let Some(binary) = binary else { return Vec::new() };
         let mut command = Command::new(binary);
-        // It needs nothing from novad's environment.
         command.args(["-o", "json"]).env_clear();
         let answer = child::output_within(command, RUN_TIMEOUT)
             .map_err(|e| format!("didn't answer: {e}"))
@@ -141,7 +114,6 @@ impl Runs {
     }
 }
 
-/// `headsetcontrol -o json`'s answer.
 #[derive(Deserialize)]
 struct Answer {
     #[serde(default)]
@@ -152,16 +124,12 @@ struct Answer {
 struct Device {
     #[serde(default)]
     status: String,
-    /// Its family's name (`SteelSeries Arctis Nova (5/5X)`).
     #[serde(default)]
     device: String,
-    /// The model itself (`SteelSeries Arctis Nova 5X`).
     #[serde(default)]
     product: String,
-    /// Its maker (`SteelSeries`), left off the front of the name shown.
     #[serde(default)]
     vendor: String,
-    /// Its dongle's USB ids, as hex (`"0x1038"`), or a number.
     #[serde(default)]
     id_vendor: serde_json::Value,
     #[serde(default)]
@@ -176,14 +144,10 @@ struct Device {
 struct BatteryStatus {
     #[serde(default)]
     status: String,
-    /// -1 while unknown.
     #[serde(default)]
     level: Option<i64>,
 }
 
-/// The headsets in `headsetcontrol -o json`'s answer that are on and report
-/// a battery. Entries it couldn't read (`"status": "failure"`) and headsets
-/// that are off are left out.
 pub fn parse(output: &[u8]) -> Result<Vec<Found>, String> {
     if output.len() > MAX_OUTPUT_BYTES {
         return Err(format!("answered more than {MAX_OUTPUT_BYTES} bytes"));
@@ -199,8 +163,6 @@ fn found(device: &Device) -> Option<Found> {
     }
     let id = UsbId { vendor: hex(&device.id_vendor)?, product: hex(&device.id_product)? };
     let status = device.battery.as_ref().map(|battery| battery.status.as_str()).unwrap_or_default();
-    // Off, or out of reach (`BATTERY_UNAVAILABLE`): its dongle answers for
-    // it, but the headset isn't there.
     if status != BATTERY_AVAILABLE && status != BATTERY_CHARGING {
         return None;
     }
@@ -212,7 +174,6 @@ fn found(device: &Device) -> Option<Found> {
             .or_else(|| name(&device.device))
             .unwrap_or_else(|| id.to_string()),
         kind: PeripheralKind::Headset,
-        // HeadsetControl reaches headsets through their USB dongle.
         link: Some(PeripheralLink::Dongle),
         battery,
         charging: status == BATTERY_CHARGING,
@@ -221,9 +182,6 @@ fn found(device: &Device) -> Option<Found> {
     Some(Found { device, usb_ids: vec![id], serial: None })
 }
 
-/// `product` without its maker's name in front (`Arctis Nova 5X`), since a
-/// row in the sidebar has little room. Only a whole word comes off, and
-/// nothing when that would leave nothing.
 fn without_vendor<'a>(product: &'a str, vendor: &str) -> &'a str {
     let product = product.trim();
     let vendor = vendor.trim();
@@ -235,7 +193,6 @@ fn without_vendor<'a>(product: &'a str, vendor: &str) -> &'a str {
     }
 }
 
-/// A USB id: text in hex, with or without `0x`, or a number.
 fn hex(value: &serde_json::Value) -> Option<u16> {
     if let Some(number) = value.as_u64() {
         return u16::try_from(number).ok();

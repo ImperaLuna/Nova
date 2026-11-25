@@ -1,14 +1,3 @@
-//! What one screen's pill and panel share: novad's players, the one drawn,
-//! whether the pill is out, the panel being open, and the timers that move
-//! them (the linger, the equalizer's steps, the panel's clock). The pill
-//! (`pill.rs`) and the panel (`panel.rs`) are views that observe it and
-//! only draw.
-//!
-//! While a player plays the pill slides out; paused, it dims and slides
-//! away after a minute unless the panel is open; a player that stops or
-//! goes takes it away at once. What it shows comes from novad's `media`
-//! event; this only asks.
-
 use crate::logic::{self, Jitter};
 use crate::measure;
 use crate::tokens::{
@@ -27,41 +16,27 @@ use nova_stage::{Screen, Shown, Stage};
 use nova_ui_client::{Daemon, Live};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// The panel's name: the feature's id, which `nova toggle` uses.
 pub const NAME: &str = "media";
-/// The equalizer's bars stand still at half height while playing, for
-/// screenshots that mustn't change.
 const STILL_EQUALIZER_VAR: &str = "NOVA_STILL_EQUALIZER";
-/// The title wraps to at most this many lines in the panel.
 pub const TITLE_LINES: usize = 2;
 
 pub struct NowPlaying {
     pub screen: Screen,
     media: Entity<Live<Media>>,
-    /// The player drawn: novad's shown one, or the last while it slides
-    /// away.
     current: Option<MediaPlayer>,
-    /// Paused for a minute: slid away, unless the panel is open.
     lingered: bool,
     linger: Option<Task<()>>,
-    /// What restarts the linger: the shown player and its status.
     playback: Option<(String, PlaybackStatus)>,
-    /// 0 hidden, 1 out: the pill slides out from nothing.
     pub out: Eased,
-    /// Whether the stage gives the pill room.
     pub shown: Shown,
     pub open: bool,
-    /// The workspace the shown player's window is on, "" when unknown.
     pub workspace: String,
     asking: Option<Task<()>>,
-    /// The equalizer's bars, and what steps them.
     pub bars: Vec<f32>,
     jitter: Jitter,
     still: bool,
     stepping: Option<Task<()>>,
-    /// Redraws the open panel's time while it plays.
     ticking: Option<Task<()>>,
-    /// The panel's size last asked of the stage.
     pub panel_size: Size<Pixels>,
     _followed: Vec<Subscription>,
 }
@@ -107,12 +82,10 @@ impl NowPlaying {
         self.media.read(cx).get()
     }
 
-    /// The player drawn.
     pub fn current(&self) -> Option<&MediaPlayer> {
         self.current.as_ref()
     }
 
-    /// novad's media, for whoever waits on the players' own word.
     pub fn feed(&self) -> &Entity<Live<Media>> {
         &self.media
     }
@@ -135,7 +108,6 @@ impl NowPlaying {
             self.playback = playback;
             self.rearm(cx);
         }
-        // A different player shown while open: ask where its window is.
         let id_now = shown.as_ref().map(|player| player.id.clone());
         if !gone && id_now != id_before {
             self.workspace.clear();
@@ -146,9 +118,12 @@ impl NowPlaying {
         self.follow(cx);
     }
 
-    /// The stage opened or closed a panel.
     fn follow_open(&mut self, cx: &mut Context<Self>) {
         let open = Stage::is_open(NAME, self.screen.id, cx);
+        if open && self.media(cx).and_then(logic::shown).is_none() {
+            Stage::close(NAME, self.screen.id, cx);
+            return;
+        }
         if open == self.open {
             return;
         }
@@ -162,7 +137,6 @@ impl NowPlaying {
         self.follow(cx);
     }
 
-    /// A new player or a new status restarts the linger.
     fn rearm(&mut self, cx: &mut Context<Self>) {
         self.lingered = false;
         let paused =
@@ -195,8 +169,6 @@ impl NowPlaying {
         }));
     }
 
-    /// Follows a change of what is shown: the pill heading out or away,
-    /// the timers, the panel's size, and a redraw.
     fn follow(&mut self, cx: &mut Context<Self>) {
         let shown = self.media(cx).and_then(logic::shown);
         let out = logic::out(shown, self.lingered) || self.open;
@@ -209,16 +181,11 @@ impl NowPlaying {
         if wanted != self.panel_size {
             self.panel_size = wanted;
             let screen = self.screen.id;
-            // After this update: the stage reads the views to lay out.
             cx.defer(move |cx| Stage::resize(NAME, screen, wanted, cx));
         }
         cx.notify();
     }
 
-    /// Called by the pill as it draws: once it has slid all the way away,
-    /// the stage gives its room back and the equalizer stops.
-    /// Returns whether it did, so the pill asks for one more frame: a
-    /// change made while drawing redraws nothing by itself.
     pub fn hide_once_away(&mut self, now: Instant, cx: &mut Context<Self>) -> bool {
         let hidden = self.out.target() == 0.0 && self.out.settled(now) && self.shown.set(false, cx);
         if hidden {
@@ -227,7 +194,6 @@ impl NowPlaying {
         hidden
     }
 
-    /// Starts or stops the equalizer's steps and the panel's clock.
     fn follow_timers(&mut self, cx: &mut Context<Self>) {
         let playing = self.playing();
         let stepping = playing && !self.open && !self.still && self.shown.get();
@@ -243,15 +209,15 @@ impl NowPlaying {
         }
     }
 
-    fn step_bars(&mut self, cx: &mut Context<Self>) {
+    fn step_bars(&mut self, _: &mut Context<Self>) {
         let jitter = &mut self.jitter;
         self.bars = logic::equalizer(EQ_BARS, EQ_LOW.into(), EQ_HIGH.into(), || jitter.next());
-        cx.notify();
     }
 
-    /// The panel's height for what it shows now: the header, the cover
-    /// beside the names, the progress line and its times, the buttons, the
-    /// chips when there are two players, and the go-to row.
+    pub fn stepping(&self) -> bool {
+        self.stepping.is_some()
+    }
+
     fn wanted_size(&self, cx: &App) -> Size<Pixels> {
         let line = |text_size: Pixels| text_size * LINE_HEIGHT;
         let content = PANEL_WIDTH - PANEL_PAD * 2.0;
@@ -295,18 +261,15 @@ impl NowPlaying {
     }
 }
 
-/// Brings `player`'s window forward, then closes the panel on `screen`.
 pub fn go_to(player: &str, screen: DisplayId, cx: &mut App) {
     Daemon::send(Command::MediaFocus { player: player.to_owned() }, cx);
     Stage::close(NAME, screen, cx);
 }
 
-/// The bars at half height, standing still.
 fn half_bars() -> Vec<f32> {
     logic::equalizer(EQ_BARS, EQ_LOW.into(), EQ_HIGH.into(), || 0.5)
 }
 
-/// Runs `step` every `every` until the task is dropped.
 fn repeat(
     every: Duration,
     cx: &mut Context<NowPlaying>,
@@ -322,13 +285,11 @@ fn repeat(
     })
 }
 
-/// A chip's width: its dot while its player plays, and its app's name.
 pub fn chip_width(player: &MediaPlayer, cx: &App) -> Pixels {
     let dot = if logic::playing(Some(player)) { CHIP_DOT + ICON_GAP } else { Pixels::ZERO };
     CHIP_PAD * 2.0 + dot + measure::width(logic::app_name(player), FONT_SIZE_SMALL, WEIGHT_LABEL, cx)
 }
 
-/// How many rows the chips wrap to in `width`.
 fn chip_rows(media: &Media, width: Pixels, cx: &App) -> usize {
     let chips = logic::chips(media);
     if chips.is_empty() {
@@ -347,7 +308,6 @@ fn chip_rows(media: &Media, width: Pixels, cx: &App) -> usize {
     rows
 }
 
-/// Milliseconds since 1970, as novad's positions are dated.
 pub fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_millis() as i64)
 }

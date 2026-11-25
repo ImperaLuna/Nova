@@ -1,14 +1,3 @@
-//! A font family token, and the face it stands for on this system.
-//!
-//! The tokens name the families Nova is designed in (Inter, JetBrains Mono,
-//! Instrument Serif), which a system may not have. Qt asks fontconfig for
-//! the best match of a missing family, and fontconfig's own rules turn a
-//! name with "Mono" in it into the system's monospace face, one with
-//! "Serif" into its serif, anything else into its sans. GPUI doesn't: it
-//! falls back to a fixed list of sans faces, so a mono token drew
-//! proportional digits (IMP-440). A [`Family`] goes to GPUI as the family
-//! fontconfig matches, so both shells draw the same face wherever they run.
-
 use fontconfig_sys::constants::FC_FAMILY;
 use fontconfig_sys::{
     FcChar8, FcConfigSubstitute, FcDefaultSubstitute, FcFontMatch, FcInit, FcMatchPattern, FcPattern,
@@ -21,9 +10,6 @@ use std::fmt;
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
 
-/// A font family token: the family asked for. It becomes the face this
-/// system draws it with wherever GPUI takes a family (`font_family`,
-/// `font`).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Family(&'static str);
 
@@ -32,13 +18,10 @@ impl Family {
         Self(name)
     }
 
-    /// The family asked for, as `Tokens.qml` names it.
     pub const fn asked(self) -> &'static str {
         self.0
     }
 
-    /// The family this system draws it with: the asked one when it is
-    /// there, else fontconfig's match, worked out once per family.
     pub fn resolved(self) -> SharedString {
         static RESOLVED: OnceLock<Mutex<HashMap<&'static str, SharedString>>> = OnceLock::new();
         let resolved = RESOLVED.get_or_init(Mutex::default);
@@ -52,7 +35,6 @@ impl Family {
     }
 }
 
-/// Written as `Tokens.qml` writes the family: the asked name in quotes.
 impl fmt::Debug for Family {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{:?}", self.0)
@@ -65,7 +47,6 @@ impl From<Family> for SharedString {
     }
 }
 
-/// A pattern fontconfig made, destroyed when dropped.
 struct Pattern(*mut FcPattern);
 
 impl Drop for Pattern {
@@ -78,9 +59,8 @@ impl Drop for Pattern {
     }
 }
 
-/// The family of the face fontconfig picks for `family`, after the user's
-/// and the system's rules, as Qt's font database asks it. `None` without
-/// fontconfig.
+// GPUI falls back to a fixed list of sans faces where fontconfig would match a missing family:
+// https://linear.app/imperaluna/issue/IMP-440
 fn best_match(family: &str) -> Option<String> {
     let name = CString::new(family).ok()?;
     // SAFETY: takes no arguments; loads the default configuration once.
@@ -128,8 +108,6 @@ mod tests {
 
     #[test]
     fn a_family_resolves_to_a_face_name() {
-        // Whatever fonts the test machine has, the name is one fontconfig
-        // can find again, or the asked one without fontconfig.
         assert!(!Family::named("JetBrains Mono").resolved().is_empty());
     }
 }

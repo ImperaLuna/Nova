@@ -1,6 +1,3 @@
-//! `nova-ui`'s command line. novad starts it with none: the options are for
-//! running it by hand.
-
 use std::path::PathBuf;
 
 pub const USAGE: &str = "\
@@ -24,22 +21,14 @@ Usage: nova-ui [--replay <folder>]... [--demo] [--demo-toggles <times>]
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Args {
-    /// The folders of recordings a fake novad replays; none means the real
-    /// novad.
     pub replay: Vec<PathBuf>,
-    /// Show the test pills and panels.
     pub demo: bool,
-    /// How often the demo opens and closes its panel by itself before the
-    /// program quits; none leaves it to clicks.
     pub demo_toggles: Option<u32>,
-    /// The panel it opens and closes then; none means the `demo` panel.
     pub demo_panel: Option<String>,
-    /// Log the stage's frames.
     pub frames: bool,
 }
 
 impl Args {
-    /// Reads the arguments after the program's name.
     pub fn parse(mut args: impl Iterator<Item = String>) -> Result<Self, String> {
         let mut parsed = Self::default();
         while let Some(arg) = args.next() {

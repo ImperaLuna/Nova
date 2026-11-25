@@ -1,9 +1,3 @@
-//! Runs the power feature (`nova-power`, in `features/power`) in novad: the
-//! answers to its commands and following logind for the lock screen.
-//! Wiring only: it adapts the feature's core to novad's `Daemon`. The
-//! feature keeps no state, so it has no module; its commands answer while
-//! its feature is ready.
-
 use crate::Daemon;
 use nova_carrier::Outcome;
 use nova_desktop_info::Capability;
@@ -14,8 +8,6 @@ use std::sync::Arc;
 use nova_power::FEATURE_ID;
 const LOG_SOURCE: &str = "server";
 
-/// The answer to one of the feature's commands, the route
-/// `requests::router` gives them.
 pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     match command {
         Command::PowerOptions => options(daemon),
@@ -23,7 +15,6 @@ pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     }
 }
 
-/// An error saying the feature `id` isn't ready, when it isn't.
 fn require_feature(daemon: &Daemon, id: &str) -> Result<(), String> {
     match daemon.feature_ready(id) {
         true => Ok(()),
@@ -50,9 +41,6 @@ fn options(daemon: &Daemon) -> Answer {
     })
 }
 
-/// Runs a power menu action. The menu asks over the UI's own
-/// connection, which can't report the lock screen covering the screens
-/// while this waits, so locking here doesn't wait for it.
 fn power(daemon: &Daemon, action: PowerAction) -> Answer {
     if let Err(e) = require_feature(daemon, FEATURE_ID) {
         return Answer::Now(Outcome::Error(e));
@@ -73,9 +61,6 @@ fn power(daemon: &Daemon, action: PowerAction) -> Answer {
     }
 }
 
-/// Suspend, restart or shut down through logind; answers with logind's
-/// own result. A suspend locks the screen first through novad's sleep
-/// inhibitor ([`nova_power::logind`]), as one from anywhere else does.
 fn logind(daemon: &Daemon, action: PowerAction) -> Answer {
     let logger = Arc::clone(&daemon.logger);
     Answer::later(move || {
@@ -85,13 +70,10 @@ fn logind(daemon: &Daemon, action: PowerAction) -> Answer {
     })
 }
 
-/// Locks the screen when logind asks, and before the machine sleeps, for
-/// as long as novad runs.
 pub fn follow_logind(daemon: &Arc<Daemon>) {
     nova_power::follow(Arc::new(LockScreen(Arc::clone(daemon))), Arc::clone(&daemon.logger));
 }
 
-/// novad's lock screen, as the feature's [`nova_power::LockScreen`] port.
 struct LockScreen(Arc<Daemon>);
 
 impl nova_power::LockScreen for LockScreen {

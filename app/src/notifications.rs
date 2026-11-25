@@ -1,9 +1,3 @@
-//! Runs the notifications feature (`nova-notifications`, in
-//! `features/notifications`) in novad: its module and the answers to its
-//! commands. Wiring only: it adapts the feature's core to novad's `Module`
-//! trait and `Daemon`, and all of the feature's work and state stay in the
-//! core.
-
 use crate::Daemon;
 use nova_carrier::Outcome;
 use nova_hub::ClientId;
@@ -14,12 +8,9 @@ use std::sync::Arc;
 
 use nova_notifications::FEATURE_ID;
 
-/// The feature's core, as novad's module.
 pub struct Notifications(Arc<nova_notifications::Notifications>);
 
 impl Notifications {
-    /// The core itself, for the features that post Nova's own
-    /// notifications (`peripherals`).
     pub fn core(&self) -> &Arc<nova_notifications::Notifications> {
         &self.0
     }
@@ -33,8 +24,6 @@ impl std::ops::Deref for Notifications {
     }
 }
 
-/// The answer to one of the feature's commands from `caller`, the route
-/// `requests::router` gives them.
 pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     let notifications = daemon.module::<Notifications>();
     Answer::Now(match command {
@@ -56,11 +45,6 @@ pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     })
 }
 
-/// A click on the notification `id`, on `output`. Its app hears of it and
-/// shows its window, which takes focus once it shows: niri gives it none,
-/// as the app gets no activation token from the click. Nothing starts when
-/// none shows: the app took the click. An app that can't hear of it (gone,
-/// or does nothing on a click) is opened instead, as the launcher does.
 fn open(daemon: &Daemon, id: u32, output: Option<String>) -> Answer {
     let clicked = match daemon.module::<Notifications>().and_then(|notifications| notifications.click(id)) {
         Ok(clicked) => clicked,
@@ -88,8 +72,6 @@ fn open(daemon: &Daemon, id: u32, output: Option<String>) -> Answer {
     })
 }
 
-/// Started before the UI, which settings start ahead of, so notifications
-/// sent while it starts are kept. No options.
 impl nova_modules::Module for Notifications {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;

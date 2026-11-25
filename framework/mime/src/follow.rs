@@ -1,14 +1,3 @@
-//! The MIME database as it is now ([`Mime::current`]), for Nova Files'
-//! folder listing and opening files. It's read as the files module starts
-//! and again, on a thread of its own, once `update-mime-database` rewrites
-//! a `mime/` folder (a package that brings new types) or a rebuild swaps a
-//! link on the way to one ([`nova_watch`]). Only each folder's own
-//! files are watched: the database is those, the per-type XML below is
-//! what they're built from.
-//!
-//! Whoever asks gets the copy read last; one read meanwhile replaces it
-//! only once it's whole, so nobody sees half a database.
-
 use super::MimeDb;
 use nova_base::lock;
 use nova_carrier::log::LogLevel;
@@ -19,18 +8,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 
 const LOG_SOURCE: &str = "mime";
-/// The database's folder in each data folder.
 const FOLDER: &str = "mime";
 
 pub struct Mime {
     current: Mutex<Arc<MimeDb>>,
-    /// Ends the watching; `None` when it couldn't start.
     stopper: Option<inotify::Stopper>,
 }
 
 impl Mime {
-    /// Reads the database in `data_dirs` (the most important first) and
-    /// follows changes to it until stopped (or dropped).
     pub fn follow(data_dirs: Vec<PathBuf>, logger: Arc<Logger>) -> Arc<Self> {
         let (changed, changes) = mpsc::channel();
         let stopper = match Inotify::new(inotify::REPLACEMENTS) {
@@ -47,11 +32,9 @@ impl Mime {
                 None
             }
         };
-        // Watched first, so types installed meanwhile aren't missed.
         let mime = Arc::new(Self { current: Mutex::new(Arc::new(load(&data_dirs, &logger, LogLevel::Warn))), stopper });
         let following = Arc::downgrade(&mime);
         std::thread::spawn(move || {
-            // Ends once the watching does: it holds the only sender.
             while watch_points::settled(&changes) {
                 let Some(mime) = following.upgrade() else { return };
                 if mime.stopped() {
@@ -61,7 +44,6 @@ impl Mime {
                 if mime.stopped() {
                     return;
                 }
-                // The old copy is freed after the lock, not under it.
                 let old = std::mem::replace(&mut *lock(&mime.current), Arc::new(db));
                 drop(old);
                 logger.info(LOG_SOURCE, "read the MIME database again");
@@ -70,12 +52,10 @@ impl Mime {
         mime
     }
 
-    /// The database as last read.
     pub fn current(&self) -> Arc<MimeDb> {
         Arc::clone(&lock(&self.current))
     }
 
-    /// Stops following changes; what it read last stays.
     pub fn stop(&self) {
         if let Some(stopper) = &self.stopper {
             stopper.stop();
@@ -93,7 +73,6 @@ impl Drop for Mime {
     }
 }
 
-/// Where to watch for the database in `data_dirs`.
 fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
     let mut points = WatchPoints::default();
     for dir in data_dirs {
@@ -102,8 +81,6 @@ fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
     points
 }
 
-/// Reads the database, logging its problems at `level`: warnings the
-/// first time, so a reload doesn't repeat them.
 fn load(data_dirs: &[PathBuf], logger: &Logger, level: LogLevel) -> MimeDb {
     let (db, problems) = MimeDb::load(data_dirs);
     for problem in problems {
@@ -129,8 +106,6 @@ mod tests {
         mime.current().type_by_name(&name, &std::fs::metadata(file).unwrap()).to_string()
     }
 
-    /// Like `update-mime-database`: the new file written beside the old,
-    /// then renamed over it.
     fn rewrite(dir: &std::path::Path, name: &str, text: &str) {
         let new = dir.join(format!("{name}.new"));
         std::fs::write(&new, text).unwrap();
@@ -158,7 +133,6 @@ mod tests {
         let file = dir.join("photo.png");
         std::fs::write(&file, b"\x00").unwrap();
         assert_eq!(type_of(&mime, &file), super::super::BINARY);
-        // A Nix profile switch: a new store folder, then the link to it.
         let store = dir.join("store/mime");
         std::fs::create_dir_all(&store).unwrap();
         std::fs::write(store.join("globs2"), "50:image/png:*.png\n").unwrap();

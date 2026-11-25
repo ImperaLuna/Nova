@@ -1,19 +1,10 @@
-//! What apps send, checked and cut down: text made plain, pictures checked
-//! and written out, names checked, lists capped.
-
 use super::*;
 
 impl Shared {
-    /// What `sent` becomes as notification `id`, its text and pictures checked.
     pub(crate) fn read(&self, id: u32, mut sent: Sent, now: i64) -> Notification {
         let desktop_entry = take_str(&mut sent.hints, "desktop-entry")
             .map(|entry| entry.strip_suffix(".desktop").unwrap_or(&entry).to_string())
             .filter(|entry| is_name(entry));
-        // Like GNOME: the installed app the sender names is shown as its
-        // desktop entry says (the user may have changed its name or icon
-        // there), and what the sender calls itself only when none is. Right
-        // after novad starts, it waits for the apps to be read, or a muted
-        // app would get past its mute under the sender's name.
         let installed =
             desktop_entry.as_deref().and_then(|entry| self.apps.app_once_scanned(&format!("{entry}.desktop")));
         let (installed_name, installed_icon) = installed.map_or((None, None), |app| (Some(app.name), app.icon));
@@ -53,7 +44,6 @@ impl Shared {
                 actions.push(NotificationAction { key: key.clone(), label });
             }
         }
-        // Critical ones stay until they're closed, whatever the app asked.
         let timeout_ms = match (urgency, sent.expire_timeout) {
             (Urgency::Critical, _) => Some(0),
             (_, timeout) => u32::try_from(timeout).ok(),
@@ -78,9 +68,7 @@ impl Shared {
         }
     }
 
-    /// The picture in `hints`: pixels, written out, or a file.
     fn image(&self, id: u32, hints: &mut HashMap<String, OwnedVariant>) -> Option<String> {
-        // Older senders use the spec's earlier names.
         for key in ["image-data", "image_data", "icon_data"] {
             let Some(raw) = hints.remove(key) else { continue };
             let saved = image::Raw::try_from(raw).map_err(|e| format!("not a picture: {e}")).and_then(|raw| {
@@ -99,8 +87,6 @@ impl Shared {
     }
 }
 
-/// The file for an app icon as `Notify` gives it: a file, or a theme icon
-/// name looked up in `icons`.
 pub(crate) fn icon(reference: &str, icons: &Icons) -> Option<String> {
     let reference = reference.trim();
     if let Some(path) = nova_paths::reference::file(reference) {
@@ -109,7 +95,6 @@ pub(crate) fn icon(reference: &str, icons: &Icons) -> Option<String> {
     is_name(reference).then(|| icons.find(reference)).flatten()
 }
 
-/// A desktop entry id or icon name: short, and nothing that reads as a path.
 fn is_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MAX_NAME_LEN

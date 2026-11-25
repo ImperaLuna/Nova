@@ -1,18 +1,3 @@
-//! A tray app's menu under its icon (panel `tray-menu`), ported from
-//! `ui/tray/TrayMenu.qml` and `TrayMenuList.qml`: the app's icon and name,
-//! the entries its DBusMenu lists one level at a time (separators,
-//! checkboxes, submenus with a way back), and Nova's own "Hide from tray"
-//! (or "Show in tray"). It drops into place beside the open tray, closes
-//! with it, and once an entry ran; a checkbox flips in place.
-//!
-//! novad reads the menu and runs its entries (`tray_menu`,
-//! `run_tray_menu_entry`): the stage owns the glass, the drop in, Esc and
-//! a click outside.
-//!
-//! The tray card in quick settings draws the same menu inside the drawer
-//! (`TrayMenu::in_drawer`): there the card places it and dismisses it, and
-//! an entry that ran closes quick settings too.
-
 use crate::model::{self, Entry};
 use crate::strip::TRAY;
 use crate::tokens::{
@@ -21,36 +6,30 @@ use crate::tokens::{
 };
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, Global, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Render, SharedString, Size, StatefulInteractiveElement, Styled, Task, Window, div, size,
+    ParentElement, Pixels, Render, SharedString, Size, Styled, Task, Window, div, size,
 };
 use nova_look::tokens::{
     BAR_GAP, BAR_HEIGHT, BAR_MARGIN, DIVIDER_WIDTH, ICON_GAP, ICON_SIZE_SMALL, MENU_PAD, PILL_BUTTON_SIZE, ROW_INSET,
     STROKE_THIN, WEIGHT_TITLE,
 };
-use nova_look::{AppIcon, Glyph, Icon, Theme};
+use nova_look::{AppIcon, Glyph, Icon, Theme, wheel_list};
 use nova_stage::{Panel, Screen, Stage};
 use nova_tray_api::{Command, Toggle, TrayMenuEntry, TrayMenuLevel};
 use nova_ui_client::Daemon;
 use std::collections::HashMap;
 
-/// The panel's name, as today's shell calls it.
 pub const MENU: &str = "tray-menu";
-/// Quick settings' drawer, by its name, which a menu drawn over it closes.
 const QUICK_SETTINGS: &str = "quick-settings";
 
-/// How far down the screen the menu's top is: below the bar.
 fn top() -> Pixels {
     BAR_GAP + BAR_HEIGHT + MENU_GAP
 }
 
-/// Each screen's menu, shared by the strip that opens it and the panel
-/// that draws it.
 #[derive(Default)]
 struct Menus(HashMap<gpui::DisplayId, Entity<TrayMenu>>);
 
 impl Global for Menus {}
 
-/// `screen`'s menu, made the first time either side asks.
 pub fn of(screen: &Screen, cx: &mut App) -> Entity<TrayMenu> {
     if let Some(menu) = cx.default_global::<Menus>().0.get(&screen.id) {
         return menu.clone();
@@ -60,8 +39,6 @@ pub fn of(screen: &Screen, cx: &mut App) -> Entity<TrayMenu> {
     menu
 }
 
-/// The menu's panel on `screen`: it drops into place where the strip put
-/// it, beside the open tray.
 pub fn panel(screen: &Screen, cx: &mut App) -> Panel {
     let menu = of(screen, cx);
     let size = menu.read(cx).size();
@@ -70,15 +47,10 @@ pub fn panel(screen: &Screen, cx: &mut App) -> Panel {
 
 pub struct TrayMenu {
     screen: Screen,
-    /// Drawn over quick settings' Tray card instead of as a panel below
-    /// the bar ([`TrayMenu::in_drawer`]).
     in_drawer: bool,
-    /// The app whose menu it shows.
     entry: Option<Entry>,
-    /// Submenus opened, the innermost last.
     stack: Vec<i32>,
     level: TrayMenuLevel,
-    /// The level novad hasn't answered yet; a newer one drops it.
     asking: Option<Task<()>>,
     running: Option<Task<()>>,
 }
@@ -96,33 +68,24 @@ impl TrayMenu {
         }
     }
 
-    /// A menu the Tray card in quick settings draws over the drawer
-    /// itself: it is no panel, an entry that ran closes quick settings
-    /// (hiding or showing the app leaves it open, to see the change), and
-    /// the card closes it on a click beside it ([`TrayMenu::dismiss`]).
     pub fn in_drawer(screen: &Screen) -> Self {
         Self { in_drawer: true, ..Self::new(screen) }
     }
 
-    /// Whether it shows an app's menu now.
     pub fn is_showing(&self) -> bool {
         self.entry.is_some()
     }
 
-    /// The key of the app whose menu it shows now.
     pub fn showing(&self) -> Option<&str> {
         self.entry.as_ref().map(|entry| entry.key.as_str())
     }
 
-    /// Stops showing it (a click beside a menu in the drawer).
     pub fn dismiss(&mut self, cx: &mut Context<Self>) {
         if self.entry.take().is_some() {
             cx.notify();
         }
     }
 
-    /// The tallest it may be: down to the bar's margin above the screen's
-    /// bottom, or the drawer's height.
     fn max_height(&self) -> Pixels {
         match self.in_drawer {
             true => self.screen.size.height - BAR_GAP - BAR_MARGIN * 2.0,
@@ -135,8 +98,6 @@ impl TrayMenu {
         size(MENU_WIDTH, height)
     }
 
-    /// Shows `entry`'s menu, right-aligned a little past its icon, whose
-    /// middle is `icon_x` across the screen.
     pub fn show(&mut self, entry: Entry, icon_x: Pixels, cx: &mut Context<Self>) {
         let screen = self.screen.id;
         let left = icon_x + PILL_BUTTON_SIZE / 2.0 + MENU_GAP - MENU_WIDTH;
@@ -154,7 +115,6 @@ impl TrayMenu {
         cx.notify();
     }
 
-    /// Reads the level shown now.
     fn read(&mut self, cx: &mut Context<Self>) {
         let Some(entry) = &self.entry else { return };
         if !entry.has_menu {
@@ -177,7 +137,6 @@ impl TrayMenu {
 
     fn resize(&self, cx: &mut Context<Self>) {
         if self.in_drawer {
-            // Not a panel: its view takes the room it needs.
             return;
         }
         let (screen, size) = (self.screen.id, self.size());
@@ -196,8 +155,6 @@ impl TrayMenu {
         self.read(cx);
     }
 
-    /// Runs `picked`: novad notes the app's windows, then clicks it. A
-    /// checkbox flips in place, anything else is done.
     fn run(&mut self, picked: &TrayMenuEntry, cx: &mut Context<Self>) {
         let Some(entry) = &self.entry else { return };
         let command =
@@ -223,8 +180,6 @@ impl TrayMenu {
         self.done(true, cx);
     }
 
-    /// Closes the menu and the tray with it; in the drawer, quick settings
-    /// too unless `stay` (the app was hidden or shown).
     fn done(&mut self, stay: bool, cx: &mut Context<Self>) {
         let screen = self.screen.id;
         if self.in_drawer {
@@ -242,7 +197,7 @@ impl TrayMenu {
 }
 
 impl Render for TrayMenu {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(entry) = self.entry.clone() else { return div() };
         let fg = Theme::of(cx).fg;
         let in_submenu = !self.stack.is_empty();
@@ -261,7 +216,7 @@ impl Render for TrayMenu {
         });
         let entries: Vec<AnyElement> = self.level.entries.iter().map(|picked| self.entry_row(picked, cx)).collect();
         let has_entries = !entries.is_empty();
-        let list = div().id("entries").h(list_height).overflow_y_scroll().flex().flex_col().children(entries);
+        let list = wheel_list("entries", window, cx).h(list_height).flex().flex_col().children(entries);
         let nova_own = RowLook {
             text: if entry.hidden { "Show in tray" } else { "Hide from tray" }.into(),
             ink: Ink::Quiet,
@@ -315,8 +270,6 @@ impl TrayMenu {
     }
 }
 
-/// What sits before a row's text: a checkbox, an icon, or the room either
-/// takes, so labels line up.
 #[derive(Default, Clone, Copy)]
 enum Mark {
     #[default]
@@ -329,9 +282,7 @@ enum Mark {
 enum Ink {
     #[default]
     Plain,
-    /// Ends the app: in the error color.
     Quit,
-    /// Nova's own entry, set apart.
     Quiet,
 }
 
@@ -339,7 +290,6 @@ struct RowLook {
     text: SharedString,
     mark: Mark,
     ink: Ink,
-    /// Has a submenu.
     opens: bool,
     enabled: bool,
 }

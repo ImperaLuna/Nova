@@ -1,35 +1,17 @@
-//! What the power menu's clicks and keys pick, apart from drawing it, with
-//! no GPUI in it. `ui/power/PowerChoice.qml` in today's shell.
-//!
-//! One row is selected at a time; it follows the pointer and the arrow
-//! keys and starts on Lock, the harmless one. Lock and suspend run at once.
-//! Log out, restart and shut down ask once more: a second pick within
-//! [`DURATION_CONFIRM`] runs them, otherwise they disarm. Nothing else is
-//! picked while one runs. Those three end the session, so they wait for
-//! the menu to close first ([`Choice::leaving`]): run while it closes, the
-//! session went down mid-animation and left the half-closed menu frozen on
-//! screen (IMP-200).
-
 use crate::tokens::DURATION_CONFIRM;
 use nova_power_api::{PowerAction, PowerOption};
 use std::time::Instant;
 
-/// One of the menu's rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Entry {
     pub action: PowerAction,
     pub label: &'static str,
-    /// What it says while it runs, before the "…".
     pub doing: &'static str,
-    /// The key that picks it.
     pub key: char,
-    /// Whether it asks for a second pick.
     pub confirm: bool,
-    /// Whether it ends the session, so waits for the menu to close.
     pub leaves: bool,
 }
 
-/// The rows, in the menu's order.
 pub const ENTRIES: [Entry; 5] = [
     Entry { action: PowerAction::Lock, label: "Lock", doing: "Locking", key: 'l', confirm: false, leaves: false },
     Entry {
@@ -59,59 +41,40 @@ pub const ENTRIES: [Entry; 5] = [
     },
 ];
 
-/// The row of `action`.
 pub fn entry(action: PowerAction) -> &'static Entry {
     ENTRIES.iter().find(|entry| entry.action == action).unwrap_or(&ENTRIES[0])
 }
 
-/// What a pick asks of the menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pick {
-    /// Nothing more (the row armed, or nothing could be picked).
     Nothing,
-    /// Have novad run it now.
     Run(PowerAction),
-    /// Close the menu, then call [`Choice::left`] once it has.
     Leave(PowerAction),
 }
 
-/// A key pressed in the open menu, as the menu tells them apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
-    /// Down or Tab.
     Next,
-    /// Up or Shift+Tab.
     Previous,
     Enter,
     Escape,
-    /// A letter, lower case.
     Letter(char),
     Other,
 }
 
-/// What the menu does with a key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Answer {
-    /// Not the menu's: it goes on (Esc with nothing armed closes the menu).
     Passed,
-    /// The menu's, with what it picked.
     Taken(Pick),
 }
 
-/// The menu's choice (see the module).
 #[derive(Debug, Clone)]
 pub struct Choice {
-    /// novad's last answer. An action it hasn't answered for yet counts as
-    /// available; novad checks again when it runs.
     options: Vec<PowerOption>,
     pub selected: PowerAction,
-    /// The action waiting for its second pick, and since when.
     armed: Option<(PowerAction, Instant)>,
-    /// The action novad is running, or that waits for the menu to close.
     pub running: Option<PowerAction>,
-    /// The action that ends the session, waiting for the menu to close.
     pub leaving: Option<PowerAction>,
-    /// Why the last action failed, until the menu opens again.
     pub problem: String,
 }
 
@@ -131,9 +94,6 @@ impl Default for Choice {
 impl Choice {
     pub fn set_options(&mut self, options: Vec<PowerOption>) {
         self.options = options;
-        // The menu opened on Lock before novad answered; if Lock (or
-        // wherever the user has since moved) can't run, select the first
-        // row that can, so no dimmed row is left highlighted.
         if !self.available(self.selected)
             && self.armed.is_none()
             && self.running.is_none()
@@ -151,32 +111,26 @@ impl Choice {
         self.option(action).is_none_or(|option| option.available)
     }
 
-    /// Why `action` can't run, for under its dimmed row.
     pub fn reason(&self, action: PowerAction) -> &str {
         self.option(action).and_then(|option| option.reason.as_deref()).unwrap_or_default()
     }
 
-    /// The action waiting for its second pick at `now`.
     pub fn armed(&self, now: Instant) -> Option<PowerAction> {
         self.armed
             .filter(|(_, since)| now.saturating_duration_since(*since) < DURATION_CONFIRM)
             .map(|(action, _)| action)
     }
 
-    /// How much of the armed action's wait is left at `now`, 1 down to 0.
     pub fn armed_left(&self, now: Instant) -> f32 {
         let Some((_, since)) = self.armed else { return 0.0 };
         let gone = now.saturating_duration_since(since).as_secs_f32() / DURATION_CONFIRM.as_secs_f32();
         (1.0 - gone).clamp(0.0, 1.0)
     }
 
-    /// The whole seconds left to confirm, as the row counts them down.
     pub fn seconds_left(&self, now: Instant) -> u64 {
         (self.armed_left(now) * DURATION_CONFIRM.as_secs_f32()).ceil() as u64
     }
 
-    /// The menu opened. One opened again before it closed for an action
-    /// that ends the session keeps the session.
     pub fn reset(&mut self) {
         if self.leaving.take().is_some() {
             self.running = None;
@@ -190,14 +144,12 @@ impl Choice {
         self.armed = None;
     }
 
-    /// The pointer went over a row.
     pub fn hover(&mut self, action: PowerAction, now: Instant) {
         if self.armed(now).is_none() && self.running.is_none() && self.available(action) {
             self.selected = action;
         }
     }
 
-    /// Moves the selection `by` rows, wrapping and skipping what can't run.
     pub fn step(&mut self, by: isize) {
         if self.running.is_some() {
             return;
@@ -213,7 +165,6 @@ impl Choice {
         }
     }
 
-    /// Picks `action`: it arms, runs, or waits for the menu to close.
     pub fn pick(&mut self, action: PowerAction, now: Instant) -> Pick {
         if self.running.is_some() || !self.available(action) {
             return Pick::Nothing;
@@ -233,22 +184,16 @@ impl Choice {
         Pick::Run(action)
     }
 
-    /// The menu has closed: the action waiting for that runs, unless it
-    /// opened again meanwhile.
     pub fn left(&mut self) -> Option<PowerAction> {
         self.leaving.take()
     }
 
-    /// novad's answer to the running action: `None`, or why it failed.
     pub fn finished(&mut self, problem: Option<String>) {
         self.running = None;
         self.problem = problem.unwrap_or_default();
     }
 
-    /// A key pressed in the open menu; `repeat` while it is held down.
     pub fn key(&mut self, key: Key, repeat: bool, now: Instant) -> Answer {
-        // A held key repeats: it may still move the selection, but never
-        // picks, so holding P can't both arm and confirm shutting down.
         if repeat && !matches!(key, Key::Next | Key::Previous) {
             return if key == Key::Other { Answer::Passed } else { Answer::Taken(Pick::Nothing) };
         }
@@ -340,7 +285,6 @@ mod tests {
         assert_eq!(choice.selected, PowerAction::Lock);
         choice.set_options(vec![dimmed(PowerAction::Lock)]);
         assert_eq!(choice.selected, PowerAction::LogOut, "off the dimmed Lock to the next that runs");
-        // A user who has armed or is mid-run keeps their place.
         let now = Instant::now();
         choice.pick(PowerAction::Reboot, now);
         choice.set_options(vec![dimmed(PowerAction::Reboot)]);
