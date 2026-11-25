@@ -1,7 +1,7 @@
 pub mod gpus;
 
 pub use nova_daemon_info::Slot;
-use nova_daemon_info::{FeatureState, FeatureStatus, UiProgram};
+use nova_daemon_info::{FeatureState, FeatureStatus};
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -244,8 +244,6 @@ pub fn load_all(root: &Path) -> Result<Vec<Manifest>, Error> {
 #[serde(deny_unknown_fields)]
 pub struct Selection {
     #[serde(default)]
-    pub ui: Option<String>,
-    #[serde(default)]
     pub enabled: Vec<String>,
     #[serde(default)]
     pub disabled: Vec<String>,
@@ -256,18 +254,6 @@ pub struct Selection {
 impl Selection {
     pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(text)
-    }
-
-    pub fn ui_problem(&self) -> Option<String> {
-        let name = self.ui.as_deref()?;
-        match UiProgram::named(name) {
-            Some(UiProgram::Gpui) => None,
-            Some(UiProgram::Quickshell) => Some(
-                "features.toml picks the Quickshell UI, which Nova no longer has, so nova-ui runs: remove `ui` there"
-                    .into(),
-            ),
-            None => Some(format!("features.toml picks a \"{name}\" UI, which Nova doesn't have, so nova-ui runs")),
-        }
     }
 
     pub fn is_on(&self, manifest: &Manifest) -> bool {
@@ -315,15 +301,6 @@ mod tests {
         [check]
         binaries = ["gpu-screen-recorder|wf-recorder"]
     "#;
-
-    #[test]
-    fn a_ui_other_than_nova_ui_only_warns() {
-        let problem = |text: &str| Selection::parse(text).unwrap().ui_problem();
-        assert_eq!(problem(""), None);
-        assert_eq!(problem("ui = \"gpui\"\ndisabled = [\"bar\"]"), None);
-        assert!(problem("ui = \"quickshell\"").is_some_and(|problem| problem.contains("no longer")));
-        assert!(problem("ui = \"GPUI\"").is_some_and(|problem| problem.contains("\"GPUI\"")));
-    }
 
     #[test]
     fn every_manifest_in_the_repo_is_valid() {

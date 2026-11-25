@@ -96,9 +96,16 @@ impl BluetoothPage {
             if id.is_none() {
                 self.focused_for = None;
             }
-            if !self.pin.read(cx).text().is_empty() {
-                self.pin.update(cx, |field, cx| field.set_text("", cx));
-            }
+            let max = self
+                .state(cx)
+                .and_then(|state| state.pairing.as_ref())
+                .map_or(0, |request| crate::logic::code_max(&request.ask));
+            self.pin.update(cx, |field, cx| {
+                field.set_max_chars(max);
+                if !field.text().is_empty() {
+                    field.set_text("", cx);
+                }
+            });
         }
         if let Some(state) = self.bluetooth.read(cx).get() {
             let failing = |address: &String, error: &String| {

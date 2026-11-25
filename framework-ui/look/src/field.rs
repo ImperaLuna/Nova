@@ -169,6 +169,10 @@ impl TextField {
         self
     }
 
+    pub fn set_max_chars(&mut self, max_chars: usize) {
+        self.editing.max_chars = max_chars;
+    }
+
     pub fn focus_handle(&self) -> FocusHandle {
         self.focus.clone()
     }

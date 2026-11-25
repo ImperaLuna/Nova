@@ -184,14 +184,16 @@ pub(crate) fn panel(
     shapes: &Shapes,
     cx: &App,
 ) -> AnyElement {
-    let content = div()
-        .absolute()
-        .left(frame.open.left() - frame.glass.left())
-        .top(frame.open.top() - frame.glass.top())
-        .w(frame.open.size.width)
-        .h(frame.open.size.height)
-        .opacity(frame.content_opacity)
-        .child(panel.spec.content.clone());
+    let open_box = || {
+        div()
+            .absolute()
+            .left(frame.open.left() - frame.glass.left())
+            .top(frame.open.top() - frame.glass.top())
+            .w(frame.open.size.width)
+            .h(frame.open.size.height)
+    };
+    let content = open_box().opacity(frame.content_opacity).child(panel.spec.content.clone());
+    let steady = panel.spec.steady.clone().map(|view| open_box().child(view));
     let rim_cut =
         if frame.fillet > px(0.0) { frame.glass.right() - frame.open.right() + frame.fillet } else { px(0.0) };
     let glass = Glass::new(frame.radius).shadow(frame.opacity).rim_cut(rim_cut);
@@ -205,7 +207,7 @@ pub(crate) fn panel(
         // The compositor's blur can't fade: a fading panel keeps no shape, or an empty frosted box stays and takes clicks:
         // https://linear.app/imperaluna/issue/IMP-57
         .child(record(shapes, frame.radius, !fades_out(panel, frame), None))
-        .child(div().absolute().inset_0().overflow_hidden().child(content))
+        .child(div().absolute().inset_0().overflow_hidden().child(content).children(steady))
         .children(fillets(frame, origin, shapes))
         .into_any_element()
 }
@@ -424,6 +426,7 @@ impl Render for StageView {
         self.follow_middle(window, cx, now);
         self.give_way(now);
         self.rest_once_closed(window, cx, now);
+        self.ask_layer_once_on_screen(window, cx);
         let moving = self.moving(now);
         if moving {
             window.request_animation_frame();

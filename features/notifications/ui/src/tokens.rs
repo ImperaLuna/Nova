@@ -42,7 +42,3 @@ pub const EMPTY_ICON: Pixels = px(28.0);
 
 pub const MENU_PAD: Pixels = px(4.0);
 pub const MENU_ITEM_HEIGHT: Pixels = px(30.0);
-
-pub const LETTER_TILE_RADIUS: Pixels = px(9.0);
-pub const LETTER_TILE_FOR: Pixels = px(30.0);
-pub const LETTER_SCALE: f32 = 0.47;

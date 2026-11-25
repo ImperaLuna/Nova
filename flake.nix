@@ -343,9 +343,6 @@
                       services.xserver = { inherit videoDrivers; };
                       programs.nova = {
                         enable = true;
-                        # What RyzenShine's nix-config still sets: it
-                        # must keep evaluating.
-                        ui = "gpui";
                         # Every feature on, each with modes in its last mode
                         # (none defaults to it).
                         features = pkgs.lib.mapAttrs (
@@ -369,7 +366,6 @@
                 in
                 assert pkgs.lib.all (features.isOn selection) (builtins.attrValues features.manifests);
                 assert !(selection ? ui);
-                assert !(pkgs.lib.any (pkgs.lib.hasInfix "quickshell") config.warnings);
                 assert pkgs.lib.elem config.programs.nova.uiPackage config.environment.systemPackages;
                 # The look's fonts, on by default.
                 assert pkgs.lib.all (font: pkgs.lib.elem font config.fonts.packages) (

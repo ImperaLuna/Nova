@@ -316,7 +316,7 @@ rest it commits nothing. It resizes only while nothing moves: what is new
 is laid out unseen, the window grows once, and the motion starts in the
 frame after. `Stage::observe_open` calls it back
 whenever a panel opens, closes or resizes (the pop-ups pause while quick
-settings is open), and when `Stage::logs_frames` is set it logs its own
+settings shows its first page), and when `Stage::logs_frames` is set it logs its own
 frames with a `FrameLog` named `<screen>/<feature>`, as the stage does.
 `features/notifications/ui` (`popups.rs`, `window.rs`) is the worked example.
 
@@ -335,6 +335,9 @@ never by closing its windows.
 - The contract's flags are on `Panel`: `.exclusive(false)` to stay open
   beside the others, `.closes_on_click_outside(false)`, `.takes_typing`,
   `.top` and `.radius` for a panel that isn't the usual shape.
+  `.steady(view)` draws a view over the content that the stage never
+  fades, for what stays put over the pill a panel grows out of (quick
+  settings' pill buttons).
 - A panel changes size only with `Stage::resize(name, screen, size, cx)`,
   open or not; an open one eases there. The view never sizes its own glass.
 - A view redraws by itself (`cx.notify()` when what it shows changed) and
@@ -408,7 +411,8 @@ every push and keep every line, sorted.
   module computed, with `on_scroll` moving an offset the view keeps. The
   selection's highlight is one `Eased` the rows sit above.
 - Hover is `group(name)` on the row and `group_hover(name, ...)` on what
-  appears. A button inside a clickable row calls `cx.stop_propagation()`
+  appears. Something that takes no room until the row is hovered (a
+  network's ⋯) is left out of the layout while `Hovered` says no. A button inside a clickable row calls `cx.stop_propagation()`
   in its own mouse-down.
 - What another feature adds comes through its slots: `Slots::for_host`
   says which views a host has (the launcher shows its Files tab while

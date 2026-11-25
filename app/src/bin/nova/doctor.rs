@@ -531,7 +531,6 @@ mod tests {
     fn the_ui_line_asks_novad() {
         let with_ui = |state, problem: Option<&str>| {
             let ui = UiStatus {
-                program: nova_daemon_info::UiProgram::Gpui,
                 state,
                 pid: (state == UiState::Running).then_some(7),
                 pss_kib: None,
