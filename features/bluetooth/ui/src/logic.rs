@@ -124,6 +124,13 @@ pub fn buttons(ask: &PairingAsk, incoming: bool) -> (&'static str, Option<&'stat
     }
 }
 
+pub fn code_max(ask: &PairingAsk) -> usize {
+    match ask {
+        PairingAsk::EnterPasskey => PASSKEY_MAX_DIGITS,
+        _ => nova_bluetooth_api::BLUETOOTH_PIN_MAX_BYTES,
+    }
+}
+
 pub fn valid_code(ask: &PairingAsk, text: &str) -> bool {
     match ask {
         PairingAsk::EnterPin => {
@@ -131,7 +138,6 @@ pub fn valid_code(ask: &PairingAsk, text: &str) -> bool {
                 && text.bytes().all(|byte| byte.is_ascii_graphic())
         }
         PairingAsk::EnterPasskey => {
-            let text = text.trim();
             (1..=PASSKEY_MAX_DIGITS).contains(&text.len()) && text.bytes().all(|byte| byte.is_ascii_digit())
         }
         _ => false,
@@ -208,7 +214,9 @@ mod tests {
         assert!(!valid_code(&PairingAsk::EnterPin, ""));
         assert!(!valid_code(&PairingAsk::EnterPin, "a b"));
         assert!(!valid_code(&PairingAsk::EnterPin, &"1".repeat(17)));
-        assert!(valid_code(&PairingAsk::EnterPasskey, " 123456 "));
+        assert_eq!(code_max(&PairingAsk::EnterPin), 16);
+        assert_eq!(code_max(&PairingAsk::EnterPasskey), 6);
+        assert!(!valid_code(&PairingAsk::EnterPasskey, " 12345"), "a pasted space cut a digit off");
         assert!(!valid_code(&PairingAsk::EnterPasskey, "1234567"));
         assert!(!valid_code(&PairingAsk::EnterPasskey, "12a"));
         assert!(!valid_code(&PairingAsk::Authorize, "1"));

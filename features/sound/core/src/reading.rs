@@ -4,6 +4,8 @@ use pulseaudio::protocol::{ChannelVolume, Props, SinkInputInfo, Volume};
 use std::ffi::CStr;
 
 const APPLICATION_NAME: &CStr = c"application.name";
+const APPLICATION_ICON_NAME: &CStr = c"application.icon-name";
+const APPLICATION_PROGRAM: &CStr = c"application.process.binary";
 const DEVICE_API: &CStr = c"device.api";
 const DEVICE_BUS: &CStr = c"device.bus";
 const DEVICE_PROFILE_NAME: &CStr = c"device.profile.name";
@@ -128,7 +130,14 @@ fn apps(streams: &[SinkInputInfo]) -> Vec<App> {
                 };
                 app.muted = app.muted && stream.muted;
             }
-            None => apps.push((App { id: stream.index, name, volume: 0.0, muted: stream.muted }, volume)),
+            None => {
+                let said = |key| prop(&stream.props, key).unwrap_or_default().to_owned();
+                let (icon_name, program) = (said(APPLICATION_ICON_NAME), said(APPLICATION_PROGRAM));
+                apps.push((
+                    App { id: stream.index, name, icon_name, program, volume: 0.0, muted: stream.muted },
+                    volume,
+                ));
+            }
         }
     }
     apps.into_iter().map(|(app, loudest)| App { volume: loudest.unwrap_or(FULL), ..app }).collect()

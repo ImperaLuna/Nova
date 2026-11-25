@@ -260,7 +260,10 @@ impl BluetoothPage {
                     .flex()
                     .items_center()
                     .gap(ICON_GAP)
-                    .child(DeviceBattery::percent(percent))
+                    .child(
+                        DeviceBattery::percent(percent)
+                            .eased(gpui::SharedString::from(format!("battery {}", device.address))),
+                    )
                     .child(
                         div()
                             .font_family(FONT_MONO)
