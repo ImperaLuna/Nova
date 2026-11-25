@@ -72,7 +72,7 @@ let
       sourceRoot="."
     '';
     strictDeps = true;
-    nativeBuildInputs = buildTools ++ [ pkgs.makeWrapper ];
+    nativeBuildInputs = buildTools ++ [ pkgs.makeBinaryWrapper ];
     buildInputs = buildLibs;
   };
 
@@ -90,6 +90,7 @@ let
         doCheck = false;
         postFixup = ''
           wrapProgram $out/bin/nova-ui \
+            --inherit-argv0 \
             --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath runtimeLibs}
         '';
         meta = {
