@@ -8,8 +8,8 @@ use gpui::{
 };
 use nova_look::tokens::QUICK_SETTINGS_PAD as PAD;
 use nova_look::tokens::{
-    BAR_GAP, BAR_HEIGHT, BAR_MARGIN, FONT_DISPLAY, FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP,
-    ICON_GAP, ICON_SIZE_MENU, ICON_SIZE_SMALL, LOGO_SIZE, PILL_BUTTON_GAP, PILL_BUTTON_INSET, QUICK_SETTINGS_GAP,
+    BAR_GAP, FONT_DISPLAY, FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE_MENU,
+    ICON_SIZE_SMALL, LOGO_SIZE, QUICK_SETTINGS_GAP,
 };
 use nova_look::{Glyph, Icon, LookStyled, Theme, Tile};
 use nova_stage::Part;
@@ -52,18 +52,6 @@ impl Render for Drawer {
             .relative()
             .body_text(cx)
             .child(div().absolute().left(PAD).right(PAD).top(BAR_GAP).bottom(PAD).children(pages))
-            .child(
-                div()
-                    .absolute()
-                    .top(BAR_GAP)
-                    .right(BAR_MARGIN)
-                    .h(BAR_HEIGHT)
-                    .px(PILL_BUTTON_INSET)
-                    .flex()
-                    .items_center()
-                    .gap(PILL_BUTTON_GAP)
-                    .children(self.buttons.views().cloned()),
-            )
     }
 }
 
@@ -148,7 +136,7 @@ impl Drawer {
         let greeting = logic::greeting(now.hour());
         let name = host.as_ref().map(|host| host.user.clone()).unwrap_or_default();
         let greeting = if name.is_empty() { greeting.to_owned() } else { format!("{greeting}, ") };
-        let inset = nova_look::header_inset(self.buttons.views().count());
+        let inset = nova_look::header_inset(self.buttons.read(cx).count());
         let room = WIDTH - PAD * 2.0 - inset - LOGO_SIZE - nova_look::tokens::PAD;
         let wide = text_width(&greeting, false, window) + text_width(&name, true, window);
         let size = logic::greeting_size(FONT_SIZE_DISPLAY, FONT_SIZE_HEADING, wide, room);

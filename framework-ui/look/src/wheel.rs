@@ -1,4 +1,7 @@
-use gpui::{Pixels, Point, ScrollDelta, ScrollEvent, point, px};
+use gpui::{
+    App, Div, ElementId, InteractiveElement, Pixels, Point, ScrollDelta, ScrollEvent, ScrollHandle, Stateful,
+    StatefulInteractiveElement, Styled, Window, div, point, px,
+};
 
 // GPUI on Wayland reports a wheel notch as 3 lines and multiplies a smooth delta by 3: https://github.com/ImperaLuna/zed/tree/2033650502b1d0ec524b8913bf5a01b9463bed5d/crates/gpui
 const NOTCH_LINES: f32 = 3.0;
@@ -13,6 +16,26 @@ pub fn scrolled(event: &ScrollEvent) -> Point<Pixels> {
         ScrollDelta::Lines(lines) => point(WHEEL_LINE * lines.x, WHEEL_LINE * lines.y),
         ScrollDelta::Pixels(pixels) => point(pixels.x / GPUI_PIXEL_FACTOR, pixels.y / GPUI_PIXEL_FACTOR),
     }
+}
+
+pub fn wheel_list(id: impl Into<ElementId>, window: &mut Window, cx: &mut App) -> Stateful<Div> {
+    let id = id.into();
+    let handle = window.use_keyed_state(id.clone(), cx, |_, _| ScrollHandle::new()).read(cx).clone();
+    let view = window.current_view();
+    let wheeled = handle.clone();
+    div().id(id).overflow_y_hidden().track_scroll(&handle).on_scroll(move |event, _, cx| {
+        let offset = wheeled.offset();
+        let moved = scrolled_list(offset, wheeled.max_offset(), scrolled(event));
+        if moved != offset {
+            wheeled.set_offset(moved);
+            cx.notify(view);
+        }
+    })
+}
+
+fn scrolled_list(offset: Point<Pixels>, max: Point<Pixels>, by: Point<Pixels>) -> Point<Pixels> {
+    let by = if by.y == px(0.0) { by.x } else { by.y };
+    point(offset.x, (offset.y + by).clamp(-max.y, px(0.0)))
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -54,6 +77,16 @@ mod tests {
         assert_eq!(scrolled(&notch).y, px(-72.0));
         let swipe = scroll(ScrollDelta::Pixels(point(px(0.0), px(-30.0))));
         assert_eq!(scrolled(&swipe).y, px(-10.0));
+    }
+
+    #[test]
+    fn a_list_scrolls_by_the_wheel_and_stops_at_both_ends() {
+        let max = point(px(0.0), px(100.0));
+        let down = point(px(0.0), px(-72.0));
+        assert_eq!(scrolled_list(point(px(0.0), px(0.0)), max, down).y, px(-72.0));
+        assert_eq!(scrolled_list(point(px(0.0), px(-72.0)), max, down).y, px(-100.0), "not past the end");
+        assert_eq!(scrolled_list(point(px(0.0), px(-10.0)), max, -down).y, px(0.0), "nor past the start");
+        assert_eq!(scrolled_list(point(px(0.0), px(0.0)), max, point(px(-30.0), px(0.0))).y, px(-30.0), "sideways too");
     }
 
     #[test]

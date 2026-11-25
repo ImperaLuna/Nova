@@ -1,4 +1,3 @@
-mod app_icon;
 mod card;
 mod list;
 mod logic;

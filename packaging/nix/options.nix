@@ -20,6 +20,10 @@ let
     if cfg.featuresFile == null then { } else builtins.fromTOML (builtins.readFile cfg.featuresFile);
 in
 {
+  imports = [
+    (lib.mkRemovedOptionModule [ "programs" "nova" "ui" ] "Nova has one UI now.")
+  ];
+
   options.programs.nova = {
     enable = lib.mkEnableOption "Nova, a desktop shell for Wayland compositors";
 
@@ -35,18 +39,6 @@ in
       default = packages.${pkgs.stdenv.hostPlatform.system}.nova-files;
       defaultText = lib.literalExpression "nova.packages.\${system}.nova-files";
       description = "The Nova Files app, which the `nova-files` feature installs (on NixOS through `programs.nova-files.package`).";
-    };
-
-    ui = lib.mkOption {
-      type = lib.types.enum [
-        "quickshell"
-        "gpui"
-      ];
-      default = "gpui";
-      description = ''
-        No longer used: `nova-ui`, the GPUI program, is Nova's only UI.
-        `quickshell` only warns. The option goes in a later release.
-      '';
     };
 
     uiPackage = lib.mkOption {

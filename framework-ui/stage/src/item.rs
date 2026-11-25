@@ -175,6 +175,7 @@ pub struct Panel {
     pub(crate) name: SharedString,
     pub(crate) size: Size<Pixels>,
     pub(crate) content: AnyView,
+    pub(crate) steady: Option<AnyView>,
     pub(crate) radius: Pixels,
     pub(crate) top: Pixels,
     pub(crate) placement: Placement,
@@ -192,6 +193,7 @@ impl Panel {
             name: name.into(),
             size,
             content: content.into(),
+            steady: None,
             radius: RADIUS_PANEL,
             top: BAR_GAP,
             placement: Placement::Top,
@@ -206,6 +208,11 @@ impl Panel {
 
     pub fn from(mut self, pill_view: impl Into<SharedString>) -> Self {
         self.from = Some(pill_view.into());
+        self
+    }
+
+    pub fn steady(mut self, view: impl Into<AnyView>) -> Self {
+        self.steady = Some(view.into());
         self
     }
 

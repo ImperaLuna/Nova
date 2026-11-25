@@ -103,9 +103,6 @@ in
         "Nova's screen recording uses gpu-screen-recorder, whose capture helper needs `programs.gpu-screen-recorder.enable = true;` in your NixOS configuration (or Nova's NixOS module)."
       ++
         lib.optional (novaFilesOn && !novaFilesBySystem && cfg.features.nova-files.mode != "basic")
-          "Nova Files' `${cfg.features.nova-files.mode}` mode needs Nova's NixOS module; home-manager installs the whole app, as in the `basic` mode, without making it the folder default or file picker."
-      ++
-        lib.optional (cfg.ui == "quickshell")
-          "programs.nova.ui = \"quickshell\": Nova no longer has the Quickshell UI, so it runs nova-ui. Remove the option.";
+          "Nova Files' `${cfg.features.nova-files.mode}` mode needs Nova's NixOS module; home-manager installs the whole app, as in the `basic` mode, without making it the folder default or file picker.";
   };
 }

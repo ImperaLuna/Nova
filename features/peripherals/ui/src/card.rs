@@ -3,15 +3,12 @@ use crate::tokens::{
     DEVICE_CHIP_GAP, DEVICE_CHIP_HEIGHT, DEVICE_CHIP_PAD, DEVICE_ICON_SIZE, DEVICE_LEVEL_WIDTH, DEVICE_LINK_ICON_SIZE,
     DEVICE_LIST_MAX_ROWS, DEVICE_ROW_HEIGHT,
 };
-use gpui::{
-    AnyElement, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement,
-    Styled, Subscription, Window, div,
-};
+use gpui::{AnyElement, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window, div};
 use nova_look::motion::Eased;
 use nova_look::tokens::{
     DURATION_FILL, DURATION_PANEL, FONT_SIZE, FONT_SIZE_MICRO, FONT_SIZE_SMALL, GAP, MENU_PAD, RADIUS_CARD,
 };
-use nova_look::{CardTitle, DeviceBattery, Icon, Theme};
+use nova_look::{CardTitle, DeviceBattery, Icon, Theme, wheel_list};
 use nova_peripherals_api::{Event, Peripheral, Peripherals, TOPIC};
 use nova_stage::Shown;
 use nova_ui_client::Live;
@@ -84,11 +81,7 @@ impl Render for Card {
             .collect();
         div().w_full().flex().flex_col().gap(GAP).child(CardTitle::new("Devices")).child(
             div().p(MENU_PAD).rounded(RADIUS_CARD).bg(theme.surface_raised()).child(
-                div()
-                    .id("devices")
-                    .max_h(DEVICE_ROW_HEIGHT * DEVICE_LIST_MAX_ROWS as f32)
-                    .overflow_y_scroll()
-                    .children(rows),
+                wheel_list("devices", window, cx).max_h(DEVICE_ROW_HEIGHT * DEVICE_LIST_MAX_ROWS as f32).children(rows),
             ),
         )
     }

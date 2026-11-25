@@ -9,6 +9,8 @@ use gpui::{
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 
+const ELLIPSIS: &str = "…";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldEvent {
     Changed,
@@ -167,6 +169,10 @@ impl TextField {
         self
     }
 
+    pub fn set_max_chars(&mut self, max_chars: usize) {
+        self.editing.max_chars = max_chars;
+    }
+
     pub fn focus_handle(&self) -> FocusHandle {
         self.focus.clone()
     }
@@ -289,7 +295,7 @@ impl TextField {
         self.selecting = false;
     }
 
-    fn shape(&self, window: &mut Window, cx: &App) -> ShapedLine {
+    fn shape(&self, width: Pixels, window: &mut Window, cx: &App) -> ShapedLine {
         let theme = Theme::of(cx);
         let style = window.text_style();
         let run = |len: usize, color: Hsla, background: Option<Hsla>, composing: bool| TextRun {
@@ -334,7 +340,15 @@ impl TextField {
                 })
                 .collect();
             let ghost = if self.at_end() { self.ghost.as_ref() } else { "" };
-            runs.push(run(ghost.len(), theme.fg_dim(), None, false));
+            let font_size = style.font_size.to_pixels(window.rem_size());
+            let ghost_run = |len: usize| run(len, theme.fg_dim(), None, false);
+            let ghost = fit_ghost(text, ghost, width, |line: &str| {
+                let mut measured = runs.clone();
+                measured.push(ghost_run(line.len() - text.len()));
+                measured.retain(|run| run.len > 0);
+                window.text_system().shape_line(line.to_owned().into(), font_size, &measured, None).width
+            });
+            runs.push(ghost_run(ghost.len()));
             (format!("{text}{ghost}").into(), runs)
         };
         let runs: Vec<TextRun> = runs.into_iter().filter(|run| run.len > 0).collect();
@@ -359,6 +373,17 @@ impl TextField {
         });
         self.drawn = Some((line, bounds));
     }
+}
+
+fn fit_ghost(text: &str, ghost: &str, width: Pixels, measure: impl Fn(&str) -> Pixels) -> String {
+    let fits = |line: &str| measure(line) <= width;
+    if ghost.is_empty() || fits(&format!("{text}{ghost}")) || !fits(text) {
+        return ghost.to_owned();
+    }
+    let ends: Vec<usize> = ghost.grapheme_indices(true).map(|(at, _)| at).collect();
+    let shortened = |count: usize| format!("{}{ELLIPSIS}", &ghost[..ends[count]]);
+    let kept = ends.partition_point(|&end| fits(&format!("{text}{}{ELLIPSIS}", &ghost[..end])));
+    if kept == 0 { String::new() } else { shortened(kept - 1) }
 }
 
 impl EntityInputHandler for TextField {
@@ -476,7 +501,7 @@ impl Render for TextField {
         let text = canvas(
             {
                 let field = field.clone();
-                move |_, window, cx| field.read(cx).shape(window, cx)
+                move |bounds: Bounds<Pixels>, window, cx| field.read(cx).shape(bounds.size.width, window, cx)
             },
             move |bounds, line, window, cx| {
                 window.handle_input(&focus, ElementInputHandler::new(bounds, field.clone()), cx);
@@ -501,6 +526,18 @@ impl Render for TextField {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_completion_too_long_for_the_field_ends_in_an_ellipsis() {
+        let measure = |line: &str| px(10.0 * line.chars().count() as f32);
+        let fit = |text: &str, ghost: &str, chars: f32| fit_ghost(text, ghost, px(10.0 * chars), measure);
+        assert_eq!(fit("~/do", "cuments/", 12.0), "cuments/");
+        assert_eq!(fit("~/do", "cuments/", 10.0), "cumen…");
+        assert_eq!(fit("~/do", "cuments/", 5.0), "…");
+        assert_eq!(fit("~/do", "cuments/", 4.0), "");
+        assert_eq!(fit("~/documents", "/", 4.0), "/", "a field already scrolled keeps it");
+        assert_eq!(fit("~/", "e\u{301}e\u{301}e\u{301}", 6.0), "e\u{301}…", "an accent stays on its letter");
+    }
 
     fn editing(text: &str) -> Editing {
         let mut editing = Editing::default();

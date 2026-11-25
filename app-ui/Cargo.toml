@@ -137,8 +137,16 @@ yeslogic-fontconfig-sys = "6.0"
 # The local time, for the clock: chrono, which GPUI uses, is unmaintained
 # (RUSTSEC-2026-0543). The system's time zone from TZ or /etc/localtime.
 jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
+# Words and order in the system's language from CLDR, as Qt uses them (the
+# clock's day name, the launcher's app order). ICU4X's locale and data crates are already here through GPUI.
+icu_calendar = "2.1"
+icu_collator = "2.1"
+icu_datetime = "2.1"
+icu_locale_core = "2.1"
+writeable = "0.6"
 
 # The UI side's shared parts (framework-ui/).
+nova-locale = { path = "../framework-ui/locale" }
 nova-look = { path = "../framework-ui/look" }
 nova-stage = { path = "../framework-ui/stage" }
 nova-ui-client = { path = "../framework-ui/client" }

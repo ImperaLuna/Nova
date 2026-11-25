@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 pub const HICOLOR: &str = "hicolor";
 const GTK_DEFAULT: &str = "Adwaita";
-pub const QUICKSHELL_VAR: &str = "QS_ICON_THEME";
 const PLATFORM_THEME_VAR: &str = "QT_QPA_PLATFORMTHEME";
 const INDEX_FILE: &str = "index.theme";
 const THEME_GROUP: &str = "Icon Theme";
@@ -25,9 +24,6 @@ const GTK3: Setting = Setting { file: "gtk-3.0/settings.ini", group: "Settings",
 
 pub fn current_name(var: impl Fn(&str) -> Option<String>, config_home: Option<&Path>, base_dirs: &[PathBuf]) -> String {
     let installed = |name: &str| base_dirs.iter().any(|base| base.join(name).join(INDEX_FILE).is_file());
-    if let Some(name) = var(QUICKSHELL_VAR).filter(|name| is_name(name) && installed(name)) {
-        return name;
-    }
     let platform = var(PLATFORM_THEME_VAR).unwrap_or_default();
     let settings: [&Setting; 5] = match platform.as_str() {
         "qt6ct" | "qt5ct" => [&QT6CT, &QT5CT, &KDE, &GTK4, &GTK3],
@@ -239,8 +235,6 @@ mod tests {
         };
         assert_eq!(name(&[]), "Papirus-Dark");
         assert_eq!(name(&[(PLATFORM_THEME_VAR, "kde")]), "breeze");
-        assert_eq!(name(&[(QUICKSHELL_VAR, "breeze")]), "breeze");
-        assert_eq!(name(&[(QUICKSHELL_VAR, "Adwaita")]), "Papirus-Dark");
         std::fs::write(config.join("gtk-3.0/settings.ini"), "[Settings]\ngtk-icon-theme-name=Gone\n").unwrap();
         assert_eq!(name(&[]), "breeze");
         assert_eq!(current_name(|_| None, None, &bases), HICOLOR);
