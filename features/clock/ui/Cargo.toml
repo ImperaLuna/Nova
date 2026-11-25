@@ -12,6 +12,7 @@
 # - writeable
 #
 # Allowed workspace crates:
+# - nova-locale
 # - nova-look
 # - nova-stage
 
@@ -32,6 +33,7 @@ icu_datetime.workspace = true
 icu_locale_core.workspace = true
 jiff.workspace = true
 writeable.workspace = true
+nova-locale.workspace = true
 nova-look.workspace = true
 nova-stage.workspace = true
 

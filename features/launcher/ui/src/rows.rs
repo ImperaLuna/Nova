@@ -73,10 +73,9 @@ pub fn rows(query: &str, matches: &[LauncherItem], recent: &[String], apps: &[Ap
             return Vec::new();
         }
         let shown: HashSet<&str> = recent.iter().map(String::as_str).collect();
-        let mut others: Vec<&App> = apps.iter().filter(|app| !shown.contains(app.id.as_str())).collect();
-        others.sort_by_cached_key(|app| app.name.to_lowercase());
+        let others = apps.iter().filter(|app| !shown.contains(app.id.as_str()));
         let recent = pick(apps, recent).into_iter().map(|app| Row::app(app, Group::Recent));
-        return recent.chain(others.into_iter().map(|app| Row::app(app, Group::Apps))).collect();
+        return recent.chain(others.map(|app| Row::app(app, Group::Apps))).collect();
     }
     let group = if files { Group::Files } else { Group::Results };
     matches.iter().map(|item| Row::found(item, group)).collect()
@@ -221,8 +220,8 @@ mod tests {
     }
 
     #[test]
-    fn without_a_query_it_lists_the_recent_apps_then_the_others_by_name() {
-        let apps = [app("z", "Zed"), app("f", "firefox"), app("a", "Alacritty"), app("g", "GIMP")];
+    fn without_a_query_it_lists_the_recent_apps_then_the_others_in_their_order() {
+        let apps = [app("z", "Zed"), app("a", "Alacritty"), app("f", "firefox"), app("g", "GIMP")];
         let recent = ["g".to_owned(), "gone".to_owned(), "z".to_owned()];
         let rows = rows("  ", &[], &recent, &apps, false);
         assert_eq!(ids(&rows), [("g", Group::Recent), ("z", Group::Recent), ("a", Group::Apps), ("f", Group::Apps)]);

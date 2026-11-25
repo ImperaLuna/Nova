@@ -7,7 +7,7 @@ use crate::tokens::{
 use gpui::{
     AnyElement, App, Context, Div, ElementId, FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, Render, ScrollEvent, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, StyledText, Window, div, prelude::FluentBuilder as _, px,
+    StatefulInteractiveElement, Styled, StyledText, Window, div, px,
 };
 use nova_app_info::App as InstalledApp;
 use nova_launcher_api::PROVIDER_APPS;
@@ -79,6 +79,9 @@ impl RowButton {
         let hovered = Hovered::of(SharedString::from(format!("{}-hovered", self.id)), window, cx);
         let on = hovered.is(cx);
         let ink = self.lit.unwrap_or(if on { theme.fg } else { theme.fg_dim() });
+        let ink = fade_color(SharedString::from(format!("{}-ink", self.id)), ink, DURATION_FAST, window, cx);
+        let wash = if on { theme.hover() } else { theme.hover().alpha(0.0) };
+        let wash = fade_color(SharedString::from(format!("{}-wash", self.id)), wash, DURATION_FAST, window, cx);
         let icon = Icon::new(self.glyph).size(ICON_SIZE_SMALL).color(ink);
         let icon = if self.filled { icon.filled(self.glyph) } else { icon };
         let opacity = fade(SharedString::from(format!("{}-shown", self.id)), self.opacity, DURATION_FAST, window, cx);
@@ -91,7 +94,7 @@ impl RowButton {
             .items_center()
             .justify_center()
             .cursor_pointer()
-            .when(on, |button| button.bg(theme.hover()))
+            .bg(wash)
             .on_hover(hovered.track())
             .opacity(opacity)
             .child(icon)
