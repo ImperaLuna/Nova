@@ -202,8 +202,10 @@ impl Strip {
         )
         .absolute()
         .inset_0();
-        let picture =
-            AppIcon::new(app.key.clone(), app.name.clone()).icon(app.icon.clone()).size(TRAY_ICON_SIZE * look.scale);
+        let picture = AppIcon::new(app.key.clone(), app.name.clone())
+            .icon(app.icon.clone())
+            .size(TRAY_ICON_SIZE * look.scale)
+            .resting_size(TRAY_ICON_SIZE);
         let (left, right, middle) = (app.clone(), app.clone(), app.clone());
         div()
             .id(SharedString::from(format!("tray-{}", app.key)))
