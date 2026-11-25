@@ -23,6 +23,7 @@ impl PanelRules {
 #[derive(Debug, Default)]
 pub struct OpenPanels {
     open: Vec<(DisplayId, PanelRules)>,
+    released: Vec<(DisplayId, SharedString)>,
 }
 
 impl OpenPanels {
@@ -34,7 +35,7 @@ impl OpenPanels {
         if self.is_open(&panel.name, screen) {
             return false;
         }
-        self.open.retain(|(_, other)| !other.ruled_out_by(&panel));
+        self.retain(|_, other| !other.ruled_out_by(&panel));
         self.open.push((screen, panel));
         true
     }
@@ -54,12 +55,34 @@ impl OpenPanels {
     pub fn retain(&mut self, mut keep: impl FnMut(DisplayId, &PanelRules) -> bool) -> bool {
         let before = self.open.len();
         self.open.retain(|(screen, panel)| keep(*screen, panel));
+        let open = &self.open;
+        self.released.retain(|(screen, name)| open.iter().any(|(on, panel)| on == screen && panel.name == *name));
         self.open.len() != before
+    }
+
+    pub fn release_keyboard(&mut self, name: &str, screen: DisplayId) -> bool {
+        if !self.is_open(name, screen) || self.has_released(name, screen) {
+            return false;
+        }
+        self.released.push((screen, SharedString::from(name.to_owned())));
+        true
+    }
+
+    pub fn reclaim_keyboard(&mut self, name: &str, screen: DisplayId) -> bool {
+        let before = self.released.len();
+        self.released.retain(|(on, released)| !(*on == screen && released.as_ref() == name));
+        self.released.len() != before
+    }
+
+    fn has_released(&self, name: &str, screen: DisplayId) -> bool {
+        self.released.iter().any(|(on, released)| *on == screen && released.as_ref() == name)
     }
 
     pub fn needs_keyboard(&self, screen: DisplayId, on_strip: bool) -> bool {
         let here = |on: DisplayId, panel: &PanelRules| on == screen && panel.placement.on_strip() == on_strip;
-        self.open.iter().any(|(on, panel)| here(*on, panel) && panel.closes_on_esc())
+        self.open
+            .iter()
+            .any(|(on, panel)| here(*on, panel) && panel.closes_on_esc() && !self.has_released(&panel.name, *on))
     }
 
     pub fn any_open(&self, screen: DisplayId) -> bool {
@@ -157,6 +180,26 @@ mod tests {
         let typing = PanelRules { name: "journal".into(), wants_keyboard: true, ..notes() };
         open.open(typing, left());
         assert!(open.needs_keyboard(left(), top));
+    }
+
+    #[test]
+    fn an_open_panel_can_hand_the_keyboard_back_until_it_closes() {
+        let mut open = OpenPanels::default();
+        let top = true;
+        assert!(!open.release_keyboard("launcher", left()), "only an open panel has a keyboard to hand back");
+        open.open(panel("launcher"), left());
+        assert!(open.release_keyboard("launcher", left()));
+        assert!(!open.needs_keyboard(left(), top) && open.is_open("launcher", left()));
+        assert!(open.reclaim_keyboard("launcher", left()));
+        assert!(open.needs_keyboard(left(), top));
+        open.release_keyboard("launcher", left());
+        open.close("launcher", left());
+        open.open(panel("launcher"), left());
+        assert!(open.needs_keyboard(left(), top), "opening again takes the keyboard again");
+        open.release_keyboard("launcher", left());
+        open.open(panel("power"), right());
+        open.open(panel("launcher"), left());
+        assert!(open.needs_keyboard(left(), top), "also after another panel closed it");
     }
 
     #[test]

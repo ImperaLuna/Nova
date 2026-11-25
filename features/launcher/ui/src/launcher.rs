@@ -340,18 +340,23 @@ impl Launcher {
         let output = (!self.screen.name.is_empty()).then(|| self.screen.name.to_string());
         let command =
             Command::LauncherRun { provider: running.provider.clone(), id: running.id.clone(), output, new_window };
-        let answer = Daemon::call::<()>(command, cx);
         self.running = Some(running);
         let screen = self.screen.id;
-        cx.spawn(async move |launcher, cx| {
-            let failed = answer.await.err();
-            if failed.is_none() {
-                cx.background_executor().timer(DURATION_FAST).await;
-                cx.update(|cx| Stage::close(NAME, screen, cx));
-            }
-            let _ = launcher.update(cx, |launcher, cx| launcher.ran(failed, cx));
-        })
-        .detach();
+        let launcher = cx.weak_entity();
+        Stage::release_keyboard(NAME, screen, cx, move |cx| {
+            let answer = Daemon::call::<()>(command, cx);
+            cx.spawn(async move |cx| {
+                let failed = answer.await.err();
+                if failed.is_none() {
+                    cx.background_executor().timer(DURATION_FAST).await;
+                    cx.update(|cx| Stage::close(NAME, screen, cx));
+                } else {
+                    cx.update(|cx| Stage::reclaim_keyboard(NAME, screen, cx));
+                }
+                let _ = launcher.update(cx, |launcher, cx| launcher.ran(failed, cx));
+            })
+            .detach();
+        });
         self.lay_out(cx);
     }
 

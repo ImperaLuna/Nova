@@ -17,6 +17,8 @@ pub struct StageOptions {
     pub log_frames: bool,
 }
 
+pub(crate) type AfterRelease = Box<dyn FnOnce(&mut App)>;
+
 #[derive(Default)]
 pub(crate) struct Panels {
     pub open: OpenPanels,
@@ -26,6 +28,7 @@ pub(crate) struct Panels {
     fullscreen: Vec<SharedString>,
     pages: HashMap<(DisplayId, SharedString), SharedString>,
     pub awake: bool,
+    keyboard_released: Vec<(DisplayId, AfterRelease)>,
 }
 
 impl Panels {
@@ -69,6 +72,13 @@ impl Panels {
 
     pub fn fullscreen(&self, output: &str) -> bool {
         self.fullscreen.iter().any(|each| each.as_ref() == output)
+    }
+
+    pub fn take_keyboard_released(&mut self, screen: DisplayId) -> Vec<AfterRelease> {
+        let (here, elsewhere) =
+            std::mem::take(&mut self.keyboard_released).into_iter().partition(|(on, _)| *on == screen);
+        self.keyboard_released = elsewhere;
+        here.into_iter().map(|(_, then)| then).collect()
     }
 }
 
@@ -116,6 +126,24 @@ impl Stage {
 
     pub fn close(name: &str, screen: DisplayId, cx: &mut App) {
         change(cx, |panels| panels.open.close(name, screen));
+    }
+
+    // Hyprland focuses no window while a layer holds the keyboard exclusively:
+    // https://github.com/hyprwm/Hyprland/blob/v0.57.2/src/desktop/state/FocusState.cpp#L111-L114
+    pub fn release_keyboard(name: &str, screen: DisplayId, cx: &mut App, then: impl FnOnce(&mut App) + 'static) {
+        if cx.try_global::<StageState>().is_none() {
+            then(cx);
+            return;
+        }
+        change(cx, |panels| {
+            panels.open.release_keyboard(name, screen);
+            panels.keyboard_released.push((screen, Box::new(then)));
+            true
+        });
+    }
+
+    pub fn reclaim_keyboard(name: &str, screen: DisplayId, cx: &mut App) {
+        change(cx, |panels| panels.open.reclaim_keyboard(name, screen));
     }
 
     pub fn toggle_on_output(name: &str, output: Option<&str>, cx: &mut App) {
