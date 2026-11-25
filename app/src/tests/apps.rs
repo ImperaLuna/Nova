@@ -167,7 +167,9 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     assert_eq!(event["recent"], json!(["touch.desktop"]));
     let ran = nova_test_support::holds_within(Duration::from_secs(5), || marker.exists());
     assert!(ran, "the app didn't run");
-    assert!(novad.dir.join(";").exists(), "`;` reached touch as a file name, not a shell");
+    let semicolon = novad.dir.join(";");
+    let as_file_name = nova_test_support::holds_within(Duration::from_secs(5), || semicolon.exists());
+    assert!(as_file_name, "`;` reached touch as a file name, not a shell");
 
     assert_eq!(
         client.request(3, "launcher_run", Some(json!({"provider": "apps", "id": "other.desktop"})))["result"],
