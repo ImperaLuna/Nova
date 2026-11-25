@@ -3,7 +3,7 @@ use image::{Frame, RgbaImage};
 use std::path::Path;
 use std::sync::Arc;
 
-// GPUI keeps an `img(path)` image for good, and novad writes each capture of a screen to the same path: https://github.com/ImperaLuna/zed/tree/47424cdc3f1a49829960e1ecbcdcdd967d034265/crates/gpui
+// GPUI keeps an `img(path)` image for good, and novad writes each capture of a screen to the same path: https://github.com/ImperaLuna/zed/tree/2033650502b1d0ec524b8913bf5a01b9463bed5d/crates/gpui
 pub fn frame(path: &Path) -> Result<Arc<RenderImage>, String> {
     let image = image::open(path).map_err(|error| format!("can't read {}: {error}", path.display()))?;
     Ok(render(image.into_rgba8()))

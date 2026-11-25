@@ -173,9 +173,6 @@ impl LockScreen {
                      restarted can lock again only with {HYPRLAND_LOCK_RESTORE} = true, which Nova's Hyprland \
                      rules set; `nova doctor` checks it"
                 );
-                // Hyprland makes no surfaces for a lock it refused, so closing their windows is a protocol error. Remove once the
-                // GPUI fork leaves a refused lock's surfaces alone: https://linear.app/imperaluna/issue/IMP-454
-                self.windows.clear();
                 self.let_go(cx);
             }
             SessionLockState::Pending => {}
