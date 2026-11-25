@@ -121,7 +121,14 @@ pub(super) fn sound() -> nova_sound_api::Sound {
             device(61, "ALC1220 Analog", DeviceKind::Speakers, None, false),
         ],
         inputs: vec![device(53, "Arctis Nova 7", DeviceKind::Headphones, Some(Link::Usb), true)],
-        apps: vec![App { id: 77, name: "Firefox".into(), volume: 1.0, muted: true }],
+        apps: vec![App {
+            id: 77,
+            name: "Firefox".into(),
+            icon_name: "firefox".into(),
+            program: "firefox".into(),
+            volume: 1.0,
+            muted: true,
+        }],
         recorders: vec!["Discord".into()],
     }
 }
@@ -451,9 +458,7 @@ pub(super) fn status() -> Status {
         pid: 100,
         uptime_secs: 42,
         pss_kib: Some(4096),
-        quickshell: Some("0.3.2".into()),
         ui: UiStatus {
-            program: UiProgram::Quickshell,
             state: UiState::Running,
             pid: Some(101),
             pss_kib: Some(180_000),

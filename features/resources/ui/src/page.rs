@@ -14,7 +14,7 @@ use nova_look::tokens::{
     CHIP_HEIGHT, CONFIRM_BUTTON_HEIGHT, FONT_MONO, FONT_SIZE_MICRO, FONT_SIZE_SMALL, GAP, ICON_GAP, ICON_SIZE_SMALL,
     PAD, QUICK_SETTINGS_GAP, RADIUS_CARD, RADIUS_SEGMENT, SEGMENT_PAD, WEIGHT_BODY, WEIGHT_TITLE,
 };
-use nova_look::{CardTitle, FieldEvent, Glyph, Icon, LookStyled, PageHeader, TextField, Theme};
+use nova_look::{CardTitle, FieldEvent, Glyph, Icon, LookStyled, PageHeader, TextField, Theme, wheel_list};
 use nova_resources_api::{AppUsage, Command, Event, Resources, TOPIC};
 use nova_stage::Screen;
 use nova_ui_client::{Daemon, Live};
@@ -91,7 +91,7 @@ impl Page {
 }
 
 impl Render for Page {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let screen = self.screen.id;
         let reading = self.resources.read(cx).get().cloned();
         div()
@@ -105,7 +105,7 @@ impl Render for Page {
                 nova_stage::Stage::show_page(QUICK_SETTINGS, screen, None, cx)
             }))
             .child(graph_card(reading.as_ref(), cx))
-            .child(self.apps(reading.as_ref(), cx))
+            .child(self.apps(reading.as_ref(), window, cx))
     }
 }
 
@@ -153,7 +153,12 @@ fn cell() -> Div {
 }
 
 impl Page {
-    fn apps(&self, reading: Option<&Resources>, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn apps(
+        &self,
+        reading: Option<&Resources>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let theme = Theme::of(cx);
         let all = reading.map_or(&[][..], |now| now.apps.as_slice());
         let shown = matching(all, &self.query);
@@ -197,7 +202,7 @@ impl Page {
             .flex_col()
             .child(search)
             .child(heads)
-            .child(div().id("apps").flex_1().min_h_0().overflow_y_scroll().children(none).children(rows))
+            .child(wheel_list("apps", window, cx).flex_1().min_h_0().children(none).children(rows))
     }
 
     fn row(&self, app: &AppUsage, cx: &mut Context<Self>) -> AnyElement {

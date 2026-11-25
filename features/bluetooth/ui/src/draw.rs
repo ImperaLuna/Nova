@@ -15,7 +15,7 @@ use nova_look::tokens::{
 };
 use nova_look::{
     CardTitle, DeviceBattery, Glyph, Icon, LookStyled, PILL_BUTTONS, PageHeader, PromptButton, RoundButton, Spinner,
-    Theme, ToggleSwitch, header_inset,
+    Theme, ToggleSwitch, header_inset, wheel_list,
 };
 use nova_stage::Stage;
 use std::time::Instant;
@@ -95,7 +95,7 @@ impl Render for BluetoothPage {
             .flex_col()
             .on_key_down(cx.listener(Self::key_down))
             .child(head)
-            .child(div().id("lists").flex_1().min_h_0().mt(GAP).overflow_y_scroll().child(lists))
+            .child(wheel_list("lists", window, cx).flex_1().min_h_0().mt(GAP).child(lists))
     }
 }
 
@@ -260,7 +260,10 @@ impl BluetoothPage {
                     .flex()
                     .items_center()
                     .gap(ICON_GAP)
-                    .child(DeviceBattery::percent(percent))
+                    .child(
+                        DeviceBattery::percent(percent)
+                            .eased(gpui::SharedString::from(format!("battery {}", device.address))),
+                    )
                     .child(
                         div()
                             .font_family(FONT_MONO)

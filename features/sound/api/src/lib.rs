@@ -141,6 +141,13 @@ pub struct App {
     /// What a [`Command`] names it by: its first stream's id.
     pub id: u32,
     pub name: String,
+    /// Its first stream's `application.icon-name`, often its app's id, or
+    /// empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon_name: String,
+    /// Its first stream's `application.process.binary`, or empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub program: String,
     /// Its loudest stream's volume. 1 is 100%.
     pub volume: f32,
     /// Muted only while all its streams are.
@@ -164,7 +171,14 @@ mod tests {
                 current: true,
             }],
             inputs: Vec::new(),
-            apps: vec![App { id: 77, name: "Firefox".into(), volume: 1.0, muted: false }],
+            apps: vec![App {
+                id: 77,
+                name: "Firefox".into(),
+                icon_name: "firefox".into(),
+                program: String::new(),
+                volume: 1.0,
+                muted: false,
+            }],
             recorders: vec!["Discord".into()],
         }
     }

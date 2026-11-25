@@ -1,4 +1,5 @@
 use crate::NAME;
+use crate::buttons::Buttons;
 use crate::logic;
 use gpui::{Context, Entity, SharedString, Subscription, Task};
 use nova_host_info::{Event, Host, TOPIC};
@@ -14,7 +15,6 @@ pub const CARDS: &str = "quick-settings.cards";
 pub const FILL: &str = "quick-settings.fill";
 pub const FOOT: &str = "quick-settings.foot";
 pub const PAGES: &str = "quick-settings.pages";
-pub use nova_look::PILL_BUTTONS;
 
 const MINUTE: Duration = Duration::from_secs(60);
 
@@ -27,7 +27,7 @@ pub struct Drawer {
     pub fill: Parts,
     pub foot: Parts,
     pub pages: Parts,
-    pub buttons: Parts,
+    pub buttons: Entity<Buttons>,
     pub open: bool,
     pub opened_at: Instant,
     pub slides: Vec<(Option<SharedString>, Eased)>,
@@ -37,9 +37,10 @@ pub struct Drawer {
 }
 
 impl Drawer {
-    pub fn new(screen: &Screen, cx: &mut Context<Self>) -> Self {
+    pub fn new(screen: &Screen, buttons: Entity<Buttons>, cx: &mut Context<Self>) -> Self {
         let host = Live::follow(TOPIC, cx, |Event::Host(host)| Some(host));
-        let mut followed = vec![cx.observe(&host, |_, _, cx| cx.notify())];
+        let mut followed =
+            vec![cx.observe(&host, |_, _, cx| cx.notify()), cx.observe(&buttons, |_, _, cx| cx.notify())];
         followed.extend(Stage::observe_panels(cx, |drawer, cx| drawer.follow_stage(cx)));
         followed.extend(Stage::slots(cx).map(|slots| cx.observe(&slots, |drawer, _, cx| drawer.follow_slots(cx))));
         followed.push(Shown::observe(cx, |drawer, cx| {
@@ -57,7 +58,7 @@ impl Drawer {
             fill: Parts::new(FILL, screen, cx),
             foot: Parts::new(FOOT, screen, cx),
             pages: Parts::new(PAGES, screen, cx),
-            buttons: Parts::new(PILL_BUTTONS, screen, cx),
+            buttons,
             open: false,
             opened_at: now,
             slides: vec![(None, Eased::lasting(1.0, logic::page_takes(), now))],
@@ -140,16 +141,8 @@ impl Drawer {
         }));
     }
 
-    fn hosts(&mut self) -> [&mut Parts; 7] {
-        [
-            &mut self.tiles,
-            &mut self.sliders,
-            &mut self.cards,
-            &mut self.fill,
-            &mut self.foot,
-            &mut self.pages,
-            &mut self.buttons,
-        ]
+    fn hosts(&mut self) -> [&mut Parts; 6] {
+        [&mut self.tiles, &mut self.sliders, &mut self.cards, &mut self.fill, &mut self.foot, &mut self.pages]
     }
 
     fn follow_slots(&mut self, cx: &mut Context<Self>) {

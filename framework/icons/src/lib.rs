@@ -2,7 +2,6 @@ mod ini;
 mod theme;
 
 pub use theme::HICOLOR;
-pub use theme::QUICKSHELL_VAR;
 
 use nova_base::lock;
 use std::collections::HashMap;
