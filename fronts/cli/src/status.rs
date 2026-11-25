@@ -150,7 +150,7 @@ fn ago(time: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nova_daemon_info::{Crash, FeatureState, UiProgram, UiStatus};
+    use nova_daemon_info::{Crash, FeatureState, UiStatus};
     use nova_desktop_info::{FocusedWindow, Output, Workspace};
 
     #[test]
@@ -232,9 +232,7 @@ mod tests {
             pid: 10,
             uptime_secs: 65,
             pss_kib: Some(10 * 1024),
-            quickshell: None,
             ui: UiStatus {
-                program: UiProgram::Gpui,
                 state: UiState::Running,
                 pid: Some(11),
                 pss_kib: Some(180 * 1024),

@@ -137,10 +137,6 @@ pub struct Status {
     /// Proportional memory use in KiB, when readable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pss_kib: Option<u64>,
-    /// Never set since Nova dropped Quickshell (IMP-416): kept so the
-    /// message keeps its shape.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quickshell: Option<String>,
     pub ui: UiStatus,
     pub features: Vec<FeatureState>,
     /// The folder novad writes its log and crash snapshots to.
@@ -153,9 +149,6 @@ pub struct Status {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UiStatus {
-    /// The program novad runs as the UI.
-    #[serde(default)]
-    pub program: UiProgram,
     pub state: UiState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
@@ -174,38 +167,6 @@ pub struct UiStatus {
     /// error, or how it last exited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub problem: Option<String>,
-}
-
-/// A program that draws Nova's UI, by its wire name, which `features.toml`
-/// may still name (`ui = "gpui"`). novad runs only `nova-ui`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UiProgram {
-    /// The QML shell Nova dropped (IMP-416). Never runs: kept so an older
-    /// status message and a `features.toml` that names it still read. The
-    /// default only for a status without `program`, which only a novad
-    /// from before the GPUI UI sent.
-    #[default]
-    Quickshell,
-    /// `nova-ui`, the GPUI program.
-    Gpui,
-}
-
-impl UiProgram {
-    pub const ALL: [Self; 2] = [Self::Quickshell, Self::Gpui];
-
-    /// Its name on the wire and in `features.toml`.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Quickshell => "quickshell",
-            Self::Gpui => "gpui",
-        }
-    }
-
-    /// The program `name` names, if any.
-    pub fn named(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|program| program.name() == name)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -185,7 +185,6 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     let novad = TestDaemon::start("crash", Some(ui_settings(fake_ui)));
     let mut client = novad.connect();
     let status = wait_for_status(&mut client, |status| status.ui.restarts >= 1);
-    assert_eq!((status.ui.program, status.quickshell), (UiProgram::Gpui, None));
 
     let crash_log = PathBuf::from(&status.ui.last_crash.unwrap().log);
     let crash_entries = read_entries(&crash_log);

@@ -1,7 +1,7 @@
 use nova_base::backoff::Backoff;
 use nova_base::lock;
 use nova_carrier::log::UI_LOG_SOURCE;
-use nova_daemon_info::{Crash, SOCKET_VAR, UiProgram, UiState, UiStatus};
+use nova_daemon_info::{Crash, SOCKET_VAR, UiState, UiStatus};
 use nova_log::Logger;
 use nova_process::child::describe_exit;
 use std::io::{BufRead, BufReader, Read};
@@ -87,7 +87,6 @@ impl Supervisor {
             (None, false) => UiState::NotNeeded,
         };
         UiStatus {
-            program: UiProgram::Gpui,
             state,
             pid: record.pid,
             pss_kib: record
